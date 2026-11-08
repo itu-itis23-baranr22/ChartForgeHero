@@ -79,12 +79,16 @@ MAX_TOTAL_FIT_LOSS = 0.02
 share of onsets on the grid and the share of beats with an onset together. Either alone can
 mislead: an abrupt tempo change costs the sixteenth grid a few notes at the change itself,
 while putting half the song's beats back on real onsets."""
+MIN_BEAT_SUPPORT_GAIN = 0.05
+"""Or the events must put an onset under this many more of the song's beats. The sixteenth
+grid can already fit a passage at another tempo while its beats are all wrong."""
 _POLISH_BEATS = 4
 _MOVED_S = 0.005
 _MIN_KNOT_SPACING_BEATS = 8
 _MAX_KNOTS = 256
-_KNOT_PATTERNS = ((0,), (-8,), (8,), (-8, 8), (-16, 8), (-8, 16), (-16, 16))
-"""Breaks to try around a region's center, in beats, fewest first."""
+_SINGLE_KNOT_PATTERNS = tuple((offset,) for offset in sorted(range(-8, 9), key=abs))
+_KNOT_PAIR_PATTERNS = ((-8, 8), (-16, 8), (-8, 16), (-16, 16))
+"""Breaks to try around a region's center, in beats. Pairs only if no single break will do."""
 _MIN_DRIFT_IMPROVEMENT_S = 0.002
 _MAIN_TEMPO_RANGE = 0.03
 _FIT_ROUNDS = 3
@@ -356,11 +360,12 @@ class _Evidence:
     """Whether beats are numbered along the track, not by their nearest grid line."""
 
 
-def _fit_grid(evidence: _Evidence, knots: list[int], start: BeatGrid | None = None) -> BeatGrid:
+def _fit_grid(evidence: _Evidence, knots: list[int]) -> BeatGrid:
     """Fit a grid with breaks at ``knots`` to the beats and to the onsets near the grid.
 
     The beats carry the grid across large drifts, and the onsets refine it beyond the
-    tracker's frame size. Without a starting grid, the first round uses the beats alone.
+    tracker's frame size. The first round always uses the beats alone: onsets matched to
+    a grid that is still off land on the wrong sixteenth, and hold the grid there.
     """
     breakpoints = np.array(
         [evidence.first_number, *sorted(knots), evidence.last_number], dtype=np.float64
@@ -371,7 +376,7 @@ def _fit_grid(evidence: _Evidence, knots: list[int], start: BeatGrid | None = No
         columns.extend(np.maximum(0.0, numbers - knot) for knot in sorted(knots))
         return np.stack(columns, axis=1)
 
-    grid = start
+    grid: BeatGrid | None = None
     for _ in range(_FIT_ROUNDS):
         numbers, times, weights = evidence.numbers, evidence.beats, np.ones_like(evidence.beats)
         if grid is not None and evidence.onsets.size:
@@ -455,6 +460,26 @@ def _event_gain(with_event: BeatGrid, without_event: BeatGrid, onsets: np.ndarra
     )
 
 
+def _event_gain_between(single: BeatGrid, grid: BeatGrid, onsets: np.ndarray) -> float:
+    """Return how much closer ``grid`` brings the onsets it places differently from one tempo.
+
+    Events can look useful against a straight line fitted through a tracker's mistake. What
+    counts is whether they beat the one-tempo grid they would replace.
+    """
+
+    def residuals(candidate: BeatGrid) -> np.ndarray:
+        position = np.round(candidate.number_at(onsets) * GRID_DIVISOR) / GRID_DIVISOR
+        return onsets - candidate.time_of(position)
+
+    one, chosen = residuals(single), residuals(grid)
+    moved = np.abs(one - chosen) >= _MOVED_S
+    if not moved.any():
+        return 0.0
+    capped_one = np.minimum(np.abs(one[moved]), GRID_MATCH_S)
+    capped_chosen = np.minimum(np.abs(chosen[moved]), GRID_MATCH_S)
+    return float(capped_one.mean() - capped_chosen.mean())
+
+
 def _add_knots(evidence: _Evidence, limit_s: float) -> tuple[BeatGrid, list[int]]:
     """Break the grid at the worst region until every region is within ``limit_s``.
 
@@ -480,28 +505,34 @@ def _add_knots(evidence: _Evidence, limit_s: float) -> tuple[BeatGrid, list[int]
         center = float(centers[worst_index])
         worst = abs(float(drifts[worst_index]))
 
-        best: tuple[float, list[int], BeatGrid] | None = None
-        for offsets in _KNOT_PATTERNS:
-            added = [int(center) + offset for offset in offsets]
-            acceptable = all(
-                evidence.first_number < knot < evidence.last_number
-                and all(abs(knot - other) >= _MIN_KNOT_SPACING_BEATS for other in knots)
-                for knot in added
-            )
-            if not acceptable:
-                continue
-            trial = _fit_grid(evidence, [*knots, *added], grid)
-            if not trial.is_increasing:
-                continue
-            new_centers, new_drifts = _region_drifts(trial, evidence)
-            here = np.abs(new_drifts[new_centers == center])
-            remaining = float(here[0]) if here.size else 0.0
-            if best is None or remaining < best[0]:
-                best = (remaining, added, trial)
-            if remaining <= limit_s:
+        best: tuple[float, list[int], BeatGrid, float] | None = None
+        for patterns in (_SINGLE_KNOT_PATTERNS, _KNOT_PAIR_PATTERNS):
+            for offsets in patterns:
+                added = [int(center) + offset for offset in offsets]
+                acceptable = all(
+                    evidence.first_number < knot < evidence.last_number
+                    and all(abs(knot - other) >= _MIN_KNOT_SPACING_BEATS for other in knots)
+                    for knot in added
+                )
+                if not acceptable:
+                    continue
+                trial = _fit_grid(evidence, [*knots, *added])
+                if not trial.is_increasing:
+                    continue
+                new_centers, new_drifts = _region_drifts(trial, evidence)
+                here = np.abs(new_drifts[new_centers == center])
+                remaining = float(here[0]) if here.size else 0.0
+                if remaining > worst - _MIN_DRIFT_IMPROVEMENT_S:
+                    continue
+                # Judged on the whole song: the best place for a break is where the tempo
+                # really changes, which may lie outside the region that showed the drift.
+                misfit = float(np.sum(np.square(evidence.beats - trial.time_of(evidence.numbers))))
+                if best is None or misfit < best[0]:
+                    best = (misfit, added, trial, remaining)
+            if best is not None and best[3] <= limit_s:
                 break
 
-        if best is None or best[0] > worst - _MIN_DRIFT_IMPROVEMENT_S:
+        if best is None:
             given_up.add(center)
             continue
         knots.extend(best[1])
@@ -517,7 +548,7 @@ def _event_details(
     gains: list[float] = []
     for position, knot in enumerate(knots):
         others = knots[:position] + knots[position + 1 :]
-        without = _fit_grid(evidence, others, grid)
+        without = _fit_grid(evidence, others)
         low = knots[position - 1] if position > 0 else evidence.first_number
         high = knots[position + 1] if position + 1 < len(knots) else evidence.last_number
         gain = _event_gain(grid, without, evidence.onsets)
@@ -549,7 +580,7 @@ def _polish_knots(
                 continue
             if any(abs(moved - other) < _MIN_KNOT_SPACING_BEATS for other in neighbours):
                 continue
-            trial = _fit_grid(evidence, [*neighbours, moved], grid)
+            trial = _fit_grid(evidence, [*neighbours, moved])
             error = misfit(trial)
             if trial.is_increasing and error < best_error:
                 best_error = error
@@ -576,7 +607,7 @@ def _merge_useless_knots(
             if index - 1 not in doomed and index + 1 not in doomed:
                 doomed.add(index)
         knots = [knot for i, knot in enumerate(knots) if i not in doomed]
-        grid = _fit_grid(evidence, knots, grid)
+        grid = _fit_grid(evidence, knots)
 
 
 def _segments_from_grid(grid: BeatGrid) -> list[TempoSegment]:
@@ -707,10 +738,15 @@ def choose_grid(
     grid, knots = _add_knots(evidence, max_beat_drift_s)
     grid, knots, details = _merge_useless_knots(evidence, grid, knots)
     grid, knots = _polish_knots(evidence, grid, knots)
-    details = _event_details(evidence, grid, knots)[0]
+    # Moving knots changes what each one contributes, so judge them once more.
+    grid, knots, details = _merge_useless_knots(evidence, grid, knots)
     final_stats = _stats(grid, evidence)
     harmful = final_stats.fit < single_stats.fit - MAX_TOTAL_FIT_LOSS
-    if not knots or harmful or not grid.is_increasing:
+    helpful = (
+        _event_gain_between(single_grid, grid, onsets) >= MIN_EVENT_GAIN_S
+        or final_stats.beats_with_onset >= single_stats.beats_with_onset + MIN_BEAT_SUPPORT_GAIN
+    )
+    if not knots or harmful or not helpful or not grid.is_increasing:
         return one_tempo(
             f"beats stray {single_stats.max_ms:.0f} ms from one tempo (limit {limit_ms:.0f} ms), "
             f"but tempo events would not bring the onsets closer to the grid "
