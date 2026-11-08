@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chartgen"
+version = "0.1.0"
+description = "Generate playable Clone Hero song folders from local audio files you own."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.2,<3",
+    "scipy>=1.16,<2",
+    "soundfile>=0.13,<0.14",
+    "librosa>=0.11,<0.12",
+]
+
+[project.optional-dependencies]
+separation = ["torch>=2.9,<3", "demucs>=4.1,<5"]
+dev = ["pytest>=9,<10"]
+
+[project.scripts]
+chartgen = "chartgen.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["chartgen*"]
+
+[tool.pytest.ini_options]
+addopts = '-m "not slow"'
+markers = ["slow: runs real Demucs and may download model weights"]
+testpaths = ["tests"]
+pythonpath = ["."]

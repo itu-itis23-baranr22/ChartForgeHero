@@ -1,0 +1,138 @@
+"""Command line interface.
+
+Heavy modules are imported inside the commands, so ``--help`` stays instant and
+nothing but a real ``build`` ever touches torch or Demucs.
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import os
+import sys
+from pathlib import Path
+
+from chartgen.core.model import Instrument, SongMetadata
+from chartgen.errors import ChartgenError
+
+log = logging.getLogger("chartgen")
+
+_INSTRUMENT_NAMES = ", ".join(instrument.value for instrument in Instrument)
+_DEFAULT_INSTRUMENTS = "guitar,bass,drums,keys"
+
+
+def _parse_instruments(value: str) -> frozenset[Instrument]:
+    names = [name.strip().lower() for name in value.split(",") if name.strip()]
+    if not names:
+        raise argparse.ArgumentTypeError(f"name at least one of: {_INSTRUMENT_NAMES}")
+    try:
+        return frozenset(Instrument(name) for name in names)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"{error}; choose from: {_INSTRUMENT_NAMES}") from error
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="chartgen",
+        description="Generate Clone Hero song folders from local audio files you own.",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="show debug logging")
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    build = commands.add_parser("build", help="build a song folder from an audio file")
+    build.add_argument("input", type=Path, help="local .mp3, .wav, .flac or .ogg file")
+    build.add_argument("--artist", required=True)
+    build.add_argument("--title", required=True)
+    build.add_argument("--album", default="")
+    build.add_argument("--genre", default="")
+    build.add_argument("--year", default="")
+    build.add_argument("--charter", default="chartgen")
+    build.add_argument(
+        "--instruments",
+        type=_parse_instruments,
+        default=_parse_instruments(_DEFAULT_INSTRUMENTS),
+        help=f"comma-separated, from: {_INSTRUMENT_NAMES} (default: {_DEFAULT_INSTRUMENTS})",
+    )
+    build.add_argument("--output-dir", type=Path, default=Path("outputs"))
+    build.add_argument("--cache-dir", type=Path, default=Path(".cache/stems"))
+    build.add_argument("--device", default="auto", help="auto, cpu, cuda, mps (default: auto)")
+    build.add_argument("--force", action="store_true", help="replace an existing song folder")
+
+    validate = commands.add_parser("validate", help="check an existing song folder")
+    validate.add_argument("folder", type=Path)
+    return parser
+
+
+def _run_build(args: argparse.Namespace) -> int:
+    from chartgen.audio.separation import DemucsSeparator
+    from chartgen.pipeline import BuildConfig, build_song
+
+    try:
+        metadata = SongMetadata(
+            name=args.title,
+            artist=args.artist,
+            album=args.album,
+            genre=args.genre,
+            year=args.year,
+            charter=args.charter,
+        )
+    except ValueError as error:
+        log.error("Error: %s", error)
+        return 2
+
+    result = build_song(
+        BuildConfig(
+            input_path=args.input,
+            metadata=metadata,
+            instruments=args.instruments,
+            output_dir=args.output_dir,
+            cache_dir=args.cache_dir,
+            force=args.force,
+        ),
+        DemucsSeparator(device=args.device),
+    )
+    executable = os.environ.get("CLONE_HERO_EXE", "<path to Clone Hero.exe>")
+    log.info("Song folder: %s", result.folder.resolve())
+    log.info(
+        'Preview with: "%s" --song "%s" --player Guitar,Expert -i',
+        executable,
+        result.folder.resolve(),
+    )
+    return 0
+
+
+def _run_validate(args: argparse.Namespace) -> int:
+    from chartgen.clonehero.validate import validate_song_folder
+
+    report = validate_song_folder(args.folder)
+    for warning in report.warnings:
+        log.warning("Warning: %s", warning)
+    for error in report.errors:
+        log.error("Error: %s", error)
+    log.info("%s: %s", args.folder, "OK" if report.ok else "FAILED")
+    return 0 if report.ok else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the CLI and return the process exit code."""
+    args = _build_parser().parse_args(argv)
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
+    # Only chartgen's own logger is configured: libraries' request logs would drown the
+    # stage reports. Handlers are replaced so repeated calls never print a line twice.
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    log.handlers[:] = [handler]
+    log.setLevel(logging.DEBUG if args.verbose else logging.INFO)
+
+    try:
+        if args.command == "build":
+            return _run_build(args)
+        return _run_validate(args)
+    except ChartgenError as error:
+        log.error("Error: %s", error)
+        return 2
+    except KeyboardInterrupt:
+        log.error("Interrupted.")
+        return 130
