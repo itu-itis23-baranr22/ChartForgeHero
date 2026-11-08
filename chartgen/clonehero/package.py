@@ -100,7 +100,8 @@ def plan_audio(
 
 
 def encode_ogg(samples: np.ndarray, samplerate: int, path: Path) -> None:
-    """Write Ogg Vorbis in blocks; very large single writes are hard on libsndfile."""
+    """Write Ogg Vorbis in blocks. Writing a song in one call overflows the stack inside
+    libsndfile on Windows, which kills the process rather than raising an error."""
     with sf.SoundFile(
         str(path),
         mode="w",

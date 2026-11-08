@@ -1,0 +1,20 @@
+# When a note on a stem is really the singer leaking through the separation.
+#
+# All three must hold for a note to be removed. A loud vocal over a real guitar is the normal
+# case, so vocal loudness alone would be a disaster: at 6 dB it removed 69 real notes on the
+# reference song. What marks a leak is a stem that is both quiet and not staying.
+#
+# Set on the train reference. Measured there: 45 notes removed, 33 of them absent from the
+# human chart, and note F1 rose from 0.754 to 0.764. To be checked on test references, not tuned.
+
+# The vocals must be this much louder than the stem at the note.
+min_vocal_over_stem_db = 3.0
+# The stem must be this far below its own usual loud level at the note.
+max_stem_level_db = -8.0
+# After the note, the stem's level as a share of its usual loud level must not exceed this.
+max_stem_sustain = 0.6
+# Where the note's level is measured, from its onset.
+level_window_s = 0.15
+# Where the stem's staying power is measured, from the onset.
+sustain_start_s = 0.07
+sustain_end_s = 0.35

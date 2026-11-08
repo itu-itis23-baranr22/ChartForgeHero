@@ -11,18 +11,16 @@ It only processes files you give it. It does not download audio or touch streami
 |---|---|---|
 | Foundation | Format-independent chart model, `.chart` exporter, validator | Done |
 | A | Stem separation, packaging, simple onset-based guitar chart | Done |
-| Tempo check | `--click-overlay`, `--bpm`, explained tempo decisions | Done, thresholds await a listening test |
-| B1 | Time signature, sustains, Viterbi fret mapping (Expert) | Planned |
+| Tempo check | `--click-overlay`, `--bpm`, `--max-beat-drift-ms`, explained tempo events | Done |
+| B1 | Time signature, chords, sustains, Viterbi fret mapping, vocal bleed removal (Expert) | Done |
 | B2 | Difficulty reduction to Hard, Medium and Easy | Planned |
 | B3 | Bass and keys; a song no longer needs a guitar | Planned |
 | C | Drums: percussion classification, four difficulties | Planned |
 | D | Vocal events, sections, star power | Planned |
 
-Phase A's guitar chart is a pipeline test, not a good chart: lanes follow the brightness of each
-attack, not the melody, and there is only one difficulty. Time signature is assumed to be 4/4, and
-the first downbeat is an early estimate: check `bar_confidence` in `analysis.json`. Until Phases B
-and C, a song whose guitar stem is rejected as absent cannot be built, because no
-other instrument can be charted yet.
+There is one difficulty so far, and only guitar is charted: until Phases B3 and C, a song whose
+guitar stem is rejected as absent cannot be built. Telling chords from single notes on heavily
+distorted guitar is unverified. 3/4 and 6/8 have only been tested on synthetic audio.
 
 See [docs/SPEC.md](docs/SPEC.md) for the full specification.
 
@@ -82,6 +80,26 @@ python -m chartgen build song.mp3 --artist "Artist" --title "Title" --bpm 97 --c
 the drums. `--bpm` forces one exact tempo; the phase and the first downbeat are still detected.
 `--max-beat-drift-ms` sets how far a region's beats may stray from one tempo before it gets an event.
 
+## Measuring against human charts
+
+```
+python -m chartgen evaluate references
+python -m chartgen evaluate references --split test --output report.json
+```
+
+References are `.sng` files or folders holding `notes.chart` or `notes.mid` with their audio, kept in
+`references/train/` and `references/test/`. Those folders are ignored by git: no reference may enter
+the repository. The tool runs the real analysis on each and reports every metric per song and on
+average, with each split on its own.
+
+Weights and thresholds may only be tuned on `train`, whose scores are flattered by that tuning. A new
+reference goes to `test`, and is measured before anything else happens.
+`CHARTGEN_REFERENCE_DIR=references pytest -m slow` runs this as a test.
+
+The weights of the fret mapper all live in `chartgen/chart/fret_weights.toml`. The rules that keep a
+chart playable are in `chartgen/chart/fret_mapping.py`, and tests check them under random weights.
+The limits for vocal bleed live in `chartgen/audio/vocal_bleed.toml`.
+
 ## How it works
 
 1. **Separate** the song with Demucs, cached by the file's SHA-256.
@@ -95,7 +113,13 @@ the drums. `--bpm` forces one exact tempo; the phase and the first downbeat are 
    reason and gain. Against a human-made map of one real song: 94% of beats within 35 ms, using 25
    tempo events where the human used 123.
 4. **Detect onsets** on each stem, behind a noise gate and an adaptive threshold that reject bleed.
-5. **Package and verify**: every encoded file is decoded again and must match its source's length
+5. **Remove vocal bleed**: a note where the singer is louder than a stem that is unusually quiet and
+   does not stay is a trace of the vocals, not an instrument. `analysis.json` lists these.
+6. **Read each note**: how its spectrum moves relative to its neighbours, whether it repeats the
+   previous note, whether it is a chord, and how long it rings.
+7. **Map to frets** with the Viterbi algorithm, following the contour within each phrase and never a
+   fixed pitch for each fret, so the same riff played higher elsewhere keeps its shape.
+8. **Package and verify**: every encoded file is decoded again and must match its source's length
    exactly with zero lag, and the finished folder must pass an independent validator. The folder
    appears only once all of that succeeded, so a failed build leaves nothing behind.
 
@@ -104,6 +128,8 @@ the drums. `--bpm` forces one exact tempo; the phase and the first downbeat are 
 ```
 pytest                 # no model download: separation is mocked
 pytest -m slow         # runs real Demucs
+scripts\check.ps1      # the tests and the validator: what must pass before a commit
+git config core.hooksPath .githooks     # makes every commit run it
 ```
 
 The code is layered so that `chartgen.core` knows nothing about Clone Hero:
@@ -111,9 +137,10 @@ The code is layered so that `chartgen.core` knows nothing about Clone Hero:
 ```
 chartgen/
   core/       chart model, tempo map, exporter interface
-  audio/      loading, separation, presence, tempo, onsets
-  chart/      stems to tracks
+  audio/      loading, separation, presence, tempo, meter, onsets, pitch, sustain, vocal bleed
+  chart/      stems to tracks: charter, fret mapping and its weights
   clonehero/  .chart and song.ini writers, packaging, validation
+  evaluation/ reference charts and metrics
   pipeline.py the build, stage by stage
   cli.py      command line
 ```

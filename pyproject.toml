@@ -25,6 +25,10 @@ chartgen = "chartgen.cli:main"
 [tool.setuptools.packages.find]
 include = ["chartgen*"]
 
+[tool.setuptools.package-data]
+"chartgen.chart" = ["*.toml"]
+"chartgen.audio" = ["*.toml"]
+
 [tool.pytest.ini_options]
 addopts = '-m "not slow"'
 markers = ["slow: runs real Demucs and may download model weights"]

@@ -99,6 +99,19 @@ def _build_parser() -> argparse.ArgumentParser:
 
     validate = commands.add_parser("validate", help="check an existing song folder")
     validate.add_argument("folder", type=Path)
+
+    evaluate = commands.add_parser(
+        "evaluate", help="compare generated charts with human-made references in a folder"
+    )
+    evaluate.add_argument(
+        "folder", type=Path, help="holds train/ and test/, searched for .sng files and chart folders"
+    )
+    evaluate.add_argument(
+        "--split", choices=("train", "test"), help="evaluate only this split (default: all)"
+    )
+    evaluate.add_argument("--cache-dir", type=Path, default=Path(".cache/stems"))
+    evaluate.add_argument("--device", default="auto", help="auto, cpu, cuda, mps (default: auto)")
+    evaluate.add_argument("--output", type=Path, help="also write the results as JSON")
     return parser
 
 
@@ -155,6 +168,19 @@ def _run_validate(args: argparse.Namespace) -> int:
     return 0 if report.ok else 1
 
 
+def _run_evaluate(args: argparse.Namespace) -> int:
+    from chartgen.audio.separation import DemucsSeparator
+    from chartgen.evaluation.run import evaluate_folder, format_report, write_report
+
+    report = evaluate_folder(
+        args.folder, DemucsSeparator(device=args.device), args.cache_dir, args.split
+    )
+    log.info("%s", format_report(report))
+    if args.output:
+        write_report(report, args.output)
+    return 0 if report.songs else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the CLI and return the process exit code."""
     args = _build_parser().parse_args(argv)
@@ -171,6 +197,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "build":
             return _run_build(args)
+        if args.command == "evaluate":
+            return _run_evaluate(args)
         return _run_validate(args)
     except ChartgenError as error:
         log.error("Error: %s", error)

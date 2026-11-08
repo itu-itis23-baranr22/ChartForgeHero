@@ -1,0 +1,3 @@
+#!/bin/sh
+# No commit unless the tests and the validator pass. Takes a few minutes.
+exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1

@@ -1,0 +1,31 @@
+# How the fret mapper trades things off. Every value here is a preference.
+#
+# The rules that must always hold (no impossible hand jumps, only playable chord shapes) live
+# in chartgen/chart/fret_mapping.py and cannot be weakened from this file: tests verify them
+# under random weights.
+
+# Going up in pitch should go up the frets, and down should go down. Going the wrong way must
+# cost clearly more than staying put: a scale that runs out of frets should wait at the top
+# rather than dip down to have room to climb again.
+contour = 3.0
+hold = 1.0
+# A repeated pitch should stay on the same fret.
+repeat = 2.5
+# Bigger intervals should make bigger moves. How many semitones one fret stands for.
+magnitude = 1.0
+semitones_per_lane = 1.5
+# Within a phrase, higher notes should sit further up the neck, between these two frets.
+# Charts lean toward the lower frets rather than spreading evenly.
+register = 0.6
+register_span = [0.5, 3.0]
+# Moving the hand costs more the less time there is.
+speed = 0.02
+# Chord size should match how many voices were heard.
+voices = 2.5
+# Prefer frets the way charts do: orange is rare.
+lane_prior = 2.0
+lane_shares = [0.26, 0.24, 0.22, 0.22, 0.06]
+# The same pitch within a phrase should land on the same fret on the second pass.
+consistency = 0.5
+# A silence this long starts a new phrase.
+phrase_gap_s = 0.9

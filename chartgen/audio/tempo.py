@@ -14,7 +14,7 @@ was a median 6 ms off. So the two problems are solved separately:
    bring the song's onsets measurably closer to the grid, or it is merged away again: in
    a sparse intro the tracker can lock onto an off-beat pattern, and no event should be
    spent following that.
-4. Bass accents and chord changes decide where the bars begin.
+4. ``chartgen.audio.meter`` decides how the beats group into bars and where they begin.
 
 ``--bpm`` replaces steps 1-3 for the tempo (method ``override``), not for phase or bars.
 """
@@ -31,7 +31,8 @@ from scipy.ndimage import median_filter
 from scipy.signal import find_peaks
 
 from chartgen.audio.io import ANALYSIS_SAMPLERATE
-from chartgen.audio.onsets import ENVELOPE_LATENCY_S, HOP_LENGTH, OnsetConfig, onset_envelope
+from chartgen.audio.meter import MeterResult, detect_meter
+from chartgen.audio.onsets import ENVELOPE_LATENCY_S, HOP_LENGTH, onset_envelope
 from chartgen.core.timing import DEFAULT_RESOLUTION, TempoEvent, TempoMap, TimeSignatureEvent
 
 log = logging.getLogger(__name__)
@@ -95,13 +96,12 @@ _FIT_ROUNDS = 3
 MIN_BEATS = 16
 MERGE_BPM_DIFFERENCE = 0.05
 
+STRONG_ONSET_MIN_STRENGTH = 2.0
+"""What counts as a clear onset for judging a grid. Deliberately separate from the note
+detector's floor: lowering that one to catch quiet notes must not change the tempo map."""
 GRID_DIVISOR = 4
 GRID_MATCH_S = 0.035
 """Onsets this close to a sixteenth note count as being on the grid."""
-
-BEATS_PER_BAR = 4
-"""Bars are assumed to be 4/4 until time signature detection exists."""
-_MIN_BEATS_FOR_BARS = 16
 
 
 @dataclass(frozen=True)
@@ -160,9 +160,7 @@ class TempoAnalysis:
     event_details: tuple[TempoEventDetail, ...] = ()
     off_tempo_share: float = 0.0
     """Share of 30 second windows whose local tempo differs from the main tempo."""
-    first_downbeat_s: float | None = None
-    bar_confidence: float = 0.0
-    """How far the chosen bar phase stands out from the runner-up, in standard deviations."""
+    meter: MeterResult | None = None
     estimated_bpm: float | None = None
     """The whole-song estimate, also reported when ``--bpm`` overrides it."""
 
@@ -173,6 +171,14 @@ class TempoAnalysis:
     @property
     def on_grid_ratio(self) -> float:
         return self.final.on_grid if self.final else 0.0
+
+    @property
+    def first_downbeat_s(self) -> float | None:
+        return self.meter.first_downbeat_s if self.meter else None
+
+    @property
+    def bar_confidence(self) -> float:
+        return self.meter.confidence if self.meter else 0.0
 
     def event_explanations(self) -> list[dict[str, object]]:
         """Explain each tempo event, in the order of ``tempo_map.tempos``."""
@@ -311,7 +317,7 @@ def _strong_onsets(envelope: np.ndarray, frame_rate: float) -> tuple[np.ndarray,
     level = float(np.percentile(envelope, 75))
     peaks, _ = find_peaks(
         envelope,
-        height=max(level * 2.0, OnsetConfig.min_strength),
+        height=max(level * 2.0, STRONG_ONSET_MIN_STRENGTH),
         distance=max(1, int(0.05 * frame_rate)),
     )
     times = peaks / frame_rate - ENVELOPE_LATENCY_S
@@ -324,7 +330,7 @@ def _beats_with_evidence(beats: np.ndarray, envelope: np.ndarray, frame_rate: fl
     keeps placing beats with nothing to go on, and those say nothing about the tempo."""
     frames = np.round((beats + ENVELOPE_LATENCY_S) * frame_rate).astype(int)
     strength = np.array([envelope[max(0, f - 2) : f + 3].max(initial=0.0) for f in frames])
-    return strength >= max(OnsetConfig.min_strength, 0.5 * float(np.median(strength)))
+    return strength >= max(STRONG_ONSET_MIN_STRENGTH, 0.5 * float(np.median(strength)))
 
 
 @dataclass(frozen=True)
@@ -821,62 +827,6 @@ def fit_tempo_map(
     return tempo_map_from_segments(choice.segments, resolution), choice
 
 
-def _z_scored(values: np.ndarray) -> np.ndarray:
-    spread = float(values.std())
-    return (values - values.mean()) / spread if spread > 0 else np.zeros_like(values)
-
-
-def align_bars(
-    tempo_map: TempoMap, mono: np.ndarray, samplerate: int = ANALYSIS_SAMPLERATE
-) -> tuple[TempoMap, float | None, float]:
-    """Find where the 4/4 bars begin and start them there.
-
-    Bass drums and chord changes favour the first beat of a bar. If the first downbeat
-    is not a whole number of bars after tick 0, a short pickup measure at the start
-    shifts the bar lines onto it.
-
-    Returns:
-        The tempo map with bar lines moved, the first downbeat's time, and the
-        confidence. Too little audio returns the map unchanged and no downbeat.
-    """
-    resolution = tempo_map.resolution
-    last = int(tempo_map.ticks_at(len(mono) / samplerate) // resolution)
-    if last < _MIN_BEATS_FOR_BARS:
-        return tempo_map, None, 0.0
-
-    beats = np.arange(1, last + 1)
-    frames = np.round(tempo_map.seconds_at(beats * resolution) * samplerate / HOP_LENGTH).astype(int)
-
-    low = librosa.onset.onset_strength(
-        y=mono, sr=samplerate, hop_length=HOP_LENGTH, n_fft=2048, fmax=200.0
-    )
-    accents = np.array([low[max(0, f - 2) : f + 3].max(initial=0.0) for f in frames])
-
-    chroma_hop = HOP_LENGTH * 4
-    chroma = librosa.feature.chroma_stft(y=mono, sr=samplerate, hop_length=chroma_hop, n_fft=4096)
-    edges = np.clip(frames // 4, 0, chroma.shape[1] - 1)
-    ends = np.r_[edges[1:], edges[-1] + 1]
-    profiles = np.stack([chroma[:, a : max(a + 1, b)].mean(axis=1) for a, b in zip(edges, ends)])
-    norms = np.linalg.norm(profiles, axis=1) + 1e-9
-    similarity = np.sum(profiles[1:] * profiles[:-1], axis=1) / (norms[1:] * norms[:-1])
-    changes = np.r_[0.0, 1.0 - similarity]
-
-    evidence = _z_scored(accents) + _z_scored(changes)
-    scores = np.array([evidence[beats % BEATS_PER_BAR == p].mean() for p in range(BEATS_PER_BAR)])
-    phase = int(np.argmax(scores))
-    confidence = float(scores[phase] - np.sort(scores)[-2])
-
-    first = phase if phase > 0 else BEATS_PER_BAR
-    signatures = [TimeSignatureEvent(0, BEATS_PER_BAR, 4)]
-    if first != BEATS_PER_BAR:
-        signatures = [
-            TimeSignatureEvent(0, first, 4),
-            TimeSignatureEvent(first * resolution, BEATS_PER_BAR, 4),
-        ]
-    aligned = TempoMap(tempo_map.tempos, signatures, resolution)
-    return aligned, float(tempo_map.seconds_at(first * resolution)), confidence
-
-
 def _override_grid(
     bpm: float,
     envelope: np.ndarray,
@@ -923,6 +873,9 @@ def estimate_tempo_map(
     samplerate: int = ANALYSIS_SAMPLERATE,
     bpm_override: float | None = None,
     max_beat_drift_s: float = DEFAULT_MAX_BEAT_DRIFT_S,
+    drums: np.ndarray | None = None,
+    harmonic: np.ndarray | None = None,
+    bass: np.ndarray | None = None,
 ) -> TempoAnalysis:
     """Estimate the song's tempo map from its mix.
 
@@ -931,8 +884,9 @@ def estimate_tempo_map(
         samplerate: Its sample rate.
         bpm_override: Use exactly this tempo; only the phase and bars are detected.
         max_beat_drift_s: How far a region's beats may stray before it gets a tempo event.
-
-    Bars are assumed to be 4/4 until time signature detection exists.
+        drums: The drum stem at the same rate, which makes the bars easier to find.
+        harmonic: The pitched stems mixed together, likewise.
+        bass: The bass stem, likewise.
     """
     if bpm_override is None and mono.size < MIN_ANALYSIS_SECONDS * samplerate:
         return _fallback(0.0)
@@ -961,10 +915,17 @@ def estimate_tempo_map(
         kept = kept if kept.size >= MIN_BEATS else beats
         choice = choose_grid(kept, onsets, heights, base_bpm, duration_s, max_beat_drift_s)
 
-    tempo_map = tempo_map_from_segments(choice.segments)
-    tempo_map, first_downbeat, bar_confidence = align_bars(tempo_map, mono, samplerate)
+    meter = detect_meter(
+        tempo_map_from_segments(choice.segments),
+        mono,
+        samplerate,
+        drums,
+        harmonic,
+        bass,
+        allow_rescaling=bpm_override is None,
+    )
     return TempoAnalysis(
-        tempo_map=tempo_map,
+        tempo_map=meter.tempo_map,
         bpm=choice.bpm,
         method=choice.method,
         decision=choice.decision,
@@ -974,7 +935,6 @@ def estimate_tempo_map(
         one_tempo=choice.one_tempo,
         event_details=choice.details,
         off_tempo_share=off_share,
-        first_downbeat_s=first_downbeat,
-        bar_confidence=bar_confidence,
+        meter=meter,
         estimated_bpm=base_bpm,
     )

@@ -8,7 +8,7 @@ import pytest
 import soundfile as sf
 from conftest import SR, FakeSeparator, click_times, song_stems
 
-from chartgen.chart.simple import build_simple_track
+from chartgen.chart.charter import build_expert_track
 from chartgen.cli import main
 from chartgen.clonehero.validate import validate_chart_text, validate_song_folder
 from chartgen.core.model import Difficulty, Instrument, SongMetadata
@@ -77,7 +77,7 @@ def test_guitar_notes_follow_the_clicks(song_file, tmp_path):
     folder = build_song(config(song_file, tmp_path), FakeSeparator(song_stems())).folder
     analysis = json.loads((folder / "analysis.json").read_text(encoding="utf-8"))
     expected = len(click_times(120, 20, 0.5))
-    assert analysis["charts"]["guitar"]["expert"]["notes"] == pytest.approx(expected, abs=2)
+    assert analysis["charts"]["guitar"]["expert"]["positions"] == pytest.approx(expected, abs=2)
     assert analysis["tempo"]["bpm"] == pytest.approx(120, abs=0.1)
     assert analysis["tempo"]["method"] == "constant"
 
@@ -169,41 +169,41 @@ def test_stages_are_reported_with_durations(song_file, tmp_path, caplog):
     assert "[7/7] Validate done in" in caplog.text
 
 
-# ---------------------------------------------------------------- simple charter
+# ---------------------------------------------------------------- charter
 
 
-def test_simple_track_snaps_clicks_to_the_grid_and_stays_playable():
+def test_track_snaps_clicks_to_the_grid_and_stays_playable():
     from conftest import clicks_at
 
     truth = click_times(120, 20, 0.5)
     tempo_map = TempoMap([TempoEvent(0, 120.0)])
-    result = build_simple_track(
+    result = build_expert_track(
         Instrument.GUITAR, clicks_at(truth, 20, 22050), tempo_map, 20.0, samplerate=22050
     )
     ticks = np.array([note.tick for note in result.track.notes])
     assert result.track.difficulty is Difficulty.EXPERT
-    assert len(ticks) == len(truth)
+    assert len(set(ticks)) == len(truth)
     assert np.all(ticks % 48 == 0), "every click at 120 BPM lies on the sixteenth grid"
     lanes = [note.lane for note in result.track.notes]
     assert all(0 <= lane <= 4 for lane in lanes)
-    assert all(abs(a - b) <= 2 for a, b in zip(lanes, lanes[1:]))
 
 
-def test_simple_track_enforces_a_minimum_note_gap():
+def test_track_enforces_a_minimum_note_gap():
     from conftest import clicks_at
 
     truth = np.arange(0.5, 10, 0.06)
     tempo_map = TempoMap([TempoEvent(0, 120.0)])
-    result = build_simple_track(
+    result = build_expert_track(
         Instrument.GUITAR, clicks_at(truth, 10, 22050), tempo_map, 10.0, samplerate=22050
     )
-    times = tempo_map.seconds_at(np.array([note.tick for note in result.track.notes], dtype=float))
+    ticks = sorted({note.tick for note in result.track.notes})
+    times = tempo_map.seconds_at(np.array(ticks, dtype=float))
     assert np.diff(times).min() >= 0.09 - 1e-6
 
 
-def test_simple_track_on_silence_has_no_notes():
+def test_track_on_silence_has_no_notes():
     tempo_map = TempoMap([TempoEvent(0, 120.0)])
-    result = build_simple_track(
+    result = build_expert_track(
         Instrument.GUITAR, np.zeros(22050 * 5, dtype=np.float32), tempo_map, 5.0, samplerate=22050
     )
     assert result.track.notes == []

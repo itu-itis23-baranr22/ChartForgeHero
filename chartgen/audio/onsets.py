@@ -24,6 +24,8 @@ N_FFT = 1024
 ENVELOPE_LATENCY_S = 0.014
 """Envelope peaks trail the attack: measured 9 ms on clicks, 17-20 ms on plucked tones."""
 _SILENT_RMS = 1e-4
+_BEFORE_FRAMES = 6
+_PEAK_FRAMES = 3
 
 
 @dataclass(frozen=True)
@@ -33,13 +35,22 @@ class OnsetConfig:
     threshold_window_s: float = 1.5
     """Length of the sliding window the adaptive threshold looks at."""
     threshold_mad_k: float = 3.0
-    """How many median absolute deviations above the local median a peak must reach."""
+    """How many median absolute deviations above the local median a peak must reach. Higher
+    values cost real notes: at 6, a real guitar stem lost 13 points of a human chart's notes."""
+    local_ratio: float = 1.75
+    """A peak must also reach this multiple of the local median, which is what rejects
+    stationary noise: its envelope has a high floor, a guitar's does not."""
+    min_rise: float = 0.7
+    """The level at a peak must reach this share of the level shortly before it. The end of a
+    note can spike the envelope as well, but only an attack does not lose energy. Comparing
+    with the level after the peak instead would reject short hits, which are gone by then."""
     floor_ratio: float = 0.08
     """Peaks below this fraction of the stem's strongest onsets are always rejected."""
-    min_strength: float = 2.0
-    """Absolute envelope floor. The envelope is level-independent, so sustained sounds
-    leave ripple that a purely relative threshold would accept. Measured on synthetic
-    audio: steady tones stay below 0.1, white noise below 3.1, real attacks reach 4 or more."""
+    min_strength: float = 1.5
+    """Absolute envelope floor. The envelope is level-independent, so sustained sounds leave
+    ripple that a purely relative threshold would accept: steady tones stay below 0.1. Real
+    music needs it this low: at 2.0, a real guitar stem lost 15 points of the human chart's
+    notes."""
     min_gap_s: float = 0.05
     """Minimum distance between two detected onsets."""
     latency_s: float = ENVELOPE_LATENCY_S
@@ -91,9 +102,13 @@ def detect_onsets(
         return empty
     floor = max(cfg.floor_ratio * float(np.percentile(strong, 99)), cfg.min_strength)
     threshold = np.maximum(local_median + cfg.threshold_mad_k * local_mad, floor)
+    threshold = np.maximum(threshold, cfg.local_ratio * local_median)
 
     distance = max(1, int(cfg.min_gap_s * samplerate / HOP_LENGTH))
     peaks, _ = find_peaks(envelope, height=threshold, distance=distance)
+    before = rms[np.maximum(peaks - _BEFORE_FRAMES, 0)]
+    around = np.array([rms[peak : peak + _PEAK_FRAMES].max() for peak in peaks])
+    peaks = peaks[around >= cfg.min_rise * before] if peaks.size else peaks
     times = librosa.frames_to_time(peaks, sr=samplerate, hop_length=HOP_LENGTH) - cfg.latency_s
     keep = times >= 0
     return OnsetResult(times[keep], envelope[peaks][keep])

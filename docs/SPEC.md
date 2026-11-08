@@ -27,9 +27,40 @@ Decisions made since it was written are listed first and take precedence.
    gets an event. Each event must measurably bring onsets closer to the grid or it is merged away, and
    `analysis.json` records its reason and gain. Regions can stay over the limit when an event there
    would not help, which the decision text states.
-8. **Reference chart.** The owner's Harmonix `.sng` of one song holds a human tempo map and chart, used
-   as an objective yardstick. It is a single song, so limits must not be tuned to it alone, and no part
-   of it may enter the repository.
+8. **Bars read stems.** The tempo still comes from the original mix as specified, but bar phase uses
+   the separated drums, bass and pitched stems when available: clearer on every measured song
+   and about ten times faster. Without stems it falls back to a harmonic/percussive split of the mix.
+9. **Chords are part of B1**, at the owner's request. A distorted-chord alternative such as
+   `basic-pitch` must not be added before checking version, license and Windows/Python compatibility
+   and asking the owner.
+10. **Reference charts.** The owner's human-made charts are the objective yardstick. They live outside
+   the repository, in `references/train/` and `references/test/`, and `chartgen evaluate` reports the
+   two apart. Weights and thresholds may be tuned on `train` only. Californication was used for tuning,
+   so it is `train`. New references go to `test`: measure them first, tune nothing, then ask the owner.
+11. **Vocal bleed.** A note is removed if the vocals are louder than the stem at that moment, the stem
+   is well below its usual level and it does not stay. Vocal loudness alone would remove real guitar.
+   Limits are in `chartgen/audio/vocal_bleed.toml`; `analysis.json` lists every vocal-dominant note,
+   whether it was removed and why.
+12. **The direction target of 65% is deferred.** 60% was accepted by the owner for now; it is to be
+   measured again on test references.
+13. **The median-based chord limit is a temporary measure** for heavy distortion. It warns in the
+   terminal and in `analysis.json` whenever it is in force.
+14. **No commit unless everything passes.** `scripts/check.ps1` runs the tests and the validator; the
+   hook in `.githooks` runs it on every commit (`git config core.hooksPath .githooks`).
+
+## Phase B1 targets (one reference song so far)
+
+| Metric | Before B1 | Target |
+|---|---|---|
+| Note position F1 (70 ms) | 0.72 | at least 0.72 |
+| Direction when the human changes lane | 47% | at least 65% |
+| Direction over all steps | 41% | at least 60% |
+| Chord or single note agreement | no chords | at least 65% |
+| Sustain F1 | no sustains | at least 50% |
+| Bars agreeing with the human | 97.7% (4/4 assumed) | at least 95%, now detected |
+
+Also: 5 real songs read as 4/4; low bar confidence warns and is written to `analysis.json`; bars
+improve on `LastResort.wav`; a bot plays the result; the owner plays one song and approves it.
 
 ## Goal
 

@@ -22,6 +22,7 @@ from chartgen.audio.io import ANALYSIS_SAMPLERATE, AudioData, analysis_mono, loa
 from chartgen.audio.presence import StemPresence, analyze_presence
 from chartgen.audio.separation import STEM_NAMES, Separator, StemSet, separate_with_cache
 from chartgen.audio.tempo import DEFAULT_MAX_BEAT_DRIFT_S, TempoAnalysis, estimate_tempo_map
+from chartgen.chart.charter import ChartedTrack
 from chartgen.chart.instruments import (
     CHARTABLE_INSTRUMENTS,
     STEM_FOR_INSTRUMENT,
@@ -39,7 +40,7 @@ from chartgen.clonehero.package import (
 )
 from chartgen.clonehero.song_ini import SongIni, difficulty_tier, render_song_ini
 from chartgen.clonehero.validate import validate_song_folder
-from chartgen.core.model import Chart, Instrument, SongMetadata, Track
+from chartgen.core.model import Chart, Instrument, SongMetadata
 from chartgen.errors import ChartValidationError, NoPlayableInstrumentError, PackagingError
 
 log = logging.getLogger(__name__)
@@ -103,8 +104,9 @@ def _build_tracks(
     presence: dict[str, StemPresence],
     tempo: TempoAnalysis,
     warnings: list[str],
-) -> list[Track]:
-    tracks: list[Track] = []
+) -> list[ChartedTrack]:
+    charted: list[ChartedTrack] = []
+    vocals = analysis_mono(stems.stems["vocals"], stems.samplerate)
     for instrument in sorted(config.instruments, key=lambda item: item.value):
         stem = STEM_FOR_INSTRUMENT[instrument]
         if not presence[stem].present:
@@ -120,11 +122,39 @@ def _build_tracks(
             )
             continue
         mono = analysis_mono(stems.stems[stem], stems.samplerate)
-        built = build_tracks_for(instrument, mono, tempo.tempo_map, stems.duration_s)
+        built = build_tracks_for(instrument, mono, tempo.tempo_map, stems.duration_s, vocals)
         if not built:
             warnings.append(f"{instrument.value}: no notes detected in the {stem} stem")
-        tracks.extend(built)
-    return tracks
+        for item in built:
+            _report_track(instrument, item, warnings)
+        charted.extend(built)
+    return charted
+
+
+def _report_track(instrument: Instrument, item: ChartedTrack, warnings: list[str]) -> None:
+    """Say what was removed as vocal bleed, and whether the temporary chord limit is on."""
+    removed = [note for note in item.bleed if note.removed]
+    if removed:
+        log.info(
+            "    %s: removed %d notes as vocal bleed, at %s s",
+            instrument.value,
+            len(removed),
+            ", ".join(f"{note.time_s:.1f}" for note in removed),
+        )
+    for note in item.bleed:
+        if note.vocal_dominant:
+            log.debug(
+                "    %8.2f s %s %s",
+                note.time_s,
+                "removed" if note.removed else "kept   ",
+                note.reason(),
+            )
+    if item.chord_limit_adjusted:
+        warnings.append(
+            f"{instrument.value}: this stem is unusually flat, probably heavy distortion, so the "
+            f"temporary chord limit is in force ({item.chord_limit:.2f} instead of the fixed "
+            f"limit). Chords and single notes may be mixed up here."
+        )
 
 
 def _finite_or_none(value: float) -> float | None:
@@ -137,7 +167,7 @@ def _analysis(
     stems: StemSet,
     presence: dict[str, StemPresence],
     tempo: TempoAnalysis,
-    tracks: list[Track],
+    charted: list[ChartedTrack],
     encoded: list[EncodedAudio],
     difficulties: dict[Instrument, int],
     preview_start_ms: int,
@@ -145,13 +175,38 @@ def _analysis(
     timings_s: dict[str, float],
     click_schedule: ClickSchedule | None,
 ) -> dict[str, object]:
-    charts: dict[str, dict[str, dict[str, float]]] = {}
-    for track in tracks:
-        ticks = {note.tick for note in track.notes}
+    charts: dict[str, dict[str, dict[str, object]]] = {}
+    for item in charted:
+        track = item.track
+        per_tick: dict[int, int] = {}
+        for note in track.notes:
+            per_tick[note.tick] = per_tick.get(note.tick, 0) + 1
+        sustained = {note.tick for note in track.notes if note.length > 0}
         charts.setdefault(track.instrument.value, {})[track.difficulty.value] = {
-            "notes": len(track.notes),
-            "chords": len(track.notes) - len(ticks),
-            "notes_per_second": round(len(track.notes) / stems.duration_s, 3),
+            "gems": len(track.notes),
+            "positions": len(per_tick),
+            "chord_positions": sum(count > 1 for count in per_tick.values()),
+            "sustained_positions": len(sustained),
+            "positions_per_second": round(len(per_tick) / stems.duration_s, 3),
+            "chord_limit": {
+                "used": round(item.chord_limit, 3),
+                "temporary_distortion_limit_in_force": item.chord_limit_adjusted,
+            },
+            "vocal_bleed": {
+                "removed_count": sum(note.removed for note in item.bleed),
+                "vocal_dominant_notes": [
+                    {
+                        "time_s": round(note.time_s, 3),
+                        "vocal_over_stem_db": round(note.vocal_over_stem_db, 1),
+                        "stem_level_db": round(note.stem_level_db, 1),
+                        "stem_sustain": round(note.stem_sustain, 2),
+                        "removed": note.removed,
+                        "reason": note.reason() if note.removed else None,
+                    }
+                    for note in item.bleed
+                    if note.vocal_dominant
+                ],
+            },
         }
     return {
         "schema_version": 1,
@@ -184,10 +239,16 @@ def _analysis(
             "one_tempo_fit": tempo.one_tempo and asdict(tempo.one_tempo),
             "off_tempo_share": round(tempo.off_tempo_share, 3),
             "tempo_strength": round(tempo.tempo_strength, 4),
-            "time_signature": "4/4 (assumed, not detected)",
             "time_signature_events": [asdict(s) for s in tempo.tempo_map.time_signatures],
-            "first_downbeat_s": tempo.first_downbeat_s and round(tempo.first_downbeat_s, 3),
-            "bar_confidence": round(tempo.bar_confidence, 3),
+            "meter": tempo.meter
+            and {
+                "time_signature": tempo.meter.label,
+                "first_downbeat_s": tempo.meter.first_downbeat_s
+                and round(tempo.meter.first_downbeat_s, 3),
+                "confidence": round(tempo.meter.confidence, 2),
+                "section_agreement": round(tempo.meter.section_agreement, 2),
+                "low_confidence": tempo.meter.low_confidence,
+            },
         },
         "stems": {
             name: {
@@ -271,10 +332,16 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
             )
 
     with stages.stage("Track tempo on the mix"):
+        pitched = np.sum(
+            [stems.stems[name] for name in ("bass", "guitar", "piano", "other")], axis=0
+        )
         tempo = estimate_tempo_map(
             analysis_mono(audio.samples, audio.samplerate),
             bpm_override=config.bpm_override,
             max_beat_drift_s=config.max_beat_drift_ms / 1000.0,
+            drums=analysis_mono(stems.stems["drums"], stems.samplerate),
+            harmonic=analysis_mono(pitched, stems.samplerate),
+            bass=analysis_mono(stems.stems["bass"], stems.samplerate),
         )
         if tempo.is_fallback:
             warnings.append("beat tracking failed; the chart uses a fixed fallback tempo")
@@ -286,15 +353,25 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
             tempo.on_grid_ratio * 100,
         )
         log.info("    why: %s", tempo.decision)
-        if tempo.first_downbeat_s is not None:
+        meter = tempo.meter
+        if meter is not None and meter.first_downbeat_s is not None:
             log.info(
-                "    first downbeat at %.3f s (confidence %.2f)",
-                tempo.first_downbeat_s,
-                tempo.bar_confidence,
+                "    %s, first downbeat at %.3f s (confidence %.2f, %.0f%% of sections agree)",
+                meter.label,
+                meter.first_downbeat_s,
+                meter.confidence,
+                meter.section_agreement * 100,
             )
+            if meter.low_confidence:
+                warnings.append(
+                    f"bar lines are uncertain (confidence {meter.confidence:.2f}, "
+                    f"{meter.section_agreement:.0%} of sections agree): check where the first "
+                    f"downbeat falls with --click-overlay"
+                )
 
     with stages.stage("Chart instruments"):
-        tracks = _build_tracks(config, stems, presence, tempo, warnings)
+        charted = _build_tracks(config, stems, presence, tempo, warnings)
+        tracks = [item.track for item in charted]
         for track in tracks:
             log.info(
                 "    %s/%s: %d notes",
@@ -327,7 +404,7 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
             for track in tracks:
                 difficulties[track.instrument] = max(
                     difficulties.get(track.instrument, 0),
-                    difficulty_tier(len(track.notes), stems.duration_s),
+                    difficulty_tier(len({note.tick for note in track.notes}), stems.duration_s),
                 )
             (temporary / "song.ini").write_text(
                 render_song_ini(
@@ -358,7 +435,7 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
             stems,
             presence,
             tempo,
-            tracks,
+            charted,
             encoded,
             difficulties,
             preview_start_ms,
