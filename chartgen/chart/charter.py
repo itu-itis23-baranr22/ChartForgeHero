@@ -17,6 +17,7 @@ from chartgen.audio.pitch import (
 )
 from chartgen.audio.sustain import SustainConfig, note_durations
 from chartgen.audio.vocal_bleed import BleedThresholds, NoteBleed, analyze_bleed
+from chartgen.chart.difficulty import LevelMeasures, Position, SoftTargetResult
 from chartgen.chart.fret_mapping import FretWeights, NoteInput, map_notes
 from chartgen.core.model import ChartNote, Difficulty, Instrument, Track
 from chartgen.core.timing import TempoMap
@@ -45,6 +46,11 @@ class ChartedTrack:
     chord_limit: float = 0.0
     chord_limit_adjusted: bool = False
     """Whether the song is so flat that the temporary median-based chord limit is in force."""
+    positions: tuple[Position, ...] = ()
+    """What the reduction to lower difficulties works from. Expert only."""
+    measures: LevelMeasures | None = None
+    soft_targets: tuple[SoftTargetResult, ...] = ()
+    """How this level compares with its soft targets."""
 
 
 def _quantize(times: np.ndarray, tempo_map: TempoMap) -> np.ndarray:
@@ -118,7 +124,7 @@ def build_expert_track(
 
     ticks = _quantize(times, tempo_map)
     chosen = _thin_out(ticks, strengths, tempo_map)
-    times, ticks = times[chosen], ticks[chosen]
+    times, ticks, strengths = times[chosen], ticks[chosen], strengths[chosen]
     next_times = np.r_[times[1:], duration_s]
 
     bleed: tuple[NoteBleed, ...] = ()
@@ -127,7 +133,7 @@ def build_expert_track(
             analyze_bleed(mono, vocals, times, next_times, samplerate, bleed_thresholds)
         )
         kept = np.array([not note.removed for note in bleed], dtype=bool)
-        times, ticks = times[kept], ticks[kept]
+        times, ticks, strengths = times[kept], ticks[kept], strengths[kept]
         next_times = np.r_[times[1:], duration_s]
         if times.size == 0:
             return ChartedTrack(
@@ -152,6 +158,12 @@ def build_expert_track(
     ]
     cfg = pitch_config or PitchConfig()
     limit = chord_limit_for([pitch.flatness for pitch in pitches if pitch.is_known], cfg)
+    positions = tuple(
+        Position(int(tick), float(time), shape, int(length), float(strength), float(value))
+        for tick, time, shape, length, strength, value in zip(
+            ticks, placed, shapes, lengths, strengths, contour
+        )
+    )
     return ChartedTrack(
         Track(instrument, Difficulty.EXPERT, notes),
         int(onsets.times.size),
@@ -159,4 +171,5 @@ def build_expert_track(
         bleed,
         limit,
         limit > cfg.chord_flatness,
+        positions,
     )

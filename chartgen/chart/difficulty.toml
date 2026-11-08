@@ -1,0 +1,120 @@
+# How Expert is reduced to Hard, Medium and Easy. Every value here is a preference.
+#
+# The rules that must always hold live in chartgen/chart/difficulty.py and cannot be weakened from
+# this file: positions form a chain Easy < Medium < Hard < Expert, Easy has no chords and no orange,
+# Medium has no orange and chords of at most two notes, a sustain never runs into the next note,
+# and every phrase of more than four notes keeps a note on Easy. Loading refuses values that would
+# break them.
+
+# What makes a note worth keeping. The score of a note is the sum of what applies to it.
+[importance]
+# Where the note falls in the bar. "strong_beat" is the middle of an even bar, beat 3 in 4/4.
+downbeat = 1.0
+strong_beat = 1.0
+beat = 0.6
+eighth = 0.4
+sixteenth = 0.05
+# How hard the note is struck, compared with the rest of the song, from 0 to this.
+onset_strength = 0.3
+# A held note sounds like an arrival, and the last note of a phrase like an ending.
+sustain = 0.15
+phrase_end = 0.2
+
+# position_ratio: the share of Expert's positions this level aims for.
+# min_gap_s: the selection keeps notes at least this far apart.
+# top_lane: the highest fret this level may use, from 0 (green) to 4 (orange).
+# lane_map: where each Expert fret would like to land. Viterbi may move a note to follow the
+#   melody, at a cost of "fidelity" per fret.
+# chord_lane_map, chord_fidelity: the same for chords, going by their lowest note. They default to
+#   lane_map and fidelity. Low frets, as in human charts, but only weakly: a strong pull makes most
+#   chords the same shape, which note F1 cannot see and a player can.
+# min_sustain_beats: a shorter sustain becomes a plain note on this level.
+# keep_auto_hopos: whether notes that the game would turn into HOPOs stay that way. When false, each
+#   one gets a force flag, which makes it a strum.
+#
+# [*.soft_targets] are [low, high] ranges. Outside one, a build warns in the terminal and in
+# analysis.json but does not fail, and neither do the tests. They come from one calm song, so they
+# are to be set again once test references exist.
+#
+# auto_hopo_share counts notes that the game would turn into HOPOs by itself, before any force flag.
+# It depends more on style than on quality: fast chords cannot be HOPOs and fast single notes can.
+# In the one song measured the human guitar has 0.9% on Expert and the human bass 12.3%.
+#
+# lane_shares is how often each fret appears in the human chart measured so far, and each one may
+# stray by this much. chartgen evaluate uses the same limit against the human chart of each song.
+[lane_targets]
+tolerance = 0.10
+
+[expert]
+lane_shares = [0.246, 0.223, 0.192, 0.291, 0.048]
+
+[expert.soft_targets]
+auto_hopo_share = [0.0, 0.05]
+
+[hard]
+lane_shares = [0.318, 0.287, 0.223, 0.110, 0.062]
+position_ratio = 0.67
+min_gap_s = 0.15
+top_lane = 4
+lane_map = [0, 1, 2, 3, 4]
+chord_lane_map = [0, 0, 0, 1, 2]
+fidelity = 8.0
+chord_fidelity = 1.5
+min_sustain_beats = 0.75
+keep_auto_hopos = true
+# Whether Expert's three-note chords stay whole on this level, instead of keeping the lowest two.
+three_note_chords = false
+
+[hard.soft_targets]
+position_ratio = [0.60, 0.75]
+chord_share = [0.40, 0.70]
+orange_share = [0.0, 0.10]
+on_beat_share = [0.50, 1.0]
+sixteenth_share = [0.0, 0.05]
+min_gap_s = [0.15, inf]
+sustain_share = [0.09, 0.29]
+auto_hopo_share = [0.0, 0.03]
+
+[medium]
+lane_shares = [0.309, 0.285, 0.275, 0.129, 0.002]
+position_ratio = 0.44
+min_gap_s = 0.30
+top_lane = 3
+lane_map = [0, 1, 1, 2, 3]
+chord_lane_map = [0, 0, 0, 1, 2]
+fidelity = 3.0
+chord_fidelity = 1.5
+min_sustain_beats = 1.0
+keep_auto_hopos = false
+
+[medium.soft_targets]
+position_ratio = [0.37, 0.50]
+chord_share = [0.40, 0.70]
+on_beat_share = [0.70, 1.0]
+sixteenth_share = [0.0, 0.05]
+min_gap_s = [0.30, inf]
+sustain_share = [0.06, 0.26]
+auto_hopo_share = [0.0, 0.01]
+
+[easy]
+lane_shares = [0.339, 0.339, 0.306, 0.012, 0.004]
+position_ratio = 0.28
+min_gap_s = 0.50
+top_lane = 2
+lane_map = [0, 1, 1, 2, 2]
+fidelity = 0.5
+min_sustain_beats = 1.0
+keep_auto_hopos = false
+
+# On the easiest level the pulse is the half note: beats 2 and 4 matter less than a strong off-beat.
+[easy.importance]
+beat = 0.2
+
+[easy.soft_targets]
+position_ratio = [0.22, 0.33]
+blue_share = [0.0, 0.05]
+on_beat_share = [0.65, 1.0]
+sixteenth_share = [0.0, 0.05]
+min_gap_s = [0.50, inf]
+sustain_share = [0.10, 0.30]
+auto_hopo_share = [0.0, 0.01]

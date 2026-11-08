@@ -103,6 +103,13 @@ def test_analysis_records_the_whole_build(song_file, tmp_path):
     assert analysis["tempo"]["max_beat_drift_limit_ms"] == 25.0
     assert analysis["click_overlay"] is None
     assert analysis["song_ini"]["difficulty"]["guitar"] >= 0
+    assert set(analysis["charts"]["guitar"]) == {"expert", "hard", "medium", "easy"}
+    assert len(analysis["difficulty_hard_rules"]) == 5
+    for level in ("hard", "medium", "easy"):
+        assert analysis["charts"]["guitar"][level]["soft_targets"]
+        assert "auto_hopo_share" in analysis["charts"]["guitar"][level]["measures"]
+    assert "auto_hopo_share" in analysis["charts"]["guitar"]["expert"]["measures"]
+    assert "soft_targets" in analysis["charts"]["guitar"]["hard"]
     assert set(analysis["timings_s"]) == {
         "Load audio",
         "Separate stems",
@@ -112,6 +119,29 @@ def test_analysis_records_the_whole_build(song_file, tmp_path):
         "Package song folder",
         "Validate",
     }
+
+
+@pytest.mark.heavy
+def test_build_writes_four_difficulties_in_their_chain(song_file, tmp_path):
+    folder = build_song(config(song_file, tmp_path), FakeSeparator(song_stems())).folder
+    chart = (folder / "notes.chart").read_text(encoding="utf-8-sig")
+    _, report = validate_chart_text(chart)
+    assert report.ok, report.errors
+    for name in ("ExpertSingle", "HardSingle", "MediumSingle", "EasySingle"):
+        assert f"[{name}]" in chart
+
+
+@pytest.mark.heavy
+def test_a_missed_soft_target_warns_but_the_build_succeeds(song_file, tmp_path, caplog):
+    """The click song has no chords at all, so it cannot reach the chord share of Hard."""
+    with caplog.at_level(logging.INFO, logger="chartgen"):
+        result = build_song(config(song_file, tmp_path), FakeSeparator(song_stems()))
+    warnings = result.analysis["warnings"]
+    assert any("guitar/hard is outside its soft targets" in warning for warning in warnings)
+    assert "guitar/hard is outside its soft targets" in caplog.text
+    chord_share = result.analysis["charts"]["guitar"]["hard"]["soft_targets"]["chord_share"]
+    assert chord_share["in_range"] is False
+    assert validate_song_folder(result.folder).ok
 
 
 @pytest.mark.heavy

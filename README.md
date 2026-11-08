@@ -13,13 +13,13 @@ It only processes files you give it. It does not download audio or touch streami
 | A | Stem separation, packaging, simple onset-based guitar chart | Done |
 | Tempo check | `--click-overlay`, `--bpm`, `--max-beat-drift-ms`, explained tempo events | Done |
 | B1 | Time signature, chords, sustains, Viterbi fret mapping, vocal bleed removal (Expert) | Done |
-| B2 | Difficulty reduction to Hard, Medium and Easy | Planned |
+| B2 | Difficulty reduction to Hard, Medium and Easy | Done |
 | B3 | Bass and keys; a song no longer needs a guitar | Planned |
 | C | Drums: percussion classification, four difficulties | Planned |
 | D | Vocal events, sections, star power | Planned |
 
-There is one difficulty so far, and only guitar is charted: until Phases B3 and C, a song whose
-guitar stem is rejected as absent cannot be built. Telling chords from single notes on heavily
+Only guitar is charted so far, at all four difficulties: until Phases B3 and C, a song whose guitar
+stem is rejected as absent cannot be built. Telling chords from single notes on heavily
 distorted guitar is unverified. 3/4 and 6/8 have only been tested on synthetic audio.
 
 See [docs/SPEC.md](docs/SPEC.md) for the full specification.
@@ -68,7 +68,7 @@ The song appears in `outputs/Artist - Title/`:
 Preview it with bot players, without scanning your library:
 
 ```
-"<path to Clone Hero.exe>" --song "<song folder>" --player Guitar,Expert -i
+"<path to Clone Hero.exe>" --song "<song folder>" --player Guitar,Expert --player Guitar,Hard --player Guitar,Medium --player Guitar,Easy -i
 ```
 
 To add it to your library, copy the folder into Clone Hero's `Songs` folder and press
@@ -102,9 +102,16 @@ Weights and thresholds may only be tuned on `train`, whose scores are flattered 
 reference goes to `test`, and is measured before anything else happens.
 `CHARTGEN_REFERENCE_DIR=references pytest -m slow` runs this as a test.
 
+The report shows each difficulty next to the human's, along with what two naive reductions of the same
+Expert chart would score: deleting every Nth note, and keeping beats first. It also says how far each
+lane's share is from the human's (10 points is the limit, which only warns) and which soft targets a
+level misses.
+
 The weights of the fret mapper all live in `chartgen/chart/fret_weights.toml`. The rules that keep a
 chart playable are in `chartgen/chart/fret_mapping.py`, and tests check them under random weights.
-The limits for vocal bleed live in `chartgen/audio/vocal_bleed.toml`.
+The limits for vocal bleed live in `chartgen/audio/vocal_bleed.toml`. How difficulties are reduced
+lives in `chartgen/chart/difficulty.toml`, whose soft targets only warn. The rules that always hold are in
+`chartgen/chart/difficulty.py`, and the file cannot weaken them.
 
 ## How it works
 
@@ -125,7 +132,12 @@ The limits for vocal bleed live in `chartgen/audio/vocal_bleed.toml`.
    previous note, whether it is a chord, and how long it rings.
 7. **Map to frets** with the Viterbi algorithm, following the contour within each phrase and never a
    fixed pitch for each fret, so the same riff played higher elsewhere keeps its shape.
-8. **Package and verify**: every encoded file is decoded again and must match its source's length
+8. **Reduce to Hard, Medium and Easy**: each level keeps the notes that matter most from the level
+   above: where they fall in the bar, how hard they are struck, whether they are held, where they sit
+   in their phrase. A phrase's first note always stays. Chords keep their lowest notes, and Viterbi
+   then fits the result to the frets the level allows. Medium and Easy turn automatic HOPOs into
+   strums. `analysis.json` holds each level's numbers and which soft targets it missed.
+9. **Package and verify**: every encoded file is decoded again and must match its source's length
    exactly with zero lag, and the finished folder must pass an independent validator. The folder
    appears only once all of that succeeded, so a failed build leaves nothing behind.
 
@@ -145,7 +157,7 @@ The code is layered so that `chartgen.core` knows nothing about Clone Hero:
 chartgen/
   core/       chart model, tempo map, exporter interface
   audio/      loading, separation, presence, tempo, meter, onsets, pitch, sustain, vocal bleed
-  chart/      stems to tracks: charter, fret mapping and its weights
+  chart/      stems to tracks: charter, fret mapping, difficulty reduction, HOPOs, and their settings
   clonehero/  .chart and song.ini writers, packaging, validation
   evaluation/ reference charts and metrics
   pipeline.py the build, stage by stage

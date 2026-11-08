@@ -149,7 +149,8 @@ def _run_build(args: argparse.Namespace) -> int:
     executable = os.environ.get("CLONE_HERO_EXE", "<path to Clone Hero.exe>")
     log.info("Song folder: %s", result.folder.resolve())
     log.info(
-        'Preview with: "%s" --song "%s" --player Guitar,Expert -i',
+        'Preview with: "%s" --song "%s" --player Guitar,Expert --player Guitar,Hard '
+        "--player Guitar,Medium --player Guitar,Easy -i",
         executable,
         result.folder.resolve(),
     )

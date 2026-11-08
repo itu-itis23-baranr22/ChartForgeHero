@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import configparser
 import tempfile
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 
 from chartgen.audio.io import AudioData
-from chartgen.clonehero.validate import ValidationReport, parse_chart
+from chartgen.chart.hopo import natural_hopo_ticks
+from chartgen.clonehero.validate import ParsedEvent, ValidationReport, parse_chart
+from chartgen.core.model import Difficulty
 from chartgen.errors import ChartgenError
 from chartgen.evaluation.formats import MidiChart, SngFile, open_sng, parse_midi
 
@@ -22,9 +24,23 @@ SPLIT_UNASSIGNED = "unassigned"
 
 AUDIO_SUFFIXES = frozenset({".opus", ".ogg", ".mp3", ".wav", ".flac"})
 _NOT_THE_SONG = frozenset({"preview", "crowd"})
-_MIDI_EXPERT_BASE = 96
+_MIDI_BASE = {
+    Difficulty.EXPERT: 96,
+    Difficulty.HARD: 84,
+    Difficulty.MEDIUM: 72,
+    Difficulty.EASY: 60,
+}
+_MIDI_FORCE_HOPO = 5
+_MIDI_FORCE_STRUM = 6
+"""Above each level's green, these notes mark a span in which notes are forced."""
 _MAIN_TRACK = "PART GUITAR"
-_CHART_SECTION = "ExpertSingle"
+_CHART_SECTIONS = {
+    Difficulty.EXPERT: "ExpertSingle",
+    Difficulty.HARD: "HardSingle",
+    Difficulty.MEDIUM: "MediumSingle",
+    Difficulty.EASY: "EasySingle",
+}
+_CHART_FORCE = 5
 _PEAK = 0.95
 
 
@@ -33,6 +49,10 @@ class ReferenceNote:
     time_s: float
     lanes: tuple[int, ...]
     length_s: float
+    tick: int = 0
+    length_ticks: int = 0
+    hopo: bool = False
+    """Whether the game plays this note as a HOPO, force markers included."""
 
 
 @dataclass(frozen=True)
@@ -44,7 +64,12 @@ class ReferenceSong:
     beats: np.ndarray
     bars: np.ndarray
     notes: tuple[ReferenceNote, ...]
+    """The Expert notes."""
     signatures: tuple[tuple[int, int], ...]
+    resolution: int = 192
+    levels: Mapping[Difficulty, tuple[ReferenceNote, ...]] = field(default_factory=dict)
+    """The notes of every difficulty the chart has, Expert included."""
+    is_midi: bool = False
 
 
 class _Clock:
@@ -98,8 +123,40 @@ def _group_notes(
         start = float(clock.seconds_at(np.array([float(tick)]))[0])
         longest = max(length for _, length in members)
         end = float(clock.seconds_at(np.array([float(tick + longest)]))[0])
-        notes.append(ReferenceNote(start, tuple(sorted(lane for lane, _ in members)), end - start))
+        lanes = tuple(sorted(lane for lane, _ in members))
+        notes.append(ReferenceNote(start, lanes, end - start, tick, longest))
     return tuple(notes)
+
+
+def _midi_level(
+    midi: MidiChart, clock: _Clock, level: Difficulty, division: int
+) -> tuple[ReferenceNote, ...]:
+    """Read one difficulty of the main track, with its force markers applied."""
+    base = _MIDI_BASE[level]
+    track = midi.tracks[_MAIN_TRACK].notes
+    notes = _group_notes(
+        ((tick, note - base, length) for tick, note, length in track if base <= note <= base + 4),
+        clock,
+    )
+    natural = natural_hopo_ticks(
+        [(note.tick, note.lanes) for note in notes], division, midi_subset_exception=True
+    )
+    spans = {
+        marker: [(tick, tick + length) for tick, note, length in track if note == base + marker]
+        for marker in (_MIDI_FORCE_HOPO, _MIDI_FORCE_STRUM)
+    }
+
+    def inside(tick: int, marker: int) -> bool:
+        return any(start <= tick < end for start, end in spans[marker])
+
+    return tuple(
+        replace(
+            note,
+            hopo=(note.tick in natural or inside(note.tick, _MIDI_FORCE_HOPO))
+            and not inside(note.tick, _MIDI_FORCE_STRUM),
+        )
+        for note in notes
+    )
 
 
 def _mix(sources: list[tuple[np.ndarray, int]]) -> AudioData:
@@ -128,15 +185,47 @@ def _from_midi(
         [(tick, micros / 1e6 / midi.division) for tick, micros in midi.tempos], delay_s
     )
     beats, bars = _beats_and_bars(clock, midi.division, midi.signatures, audio.duration_s)
-    gems = [
-        (tick, note - _MIDI_EXPERT_BASE, length)
-        for tick, note, length in midi.tracks[_MAIN_TRACK].notes
-        if _MIDI_EXPERT_BASE <= note <= _MIDI_EXPERT_BASE + 4
-    ]
-    if not gems:
+    levels = {
+        level: notes
+        for level in _MIDI_BASE
+        if (notes := _midi_level(midi, clock, level, midi.division))
+    }
+    if Difficulty.EXPERT not in levels:
         raise ChartgenError(f"{name}: the chart has no Expert guitar notes")
     signatures = tuple(sorted({(n, d) for _, n, d in midi.signatures})) or ((4, 4),)
-    return ReferenceSong(name, source, audio, beats, bars, _group_notes(gems, clock), signatures)
+    return ReferenceSong(
+        name,
+        source,
+        audio,
+        beats,
+        bars,
+        levels[Difficulty.EXPERT],
+        signatures,
+        midi.division,
+        levels,
+        is_midi=True,
+    )
+
+
+def _chart_level(
+    events: list[ParsedEvent], clock: _Clock, resolution: int
+) -> tuple[ReferenceNote, ...]:
+    """Read one difficulty of a ``.chart``. Its force flag flips what the note would naturally be."""
+    gems = []
+    flipped: set[int] = set()
+    for event in events:
+        parts = event.args.split()
+        if event.type != "N" or len(parts) != 2:
+            continue
+        if int(parts[0]) in range(5):
+            gems.append((event.tick, int(parts[0]), int(parts[1])))
+        elif int(parts[0]) == _CHART_FORCE:
+            flipped.add(event.tick)
+    notes = _group_notes(gems, clock)
+    natural = natural_hopo_ticks([(note.tick, note.lanes) for note in notes], resolution)
+    return tuple(
+        replace(note, hopo=(note.tick in natural) != (note.tick in flipped)) for note in notes
+    )
 
 
 def _from_chart(
@@ -158,17 +247,19 @@ def _from_chart(
             signatures.append((event.tick, int(parts[0]), 2**exponent))
     if not tempos:
         raise ChartgenError(f"{name}: the chart has no tempo events")
-    gems = []
-    for event in parsed.sections.get(_CHART_SECTION, []):
-        parts = event.args.split()
-        if event.type == "N" and len(parts) == 2 and int(parts[0]) in range(5):
-            gems.append((event.tick, int(parts[0]), int(parts[1])))
-    if not gems:
-        raise ChartgenError(f"{name}: the chart has no [{_CHART_SECTION}] notes")
     clock = _Clock(tempos, delay_s)
+    levels = {
+        level: notes
+        for level, section in _CHART_SECTIONS.items()
+        if (notes := _chart_level(parsed.sections.get(section, []), clock, resolution))
+    }
+    if Difficulty.EXPERT not in levels:
+        raise ChartgenError(f"{name}: the chart has no [{_CHART_SECTIONS[Difficulty.EXPERT]}] notes")
     beats, bars = _beats_and_bars(clock, resolution, signatures, audio.duration_s)
     plain = tuple(sorted({(n, d) for _, n, d in signatures})) or ((4, 4),)
-    return ReferenceSong(name, source, audio, beats, bars, _group_notes(gems, clock), plain)
+    return ReferenceSong(
+        name, source, audio, beats, bars, levels[Difficulty.EXPERT], plain, resolution, levels
+    )
 
 
 def _is_song_audio(file_name: str) -> bool:

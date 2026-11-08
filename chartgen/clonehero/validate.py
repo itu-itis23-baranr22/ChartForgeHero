@@ -24,6 +24,10 @@ _NUMERIC_ARGS_RE = re.compile(r"^\d+(\s+\d+)*$")
 _FRET_NOTES = frozenset(range(8))
 _DRUM_NOTES = frozenset({0, 1, 2, 3, 4, 5, 32, *range(34, 39), *range(40, 45), 66, 67, 68})
 _STAR_POWER = 2
+_HIGHEST_FRET = 4
+_ORANGE = 4
+_LEVELS_FROM_THE_TOP = ("Expert", "Hard", "Medium", "Easy")
+_MAX_CHORD = {"Medium": 2, "Easy": 1}
 
 _PLAYABLE_SECTIONS: dict[str, Instrument] = {
     f"{difficulty}{section}": instrument
@@ -164,8 +168,47 @@ def _check_track(name: str, events: list[ParsedEvent], report: ValidationReport)
         report.warnings.append(f"[{name}] has no notes")
 
 
+def _gems_by_tick(events: list[ParsedEvent]) -> dict[int, list[tuple[int, int]]]:
+    """Return the ``(fret, length)`` gems of each tick, leaving out force and tap flags."""
+    gems: dict[int, list[tuple[int, int]]] = {}
+    for event in events:
+        parts = event.args.split()
+        if event.type == "N" and len(parts) == 2 and all(part.isdigit() for part in parts):
+            if int(parts[0]) <= _HIGHEST_FRET:
+                gems.setdefault(event.tick, []).append((int(parts[0]), int(parts[1])))
+    return gems
+
+
+def _check_difficulty_rules(parsed: ParsedChart, report: ValidationReport) -> None:
+    """Check the structure every generated chart must have, from the written file alone.
+
+    Upper levels must contain every position of lower ones. Easy has no chords and no orange,
+    Medium has no orange and chords of at most two notes. A sustain never runs into the next note.
+    """
+    for instrument, section in INSTRUMENT_SECTIONS.items():
+        if instrument is Instrument.DRUMS:
+            continue
+        names = [f"{difficulty}{section}" for difficulty in _LEVELS_FROM_THE_TOP]
+        levels = [_gems_by_tick(parsed.sections.get(name, [])) for name in names]
+        written = [(name, gems) for name, gems in zip(names, levels) if gems]
+        for (upper_name, upper), (lower_name, lower) in zip(written, written[1:]):
+            for tick in sorted(set(lower) - set(upper)):
+                report.errors.append(f"[{lower_name}] has tick {tick}, but [{upper_name}] does not")
+        for name, gems in written:
+            limit = _MAX_CHORD.get(name.removesuffix(section))
+            ticks = sorted(gems)
+            for tick, following in zip(ticks, [*ticks[1:], None]):
+                if limit is not None and len(gems[tick]) > limit:
+                    report.errors.append(f"[{name}] tick {tick}: a chord of {len(gems[tick])} notes")
+                if limit is not None and any(fret == _ORANGE for fret, _ in gems[tick]):
+                    report.errors.append(f"[{name}] tick {tick}: orange is not allowed here")
+                longest = max(length for _, length in gems[tick])
+                if following is not None and tick + longest > following:
+                    report.errors.append(f"[{name}] tick {tick}: the sustain runs into the next note")
+
+
 def validate_chart_text(text: str) -> tuple[ParsedChart, ValidationReport]:
-    """Check tick order, section names, note ranges and the mandatory fields."""
+    """Check tick order, section names, note ranges, mandatory fields and difficulty structure."""
     report = ValidationReport()
     parsed = parse_chart(text, report)
 
@@ -185,6 +228,7 @@ def validate_chart_text(text: str) -> tuple[ParsedChart, ValidationReport]:
 
     if not any(parsed.note_count(name) for name in _PLAYABLE_SECTIONS):
         report.errors.append("no playable section contains notes")
+    _check_difficulty_rules(parsed, report)
     return parsed, report
 
 

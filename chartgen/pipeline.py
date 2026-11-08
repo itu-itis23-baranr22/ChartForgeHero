@@ -23,6 +23,7 @@ from chartgen.audio.presence import StemPresence, analyze_presence
 from chartgen.audio.separation import STEM_NAMES, Separator, StemSet, separate_with_cache
 from chartgen.audio.tempo import DEFAULT_MAX_BEAT_DRIFT_S, TempoAnalysis, estimate_tempo_map
 from chartgen.chart.charter import ChartedTrack
+from chartgen.chart.difficulty import HARD_RULES
 from chartgen.chart.instruments import (
     CHARTABLE_INSTRUMENTS,
     STEM_FOR_INSTRUMENT,
@@ -40,7 +41,7 @@ from chartgen.clonehero.package import (
 )
 from chartgen.clonehero.song_ini import SongIni, difficulty_tier, render_song_ini
 from chartgen.clonehero.validate import validate_song_folder
-from chartgen.core.model import Chart, Instrument, SongMetadata
+from chartgen.core.model import Chart, Difficulty, Instrument, SongMetadata
 from chartgen.errors import ChartValidationError, NoPlayableInstrumentError, PackagingError
 
 log = logging.getLogger(__name__)
@@ -155,10 +156,62 @@ def _report_track(instrument: Instrument, item: ChartedTrack, warnings: list[str
             f"temporary chord limit is in force ({item.chord_limit:.2f} instead of the fixed "
             f"limit). Chords and single notes may be mixed up here."
         )
+    _report_level(instrument, item, warnings)
+
+
+def _report_level(instrument: Instrument, item: ChartedTrack, warnings: list[str]) -> None:
+    """Say what a difficulty came to, and warn about every soft target it misses."""
+    measures = item.measures
+    level = item.track.difficulty.value
+    if measures is None:
+        return
+    log.info(
+        "    %s/%s: %d positions (%.0f%% of Expert), chords %.0f%%, on the beat %.0f%%, "
+        "sustains %.0f%%, shortest gap %.2f s, auto HOPO %.1f%%, forced to strum %d",
+        instrument.value,
+        level,
+        measures.positions,
+        measures.position_ratio * 100,
+        measures.chord_share * 100,
+        measures.on_beat_share * 100,
+        measures.sustain_share * 100,
+        measures.min_gap_s,
+        measures.auto_hopo_share * 100,
+        measures.forced_strums,
+    )
+    missed = [target for target in item.soft_targets if not target.in_range]
+    if missed:
+        warnings.append(
+            f"{instrument.value}/{level} is outside its soft targets: "
+            + ", ".join(
+                f"{target.name} {target.value:.2f} (wanted {target.low:g} to {target.high:g})"
+                for target in missed
+            )
+        )
 
 
 def _finite_or_none(value: float) -> float | None:
     return value if math.isfinite(value) else None
+
+
+def _level_analysis(item: ChartedTrack) -> dict[str, object]:
+    """What ``analysis.json`` says about a difficulty: its numbers and its soft targets."""
+    if item.measures is None:
+        return {}
+    measures = asdict(item.measures)
+    measures["min_gap_s"] = _finite_or_none(measures["min_gap_s"])
+    return {
+        "measures": measures,
+        "soft_targets": {
+            target.name: {
+                "value": _finite_or_none(target.value),
+                "low": target.low,
+                "high": _finite_or_none(target.high),
+                "in_range": target.in_range,
+            }
+            for target in item.soft_targets
+        },
+    }
 
 
 def _analysis(
@@ -182,17 +235,20 @@ def _analysis(
         for note in track.notes:
             per_tick[note.tick] = per_tick.get(note.tick, 0) + 1
         sustained = {note.tick for note in track.notes if note.length > 0}
-        charts.setdefault(track.instrument.value, {})[track.difficulty.value] = {
+        entry: dict[str, object] = {
             "gems": len(track.notes),
             "positions": len(per_tick),
             "chord_positions": sum(count > 1 for count in per_tick.values()),
             "sustained_positions": len(sustained),
             "positions_per_second": round(len(per_tick) / stems.duration_s, 3),
-            "chord_limit": {
+            **_level_analysis(item),
+        }
+        if track.difficulty is Difficulty.EXPERT:
+            entry["chord_limit"] = {
                 "used": round(item.chord_limit, 3),
                 "temporary_distortion_limit_in_force": item.chord_limit_adjusted,
-            },
-            "vocal_bleed": {
+            }
+            entry["vocal_bleed"] = {
                 "removed_count": sum(note.removed for note in item.bleed),
                 "vocal_dominant_notes": [
                     {
@@ -206,10 +262,10 @@ def _analysis(
                     for note in item.bleed
                     if note.vocal_dominant
                 ],
-            },
-        }
+            }
+        charts.setdefault(track.instrument.value, {})[track.difficulty.value] = entry
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "chartgen_version": chartgen.__version__,
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "input": {
@@ -270,6 +326,7 @@ def _analysis(
             for item in encoded
         },
         "charts": charts,
+        "difficulty_hard_rules": list(HARD_RULES),
         "song_ini": {
             "preview_start_time_ms": preview_start_ms,
             "difficulty": {inst.value: tier for inst, tier in difficulties.items()},
@@ -372,13 +429,6 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
     with stages.stage("Chart instruments"):
         charted = _build_tracks(config, stems, presence, tempo, warnings)
         tracks = [item.track for item in charted]
-        for track in tracks:
-            log.info(
-                "    %s/%s: %d notes",
-                track.instrument.value,
-                track.difficulty.value,
-                len(track.notes),
-            )
         if not tracks:
             raise NoPlayableInstrumentError(
                 "No requested instrument produced a chart, so the song would be unplayable. "

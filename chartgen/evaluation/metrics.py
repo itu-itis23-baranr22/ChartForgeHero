@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
+from chartgen.chart.difficulty import LevelMeasures, measure_level
 from chartgen.core.model import Track
 from chartgen.core.timing import TempoMap
 from chartgen.evaluation.reference import ReferenceNote
@@ -141,6 +142,41 @@ def chart_metrics(
     result["sustain_share_mine"] = round(float(mine_sustained.mean()), 3)
     result["sustain_share_human"] = round(float(human_sustained.mean()), 3)
     return result
+
+
+def human_level_measures(
+    notes: Sequence[ReferenceNote], resolution: int, expert_positions: int, is_midi: bool
+) -> LevelMeasures:
+    """Measure one difficulty of a human chart the way a generated one is measured."""
+    return measure_level(
+        [(note.tick, note.lanes) for note in notes],
+        [note.length_ticks / resolution > HUMAN_SUSTAIN_BEATS for note in notes],
+        [note.time_s for note in notes],
+        resolution,
+        expert_positions,
+        final_hopos=sum(note.hopo for note in notes),
+        midi_subset_exception=is_midi,
+    )
+
+
+def naive_reductions(ticks: np.ndarray, resolution: int, target: int) -> dict[str, np.ndarray]:
+    """Return what simple reductions of sorted Expert ``ticks`` would keep, as baselines.
+
+    ``every_nth`` deletes evenly, and ``beats_first`` keeps beats, then eighths, then the rest,
+    earliest first. A method that knows about the music has to beat these.
+    """
+    target = min(target, ticks.size)
+    even = np.round(np.linspace(0, ticks.size - 1, target)).astype(np.int64)
+    rank = np.lexsort((np.arange(ticks.size), ticks % (resolution // 2) != 0, ticks % resolution != 0))
+    return {"every_nth": ticks[even], "beats_first": ticks[np.sort(rank[:target])]}
+
+
+def position_f1(
+    mine_times: np.ndarray, human_times: np.ndarray, tolerance_s: float = NOTE_TOLERANCE_S
+) -> float:
+    """Return how well two sets of note times agree."""
+    pairs = match_notes(mine_times, human_times, tolerance_s)
+    return round(_f1(len(pairs) / max(1, mine_times.size), len(pairs) / max(1, human_times.size)), 3)
 
 
 def average(results: Sequence[dict[str, float]]) -> dict[str, float]:

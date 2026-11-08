@@ -132,7 +132,8 @@ def is_playable(shapes: Sequence[tuple[int, ...]], times: Sequence[float]) -> bo
     return True
 
 
-def _phrases(notes: Sequence[NoteInput], gap_s: float) -> np.ndarray:
+def phrase_labels(notes: Sequence[NoteInput], gap_s: float) -> np.ndarray:
+    """Number the phrases: a silence of at least ``gap_s`` between two notes starts a new one."""
     labels = np.zeros(len(notes), dtype=int)
     for index in range(1, len(notes)):
         new_phrase = notes[index].time_s - notes[index - 1].time_s >= gap_s
@@ -163,6 +164,7 @@ def _viterbi(
     known: np.ndarray,
     relative: np.ndarray,
     preferred: np.ndarray | None,
+    extra_cost: np.ndarray | None,
 ) -> np.ndarray:
     pitches = np.array([note.pitch for note in notes], dtype=np.float64)
     shares = np.array(weights.lane_shares)
@@ -181,6 +183,8 @@ def _viterbi(
             cost = cost + weights.register * np.abs(_CENTERS - target)
         if preferred is not None and np.isfinite(preferred[index]):
             cost = cost + weights.consistency * np.abs(_CENTERS - preferred[index])
+        if extra_cost is not None:
+            cost = cost + extra_cost[index]
         return cost
 
     scores = node_cost(0)
@@ -210,6 +214,8 @@ def _viterbi(
         back[index] = np.argmin(total, axis=0)
         scores = total[back[index], np.arange(states)] + node_cost(index)
 
+    if not np.isfinite(scores).any():
+        raise ValueError("no allowed sequence of shapes exists for these notes")
     path = np.zeros(count, dtype=np.int32)
     path[-1] = int(np.argmin(scores))
     for index in range(count - 1, 0, -1):
@@ -218,20 +224,31 @@ def _viterbi(
 
 
 def map_notes(
-    notes: Sequence[NoteInput], weights: FretWeights | None = None
+    notes: Sequence[NoteInput],
+    weights: FretWeights | None = None,
+    extra_cost: np.ndarray | None = None,
+    phrases: np.ndarray | None = None,
 ) -> list[tuple[int, ...]]:
     """Choose a fret shape for every note, in order.
 
     A second pass runs with a preference for keeping each pitch of a phrase on the fret that
     the first pass mostly gave it, so that a repeated riff repeats its frets.
+
+    Args:
+        notes: The notes, in time order.
+        weights: The preferences; by default those in ``fret_weights.toml``.
+        extra_cost: Added per note and shape, ``(notes, len(SHAPES))``. Infinity rules a shape
+            out for that note. Lower difficulties use this to limit the choice.
+        phrases: The phrase number of each note. By default found from the silences, but thinned
+            out notes leave silences that are no phrase ends, so lower difficulties pass Expert's.
     """
     if not notes:
         return []
     chosen = weights or load_weights()
-    labels = _phrases(notes, chosen.phrase_gap_s)
+    labels = phrase_labels(notes, chosen.phrase_gap_s) if phrases is None else phrases
     known = np.array([np.isfinite(note.pitch) for note in notes])
     relative = _relative_pitch(notes, labels, known)
-    first = _viterbi(notes, chosen, labels, known, relative, None)
+    first = _viterbi(notes, chosen, labels, known, relative, None, extra_cost)
 
     preferred = np.full(len(notes), np.nan)
     rounded = np.round([note.pitch if np.isfinite(note.pitch) else -1.0 for note in notes])
@@ -241,5 +258,5 @@ def map_notes(
             same = members[rounded[members] == pitch]
             if same.size >= 2:
                 preferred[same] = float(np.median(_CENTERS[first[same]]))
-    final = _viterbi(notes, chosen, labels, known, relative, preferred)
+    final = _viterbi(notes, chosen, labels, known, relative, preferred, extra_cost)
     return [SHAPES[state] for state in final]

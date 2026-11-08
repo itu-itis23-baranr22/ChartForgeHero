@@ -54,6 +54,33 @@ Decisions made since it was written are listed first and take precedence.
    the model, device kind, seed and shifts. A first build reads its stems back from the cache, so it
    sees the same 24-bit samples as every later build. Checked bit for bit on one CPU. GPU results are
    not verified, neither against each other nor against the CPU, so they never share a cache entry.
+16. **Difficulty rules are split in two.** Hard rules are structural, live in
+   `chartgen/chart/difficulty.py`, cannot be weakened from the configuration and raise an error if
+   broken: positions form a chain Easy, Medium, Hard, Expert by tick, while frets may differ per level;
+   Easy has no chords and no orange; Medium has no orange and chords of at most two notes; a sustain
+   never runs into the next note; every phrase of more than four notes keeps a note on Easy; the
+   result is deterministic. Everything else is a soft target in `chartgen/chart/difficulty.toml`:
+   density, chord share, lane shares, on-beat share, shortest gap, sustain share. Missing one warns in
+   the terminal and in `analysis.json` and fails nothing. The ranges come from one calm song and are
+   to be set again on test references.
+17. **Three-note chords on Hard are a setting**, `three_note_chords`, off by default.
+18. **Chord rule.** Hard and Medium keep a chord's lowest two notes, Easy its lowest note. The kept
+   notes never change their distance from each other; the chord may slide along the neck to fit the
+   level. Lowest plus highest was the first idea, but the human chart measured keeps the lowest two in
+   84% of its reduced chords against 16%, and lowest plus highest needs shapes this project forbids.
+   On Hard and Medium chords prefer low frets (`chord_lane_map`), but only weakly (`chord_fidelity`):
+   our analysis mostly hears two voices and places them high, where a human writes a wide chord whose
+   lowest two notes sit low. A strong pull passes every lane target and makes most chords one shape.
+19. **HOPOs are measured on every level** and reported by `evaluate` and `analysis.json`. The game
+   derives natural HOPOs from spacing: a single note at most `65/192 * resolution` ticks after the
+   previous position, and not the same single fret as it. A force flag flips that, so it may only ever
+   land on a natural HOPO. Medium and Easy force every natural HOPO to a strum; Hard keeps them
+   (`keep_auto_hopos`). The share on each level is a soft target that changes nothing about the chart:
+   it follows style more than quality. Fast chords cannot be HOPOs and fast single notes can, so one
+   song's human guitar has 0.9% on Expert and its human bass 12.3%.
+20. **A note that could not be snapped still has a place in the bar**: the nearest sixteenth. Otherwise
+   a slightly late beat counts as a rhythm of its own. On the measured chart this raised note F1 on
+   Hard from 0.70 to 0.73 and on Easy from 0.54 to about 0.75.
 
 ## Phase B1 targets (one reference song so far)
 
@@ -68,6 +95,30 @@ Decisions made since it was written are listed first and take precedence.
 
 Also: 5 real songs read as 4/4; low bar confidence warns and is written to `analysis.json`; bars
 improve on `LastResort.wav`; a bot plays the result; the owner plays one song and approves it.
+
+21. **Lane shares are a soft target on every level.** Each lane's share may stray at most 10 points from
+   the human's. `evaluate` compares with the human chart of each song. A build has no human chart, so
+   it compares with the shares in `difficulty.toml`, which come from one calm song, and warns.
+
+## Phase B2 targets (one reference song so far; these are soft)
+
+Compared with the human on the same level. "Beats first" and "every Nth" are naive reductions of the
+same Expert chart, to the human's note count, measured by `chartgen evaluate`. Expert itself has two
+soft targets: each lane's share within 10 points of the human's, and automatic HOPOs at most 5%.
+
+| Metric | Hard | Medium | Easy |
+|---|---|---|---|
+| Positions / Expert | 60-75% | 37-50% | 22-33% |
+| Chord share | 40-70% | 40-70% | none (hard rule) |
+| Orange share | at most 10% | none (hard rule) | none (hard rule) |
+| Blue share | | | at most 5% |
+| On the beat | at least 50% | at least 70% | at least 65% |
+| On sixteenths | at most 5% | at most 5% | at most 5% |
+| Shortest gap | at least 0.15 s | at least 0.30 s | at least 0.50 s |
+| Sustain share | 9-29% | 6-26% | 10-30% |
+| Each lane's share | human +/- 10 points | human +/- 10 points | human +/- 10 points |
+| Automatic HOPOs | at most 3% | at most 1% | at most 1% |
+| Note F1 must beat "beats first" of | 0.68 | 0.59 | 0.38 |
 
 ## Goal
 

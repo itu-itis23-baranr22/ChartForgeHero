@@ -18,14 +18,22 @@ from chartgen.core.model import ChartNote, Difficulty, Instrument, Track
 from chartgen.core.timing import TempoEvent, TempoMap, TimeSignatureEvent
 from chartgen.errors import ChartgenError
 from chartgen.evaluation.formats import ReferenceFormatError, open_sng, parse_midi
-from chartgen.evaluation.metrics import average, chart_metrics, match_notes, tempo_metrics
+from chartgen.evaluation.metrics import (
+    average,
+    chart_metrics,
+    human_level_measures,
+    match_notes,
+    naive_reductions,
+    position_f1,
+    tempo_metrics,
+)
 from chartgen.evaluation.reference import (
     ReferenceNote,
     find_references,
     load_reference,
     split_of,
 )
-from chartgen.evaluation.run import evaluate_folder, format_report, write_report
+from chartgen.evaluation.run import _lane_gaps, evaluate_folder, format_report, write_report
 
 SECONDS = 20
 BPM = 120
@@ -214,6 +222,69 @@ def test_delay_shifts_the_human_chart(tmp_path):
     assert load_reference(path).notes[0].time_s == pytest.approx(0.6)
 
 
+def level_midi_bytes() -> bytes:
+    """Expert on every beat, Hard on every second, Easy on every fourth; no Medium.
+
+    Hard also has a close pair of notes, one a natural HOPO, and a forced HOPO and forced strum.
+    """
+    tempo = midi_track([(0, b"\xff\x51\x03" + int(60e6 / BPM).to_bytes(3, "big"))])
+    notes: list[tuple[int, bytes]] = [(0, b"\xff\x03\x0bPART GUITAR")]
+
+    def add(tick: int, note: int, length: int = DIVISION // 8) -> None:
+        notes.append((tick, bytes([0x90, note, 100])))
+        notes.append((tick + length, bytes([0x80, note, 0])))
+
+    for index in range(32):
+        tick = DIVISION + index * DIVISION
+        add(tick, 96 + index % 4)
+        if index % 2 == 0:
+            add(tick, 84 + index % 4)
+        if index % 4 == 0:
+            add(tick, 60 + index % 3)
+    add(DIVISION + DIVISION // 4, 84 + 3)  # 120 ticks after the first Hard note: a natural HOPO.
+    add(DIVISION * 5, 84 + 5, DIVISION // 8)  # Force the Hard note on this tick to a HOPO.
+    add(DIVISION * 7, 84 + 6, DIVISION // 8)  # Force this one to a strum: it changes nothing.
+    header = b"MThd" + struct.pack(">IHHH", 6, 1, 2, DIVISION)
+    return header + tempo + midi_track(notes)
+
+
+def test_all_levels_and_their_force_markers_are_read_from_midi(tmp_path):
+    path = tmp_path / "levels.sng"
+    path.write_bytes(sng_bytes({"notes.mid": level_midi_bytes(), "song.wav": wav_bytes(tmp_path)}))
+    song = load_reference(path)
+    assert song.is_midi
+    assert song.resolution == DIVISION
+    assert set(song.levels) == {Difficulty.EXPERT, Difficulty.HARD, Difficulty.EASY}
+    assert len(song.levels[Difficulty.EXPERT]) == 32
+    assert song.notes == song.levels[Difficulty.EXPERT]
+    assert len(song.levels[Difficulty.EASY]) == 8
+
+    hard = {note.tick: note for note in song.levels[Difficulty.HARD]}
+    assert hard[DIVISION + DIVISION // 4].hopo, "close to the previous note, on another fret"
+    assert hard[DIVISION * 5].hopo, "the force marker"
+    assert not hard[DIVISION * 7].hopo
+    assert sum(note.hopo for note in hard.values()) == 2
+
+
+def test_all_levels_and_their_force_flags_are_read_from_a_chart(tmp_path):
+    folder = make_chart_folder(tmp_path / "song")
+    path = folder / "notes.chart"
+    text = path.read_text(encoding="utf-8").replace(
+        "[ExpertSingle]",
+        "[HardSingle]\n{\n  192 = N 0 0\n  240 = N 1 0\n  384 = N 2 0\n  432 = N 3 0\n  432 = N 5 0\n}\n"
+        "[ExpertSingle]",
+    )
+    path.write_text(text, encoding="utf-8")
+    song = load_reference(folder)
+    assert not song.is_midi
+    assert song.resolution == 192
+    hard = {note.tick: note for note in song.levels[Difficulty.HARD]}
+    assert set(hard) == {192, 240, 384, 432}
+    assert hard[240].hopo, "48 ticks after another fret"
+    assert not hard[432].hopo, "the flag flips what would have been a HOPO"
+    assert not hard[192].hopo and not hard[384].hopo
+
+
 def test_reference_without_guitar_part_is_refused(tmp_path):
     with pytest.raises(ChartgenError, match="PART GUITAR"):
         load_reference(make_sng(tmp_path, track_name=b"PART DRUMS"))
@@ -232,6 +303,83 @@ def perfect_track(lanes=(0, 1, 2, 3, 4)) -> tuple[Track, TempoMap, list[Referenc
         notes.append(ChartNote(tick, lane))
         human.append(ReferenceNote(tempo_map.seconds_at(float(tick)), (lane,), 0.1))
     return Track(Instrument.GUITAR, Difficulty.EXPERT, notes), tempo_map, human
+
+
+def test_naive_reductions_keep_what_they_say():
+    ticks = np.arange(0, 192 * 8, 48)
+    result = naive_reductions(ticks, 192, 8)
+    assert np.array_equal(result["every_nth"], ticks[np.round(np.linspace(0, 31, 8)).astype(int)])
+    assert np.array_equal(result["beats_first"], ticks[ticks % 192 == 0])
+    assert naive_reductions(ticks, 192, 12)["beats_first"].size == 12
+    assert np.all(np.isin(ticks[ticks % 192 == 0], naive_reductions(ticks, 192, 12)["beats_first"]))
+    assert naive_reductions(ticks, 192, 99)["every_nth"].size == ticks.size
+
+
+def test_lane_gaps_compare_each_lane_with_the_human():
+    mine = dict(green_share=0.5, red_share=0.2, yellow_share=0.2, blue_share=0.1, orange_share=0.0)
+    human = dict(green_share=0.3, red_share=0.2, yellow_share=0.2, blue_share=0.2, orange_share=0.1)
+    assert _lane_gaps(mine, human, 0.1) == {"worst_lane_gap": 0.2, "lanes_over_limit": 1}
+    assert _lane_gaps(mine, mine, 0.1) == {"worst_lane_gap": 0.0, "lanes_over_limit": 0}
+
+
+def test_position_f1():
+    times = np.array([1.0, 2.0, 3.0, 4.0])
+    assert position_f1(times, times) == 1.0
+    assert position_f1(times[:2], times) == pytest.approx(2 * 1.0 * 0.5 / 1.5, abs=0.001)
+    assert position_f1(times, times + 1.5) == 0.0
+
+
+def test_human_level_measures_use_the_human_tempo_and_sustain_rule():
+    notes = [
+        ReferenceNote(0.0, (0, 1), 1.0, tick=0, length_ticks=480, hopo=False),
+        ReferenceNote(0.5, (2,), 0.05, tick=480, length_ticks=48, hopo=False),
+        ReferenceNote(0.75, (3,), 0.05, tick=720, length_ticks=48, hopo=True),
+    ]
+    measures = human_level_measures(notes, 480, expert_positions=6, is_midi=True)
+    assert measures.positions == 3
+    assert measures.position_ratio == 0.5
+    assert measures.chord_share == pytest.approx(1 / 3, abs=0.001)
+    assert measures.on_beat_share == pytest.approx(2 / 3, abs=0.001)
+    assert measures.sustain_share == pytest.approx(1 / 3, abs=0.001)
+    assert measures.final_hopo_share == pytest.approx(1 / 3, abs=0.001)
+    assert measures.min_gap_s == 0.25
+
+
+@pytest.mark.heavy
+def test_every_difficulty_is_reported_next_to_the_human_and_the_baselines(tmp_path):
+    path = tmp_path / "train" / "levels.sng"
+    path.parent.mkdir()
+    path.write_bytes(sng_bytes({"notes.mid": level_midi_bytes(), "song.wav": wav_bytes(tmp_path)}))
+    report = evaluate_folder(tmp_path, separator_for(), tmp_path / "cache")
+    levels = report.songs["levels"]["levels"]
+    assert set(levels) == {"expert", "hard", "medium", "easy"}
+    assert {"mine", "human", "match"} <= set(levels["hard"])
+    assert "human" not in levels["medium"], "this chart has no Medium"
+    assert {"note_f1", "every_nth_f1", "beats_first_f1"} <= set(levels["easy"]["match"])
+    assert "every_nth_f1" not in levels["expert"]["match"]
+    assert levels["hard"]["mine"]["auto_hopo_share"] >= 0
+    assert levels["hard"]["human"]["final_hopo_share"] > 0
+    text = format_report(report)
+    for label in (
+        "Difficulties of levels",
+        "F1 every Nth",
+        "F1 beats first",
+        "auto HOPO",
+        "final HOPO",
+        "worst lane gap",
+        "lanes over limit",
+        "misses its soft targets",
+    ):
+        assert label in text
+    assert levels["hard"]["match"]["worst_lane_gap"] >= 0
+    assert 0 <= levels["hard"]["match"]["lanes_over_limit"] <= 5
+    assert levels["hard"]["missed_targets"], "single notes on a click cannot reach any chord share"
+    assert report.level_averages["train"]["hard"]["human"]["positions"] == levels["hard"]["human"]["positions"]
+    output = tmp_path / "report.json"
+    write_report(report, output)
+    stored = json.loads(output.read_text(encoding="utf-8"))
+    assert stored["train"]["songs"]["levels"]["levels"]["easy"]["match"]["beats_first_f1"] >= 0
+    assert "average_by_difficulty" in stored["train"]
 
 
 def test_identical_chart_scores_perfectly():
@@ -346,7 +494,7 @@ def test_report_can_be_written_as_json(tmp_path):
     write_report(report, output)
     saved = json.loads(output.read_text(encoding="utf-8"))
     assert set(saved) == {"unassigned", "failures"}
-    assert set(saved["unassigned"]) == {"songs", "average"}
+    assert set(saved["unassigned"]) == {"songs", "average", "average_by_difficulty"}
 
 
 def train_test_folder(tmp_path) -> Path:
