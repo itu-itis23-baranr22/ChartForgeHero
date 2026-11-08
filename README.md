@@ -11,13 +11,17 @@ It only processes files you give it. It does not download audio or touch streami
 |---|---|---|
 | Foundation | Format-independent chart model, `.chart` exporter, validator | Done |
 | A | Stem separation, packaging, simple onset-based guitar chart | Done |
-| B | Guitar, bass and keys with Viterbi fret mapping and four difficulties | Planned |
+| Tempo check | `--click-overlay`, `--bpm`, explained tempo decisions | Done, thresholds await a listening test |
+| B1 | Time signature, sustains, Viterbi fret mapping (Expert) | Planned |
+| B2 | Difficulty reduction to Hard, Medium and Easy | Planned |
+| B3 | Bass and keys; a song no longer needs a guitar | Planned |
 | C | Drums: percussion classification, four difficulties | Planned |
 | D | Vocal events, sections, star power | Planned |
 
 Phase A's guitar chart is a pipeline test, not a good chart: lanes follow the brightness of each
-attack, not the melody, and there is only one difficulty. Time signature is assumed to be 4/4.
-Until Phases B and C, a song whose guitar stem is rejected as absent cannot be built, because no
+attack, not the melody, and there is only one difficulty. Time signature is assumed to be 4/4, and
+the first downbeat is an early estimate: check `bar_confidence` in `analysis.json`. Until Phases B
+and C, a song whose guitar stem is rejected as absent cannot be built, because no
 other instrument can be charted yet.
 
 See [docs/SPEC.md](docs/SPEC.md) for the full specification.
@@ -54,7 +58,8 @@ The song appears in `outputs/Artist - Title/`:
 | `song.ini` | Metadata; `diff_*` is `-1` for instruments without a chart |
 | `song.ogg` | Backing track: the `other` stem plus every stem without its own file |
 | `guitar.ogg`, `bass.ogg`, `drums.ogg`, `keys.ogg`, `vocals.ogg` | Stems that are really present |
-| `analysis.json` | Tempo, stem presence scores, note counts, stage timings, warnings |
+| `analysis.json` | Tempo and why, stem presence scores, note counts, stage timings, warnings |
+| `debug_click.wav` | Only with `--click-overlay` |
 
 Preview it with bot players, without scanning your library:
 
@@ -65,15 +70,27 @@ Preview it with bot players, without scanning your library:
 To add it to your library, copy the folder into Clone Hero's `Songs` folder and press
 *Settings > General > Scan Songs*. Songs the game rejects are listed in `badsongs.txt`.
 
+### Checking the tempo by ear
+
+```
+python -m chartgen build song.mp3 --artist "Artist" --title "Title" --click-overlay
+python -m chartgen build song.mp3 --artist "Artist" --title "Title" --bpm 97 --click-overlay --force
+```
+
+`--click-overlay` adds `debug_click.wav`: the original mix with a metronome taken from the written
+`notes.chart`, the first beat of each bar an octave higher. A wrong tempo audibly slides away from
+the drums. `--bpm` forces one exact tempo; the phase and the first downbeat are still detected.
+
 ## How it works
 
 1. **Separate** the song with Demucs, cached by the file's SHA-256.
 2. **Check presence**: a model always outputs all six stems, so each is compared with the mix,
    and a stem that is only bleed gets no chart. Its audio moves to `song.ogg` rather than vanishing.
-3. **Track tempo** once on the original mix; all instruments share this map. The whole song is
-   analysed first rather than beat by beat, because a beat tracker read 129 BPM for a 97 BPM song.
-   A song gets one tempo if it holds one, small bends if a drummer drifts without a click, and a
-   tracked tempo curve only if the tempo really changes.
+3. **Track tempo** once on the original mix; all instruments share this map. A whole-song analysis
+   finds the tempo, because a beat tracker left to itself read 129 BPM for a 97 BPM song. Told that
+   tempo, the same tracker finds the beats: against a human-made map of one real song, a median 10 ms
+   off, with 97.7% of bars agreeing. Tempo events must earn their place: `analysis.json` records the
+   comparison behind the decision and the reason for each event.
 4. **Detect onsets** on each stem, behind a noise gate and an adaptive threshold that reject bleed.
 5. **Package and verify**: every encoded file is decoded again and must match its source's length
    exactly with zero lag, and the finished folder must pass an independent validator. The folder

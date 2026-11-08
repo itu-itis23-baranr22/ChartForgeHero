@@ -19,6 +19,7 @@ log = logging.getLogger("chartgen")
 
 _INSTRUMENT_NAMES = ", ".join(instrument.value for instrument in Instrument)
 _DEFAULT_INSTRUMENTS = "guitar,bass,drums,keys"
+_BPM_RANGE = (20.0, 400.0)
 
 
 def _parse_instruments(value: str) -> frozenset[Instrument]:
@@ -29,6 +30,17 @@ def _parse_instruments(value: str) -> frozenset[Instrument]:
         return frozenset(Instrument(name) for name in names)
     except ValueError as error:
         raise argparse.ArgumentTypeError(f"{error}; choose from: {_INSTRUMENT_NAMES}") from error
+
+
+def _parse_bpm(value: str) -> float:
+    try:
+        bpm = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"not a number: {value!r}") from error
+    low, high = _BPM_RANGE
+    if not low <= bpm <= high:
+        raise argparse.ArgumentTypeError(f"BPM must be between {low:g} and {high:g}, got {bpm:g}")
+    return bpm
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -57,6 +69,16 @@ def _build_parser() -> argparse.ArgumentParser:
     build.add_argument("--cache-dir", type=Path, default=Path(".cache/stems"))
     build.add_argument("--device", default="auto", help="auto, cpu, cuda, mps (default: auto)")
     build.add_argument("--force", action="store_true", help="replace an existing song folder")
+    build.add_argument(
+        "--bpm",
+        type=_parse_bpm,
+        help="use exactly this constant tempo; the first downbeat is still detected",
+    )
+    build.add_argument(
+        "--click-overlay",
+        action="store_true",
+        help="also write debug_click.wav: the mix with a metronome taken from the written chart",
+    )
 
     validate = commands.add_parser("validate", help="check an existing song folder")
     validate.add_argument("folder", type=Path)
@@ -88,6 +110,8 @@ def _run_build(args: argparse.Namespace) -> int:
             output_dir=args.output_dir,
             cache_dir=args.cache_dir,
             force=args.force,
+            bpm_override=args.bpm,
+            click_overlay=args.click_overlay,
         ),
         DemucsSeparator(device=args.device),
     )

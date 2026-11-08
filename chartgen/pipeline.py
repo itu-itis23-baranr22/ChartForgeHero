@@ -28,6 +28,7 @@ from chartgen.chart.instruments import (
     build_tracks_for,
 )
 from chartgen.clonehero.chart_format import DotChartExporter
+from chartgen.clonehero.click_overlay import CLICK_FILE, ClickSchedule, write_click_overlay
 from chartgen.clonehero.package import (
     BACKING_STEM,
     EncodedAudio,
@@ -44,7 +45,7 @@ from chartgen.errors import ChartValidationError, NoPlayableInstrumentError, Pac
 log = logging.getLogger(__name__)
 
 ANALYSIS_FILE = "analysis.json"
-_STAGE_COUNT = 7
+_BASE_STAGE_COUNT = 7
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,8 @@ class BuildConfig:
     output_dir: Path = Path("outputs")
     cache_dir: Path = Path(".cache/stems")
     force: bool = False
+    bpm_override: float | None = None
+    click_overlay: bool = False
 
 
 @dataclass
@@ -66,19 +69,20 @@ class BuildResult:
 class _Stages:
     """Logs each stage and records how long it took."""
 
-    def __init__(self) -> None:
+    def __init__(self, count: int) -> None:
         self.timings_s: dict[str, float] = {}
+        self._count = count
         self._number = 0
 
     @contextmanager
     def stage(self, name: str) -> Iterator[None]:
         self._number += 1
-        log.info("[%d/%d] %s ...", self._number, _STAGE_COUNT, name)
+        log.info("[%d/%d] %s ...", self._number, self._count, name)
         started = time.perf_counter()
         yield
         elapsed = time.perf_counter() - started
         self.timings_s[name] = round(elapsed, 3)
-        log.info("[%d/%d] %s done in %.2f s", self._number, _STAGE_COUNT, name, elapsed)
+        log.info("[%d/%d] %s done in %.2f s", self._number, self._count, name, elapsed)
 
 
 def _analyze_all_presence(stems: StemSet) -> dict[str, StemPresence]:
@@ -138,6 +142,7 @@ def _analysis(
     preview_start_ms: int,
     warnings: list[str],
     timings_s: dict[str, float],
+    click_schedule: ClickSchedule | None,
 ) -> dict[str, object]:
     charts: dict[str, dict[str, dict[str, float]]] = {}
     for track in tracks:
@@ -165,13 +170,27 @@ def _analysis(
         },
         "tempo": {
             "bpm": round(tempo.bpm, 3),
+            "estimated_bpm": tempo.estimated_bpm and round(tempo.estimated_bpm, 3),
             "method": tempo.method,
-            "tempo_events": [asdict(event) for event in tempo.tempo_map.tempos],
+            "decision": tempo.decision,
+            "tempo_event_count": len(tempo.tempo_map.tempos),
+            "tempo_events": [
+                {**asdict(event), "reason": reason}
+                for event, reason in zip(tempo.tempo_map.tempos, tempo.event_reasons())
+            ],
             "segments": tempo.segment_count,
+            "off_tempo_share": round(tempo.off_tempo_share, 3),
+            "max_window_drift_ms": round(tempo.max_window_drift_ms, 1),
+            "max_section_deviation_pct": round(tempo.max_section_deviation * 100, 3),
+            "one_tempo_on_grid": tempo.one_tempo_on_grid and round(tempo.one_tempo_on_grid, 3),
+            "segments_on_grid": tempo.segments_on_grid and round(tempo.segments_on_grid, 3),
             "on_grid_ratio": round(tempo.on_grid_ratio, 3),
             "grid_error_p95_ms": _finite_or_none(round(tempo.grid_error_p95_ms, 2)),
             "tempo_strength": round(tempo.tempo_strength, 4),
             "time_signature": "4/4 (assumed, not detected)",
+            "time_signature_events": [asdict(s) for s in tempo.tempo_map.time_signatures],
+            "first_downbeat_s": tempo.first_downbeat_s and round(tempo.first_downbeat_s, 3),
+            "bar_confidence": round(tempo.bar_confidence, 3),
         },
         "stems": {
             name: {
@@ -197,6 +216,12 @@ def _analysis(
             "preview_start_time_ms": preview_start_ms,
             "difficulty": {inst.value: tier for inst, tier in difficulties.items()},
         },
+        "click_overlay": click_schedule
+        and {
+            "file": CLICK_FILE,
+            "clicks": int(click_schedule.times.size),
+            "downbeats": int(click_schedule.is_downbeat.sum()),
+        },
         "timings_s": timings_s,
         "warnings": warnings,
     }
@@ -221,7 +246,7 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
     if destination.exists() and not config.force:
         raise PackagingError(f"{destination} already exists; use --force to replace it")
 
-    stages = _Stages()
+    stages = _Stages(_BASE_STAGE_COUNT + int(config.click_overlay))
     warnings: list[str] = []
 
     with stages.stage("Load audio"):
@@ -249,7 +274,9 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
             )
 
     with stages.stage("Track tempo on the mix"):
-        tempo = estimate_tempo_map(analysis_mono(audio.samples, audio.samplerate))
+        tempo = estimate_tempo_map(
+            analysis_mono(audio.samples, audio.samplerate), bpm_override=config.bpm_override
+        )
         if tempo.is_fallback:
             warnings.append("beat tracking failed; the chart uses a fixed fallback tempo")
         log.info(
@@ -259,6 +286,13 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
             len(tempo.tempo_map.tempos),
             tempo.on_grid_ratio * 100,
         )
+        log.info("    why: %s", tempo.decision)
+        if tempo.first_downbeat_s is not None:
+            log.info(
+                "    first downbeat at %.3f s (confidence %.2f)",
+                tempo.first_downbeat_s,
+                tempo.bar_confidence,
+            )
 
     with stages.stage("Chart instruments"):
         tracks = _build_tracks(config, stems, presence, tempo, warnings)
@@ -312,6 +346,13 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
                     "The generated song failed validation:\n  " + "\n  ".join(report.errors)
                 )
 
+        schedule: ClickSchedule | None = None
+        if config.click_overlay:
+            with stages.stage("Write click overlay"):
+                schedule = write_click_overlay(
+                    temporary / DotChartExporter.file_name, audio, temporary / CLICK_FILE
+                )
+
         analysis = _analysis(
             config,
             audio,
@@ -324,6 +365,7 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
             preview_start_ms,
             warnings,
             stages.timings_s,
+            schedule,
         )
         (temporary / ANALYSIS_FILE).write_text(
             json.dumps(analysis, indent=2, ensure_ascii=False), encoding="utf-8"

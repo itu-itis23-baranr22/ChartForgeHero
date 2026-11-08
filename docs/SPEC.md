@@ -19,6 +19,16 @@ Decisions made since it was written are listed first and take precedence.
 4. **libsndfile instead of ffmpeg.** ffmpeg was not installed; libsndfile is already a dependency
    for decoding and also writes Ogg Vorbis. Lengths and alignment are verified after encoding.
 5. **Validator additions.** A `[SyncTrack]` must have `B` and `TS` events at tick 0.
+6. **Phase B is split** into B1 (time signature, sustains, Viterbi mapping at Expert), B2 (difficulty
+   reduction) and B3 (bass and keys; a song without a guitar still builds). For each, acceptance
+   criteria and a test plan are approved before any code is written.
+7. **Tempo events must earn their place.** One tempo is used if it fits the onsets as well as
+   following the beats (within 3 points), or if sections differ less than 1.5% and it costs at most
+   15 points. `analysis.json` records the decision and a reason for each event. These limits await
+   the owner's listening test on `audio.mp3` and `LastResort.wav`.
+8. **Reference chart.** The owner's Harmonix `.sng` of one song holds a human tempo map and chart, used
+   as an objective yardstick. It is a single song, so limits must not be tuned to it alone, and no part
+   of it may enter the repository.
 
 ## Goal
 
