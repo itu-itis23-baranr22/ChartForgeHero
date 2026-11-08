@@ -186,3 +186,15 @@ def test_cli_bpm_flag_reaches_the_chart(song_file, tmp_path, fake_demucs):
 def test_cli_rejects_a_bad_bpm(song_file, tmp_path, value):
     with pytest.raises(SystemExit):
         main(cli_arguments(song_file, tmp_path, "--bpm", value))
+
+
+def test_cli_drift_limit_reaches_the_analysis(song_file, tmp_path, fake_demucs):
+    assert main(cli_arguments(song_file, tmp_path, "--max-beat-drift-ms", "40")) == 0
+    analysis = (tmp_path / "out" / "A - T" / "analysis.json").read_text(encoding="utf-8")
+    assert '"max_beat_drift_limit_ms": 40.0' in analysis
+
+
+@pytest.mark.parametrize("value", ["0", "-5", "abc", "5000"])
+def test_cli_rejects_a_bad_drift_limit(song_file, tmp_path, value):
+    with pytest.raises(SystemExit):
+        main(cli_arguments(song_file, tmp_path, "--max-beat-drift-ms", value))

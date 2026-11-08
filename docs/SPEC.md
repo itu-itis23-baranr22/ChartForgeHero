@@ -22,10 +22,11 @@ Decisions made since it was written are listed first and take precedence.
 6. **Phase B is split** into B1 (time signature, sustains, Viterbi mapping at Expert), B2 (difficulty
    reduction) and B3 (bass and keys; a song without a guitar still builds). For each, acceptance
    criteria and a test plan are approved before any code is written.
-7. **Tempo events must earn their place.** One tempo is used if it fits the onsets as well as
-   following the beats (within 3 points), or if sections differ less than 1.5% and it costs at most
-   15 points. `analysis.json` records the decision and a reason for each event. These limits await
-   the owner's listening test on `audio.mp3` and `LastResort.wav`.
+7. **Tempo events are decided in milliseconds, not percent.** A song keeps one tempo unless a
+   region's beats stray more than `--max-beat-drift-ms` (default 25) from the grid; then that region
+   gets an event. Each event must measurably bring onsets closer to the grid or it is merged away, and
+   `analysis.json` records its reason and gain. Regions can stay over the limit when an event there
+   would not help, which the decision text states.
 8. **Reference chart.** The owner's Harmonix `.sng` of one song holds a human tempo map and chart, used
    as an objective yardstick. It is a single song, so limits must not be tuned to it alone, and no part
    of it may enter the repository.

@@ -43,6 +43,16 @@ def _parse_bpm(value: str) -> float:
     return bpm
 
 
+def _parse_drift_ms(value: str) -> float:
+    try:
+        drift = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"not a number: {value!r}") from error
+    if not 1.0 <= drift <= 1000.0:
+        raise argparse.ArgumentTypeError(f"must be between 1 and 1000 ms, got {drift:g}")
+    return drift
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="chartgen",
@@ -73,6 +83,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--bpm",
         type=_parse_bpm,
         help="use exactly this constant tempo; the first downbeat is still detected",
+    )
+    build.add_argument(
+        "--max-beat-drift-ms",
+        type=_parse_drift_ms,
+        default=25.0,
+        help="how far a region's beats may stray from one tempo before it gets a tempo event "
+        "(default: 25)",
     )
     build.add_argument(
         "--click-overlay",
@@ -112,6 +129,7 @@ def _run_build(args: argparse.Namespace) -> int:
             force=args.force,
             bpm_override=args.bpm,
             click_overlay=args.click_overlay,
+            max_beat_drift_ms=args.max_beat_drift_ms,
         ),
         DemucsSeparator(device=args.device),
     )

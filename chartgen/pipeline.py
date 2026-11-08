@@ -21,7 +21,7 @@ import chartgen
 from chartgen.audio.io import ANALYSIS_SAMPLERATE, AudioData, analysis_mono, load_audio, to_mono
 from chartgen.audio.presence import StemPresence, analyze_presence
 from chartgen.audio.separation import STEM_NAMES, Separator, StemSet, separate_with_cache
-from chartgen.audio.tempo import TempoAnalysis, estimate_tempo_map
+from chartgen.audio.tempo import DEFAULT_MAX_BEAT_DRIFT_S, TempoAnalysis, estimate_tempo_map
 from chartgen.chart.instruments import (
     CHARTABLE_INSTRUMENTS,
     STEM_FOR_INSTRUMENT,
@@ -58,6 +58,7 @@ class BuildConfig:
     force: bool = False
     bpm_override: float | None = None
     click_overlay: bool = False
+    max_beat_drift_ms: float = DEFAULT_MAX_BEAT_DRIFT_S * 1000.0
 
 
 @dataclass
@@ -173,19 +174,15 @@ def _analysis(
             "estimated_bpm": tempo.estimated_bpm and round(tempo.estimated_bpm, 3),
             "method": tempo.method,
             "decision": tempo.decision,
+            "max_beat_drift_limit_ms": tempo.max_beat_drift_ms,
             "tempo_event_count": len(tempo.tempo_map.tempos),
             "tempo_events": [
-                {**asdict(event), "reason": reason}
-                for event, reason in zip(tempo.tempo_map.tempos, tempo.event_reasons())
+                {**asdict(event), **explanation}
+                for event, explanation in zip(tempo.tempo_map.tempos, tempo.event_explanations())
             ],
-            "segments": tempo.segment_count,
+            "fit": tempo.final and asdict(tempo.final),
+            "one_tempo_fit": tempo.one_tempo and asdict(tempo.one_tempo),
             "off_tempo_share": round(tempo.off_tempo_share, 3),
-            "max_window_drift_ms": round(tempo.max_window_drift_ms, 1),
-            "max_section_deviation_pct": round(tempo.max_section_deviation * 100, 3),
-            "one_tempo_on_grid": tempo.one_tempo_on_grid and round(tempo.one_tempo_on_grid, 3),
-            "segments_on_grid": tempo.segments_on_grid and round(tempo.segments_on_grid, 3),
-            "on_grid_ratio": round(tempo.on_grid_ratio, 3),
-            "grid_error_p95_ms": _finite_or_none(round(tempo.grid_error_p95_ms, 2)),
             "tempo_strength": round(tempo.tempo_strength, 4),
             "time_signature": "4/4 (assumed, not detected)",
             "time_signature_events": [asdict(s) for s in tempo.tempo_map.time_signatures],
@@ -275,7 +272,9 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
 
     with stages.stage("Track tempo on the mix"):
         tempo = estimate_tempo_map(
-            analysis_mono(audio.samples, audio.samplerate), bpm_override=config.bpm_override
+            analysis_mono(audio.samples, audio.samplerate),
+            bpm_override=config.bpm_override,
+            max_beat_drift_s=config.max_beat_drift_ms / 1000.0,
         )
         if tempo.is_fallback:
             warnings.append("beat tracking failed; the chart uses a fixed fallback tempo")

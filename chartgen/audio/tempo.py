@@ -2,18 +2,18 @@
 
 ``librosa.beat.beat_track`` left to itself reads the wrong metrical level on real
 songs (129 instead of 97 BPM). Told the right tempo, it is excellent: against the beats
-a human placed in a Harmonix chart, the guided tracker was a median 8 ms away and within
-35 ms for 97% of them. So the two problems are solved separately:
+a human placed in a Harmonix chart, its measure of how far a song strays from one tempo
+was a median 6 ms off. So the two problems are solved separately:
 
 1. The Fourier transform of the whole onset envelope gives the tempo, with harmonic
    support picking the metrical level.
 2. A tracker guided by that tempo finds the beats. If local tempo really differs across
    the song, it follows a tempo curve instead of a single value.
-3. Tempo events must earn their place. The song gets one tempo (method ``constant``)
-   if that fits its onsets as well as following the beats does, or if no section differs
-   meaningfully and little is lost. Otherwise it gets constant segments (method
-   ``variable``): that same Harmonix song wanders between 94 and 99 BPM, and one tempo
-   would be a median 160 ms off.
+3. The song starts with one tempo. Wherever the beats of a region stray further from the
+   grid than ``max_beat_drift_s``, a tempo event is added there. Each event must also
+   bring the song's onsets measurably closer to the grid, or it is merged away again: in
+   a sparse intro the tracker can lock onto an off-beat pattern, and no event should be
+   spent following that.
 4. Bass accents and chord changes decide where the bars begin.
 
 ``--bpm`` replaces steps 1-3 for the tempo (method ``override``), not for phase or bars.
@@ -66,23 +66,29 @@ CURVE_WINDOW_S = 16.0
 CURVE_RANGE = (0.6, 1.6)
 """Tempo changes further than this from the main tempo are not followed."""
 
-NO_BENEFIT_ON_GRID_GAIN = 0.03
-"""Segments must put this much more of the onsets on the grid to be worth any events."""
-MAX_TEMPO_DEVIATION = 0.015
-"""Sections closer than this to the main tempo count as performance, not a tempo change."""
-MAX_PERFORMANCE_ON_GRID_LOSS = 0.15
-"""Even without a meaningful tempo change, one tempo may not cost more than this."""
-SECTION_BEATS = 32
-_MIN_SECTION_EVIDENCE = 0.75
-DRIFT_WINDOW_S = 30.0
-_MIN_WINDOW_BEATS = 8
-_REGRESSION_ROUNDS = 4
-
-FIT_TOLERANCE_S = 0.025
-"""A segment ends once a beat strays further than this from its line. Measured against
-a human tempo map: 25 ms and 8 beats gave 43 events with 94% of beats within 35 ms of the
-human's, while 40 ms and 16 beats gave 29 events but only 80%."""
-MIN_SEGMENT_BEATS = 8
+DEFAULT_MAX_BEAT_DRIFT_S = 0.025
+"""A region's beats may stray this far from the grid before it gets a tempo event."""
+REGION_BEATS = 16
+_REGION_HOP_BEATS = 8
+_MIN_REGION_BEATS = 8
+"""A region is averaged over this many beats, so a single late hit is not a drift."""
+MIN_EVENT_GAIN_S = 0.001
+"""An event must bring the onsets around it at least this much closer to the grid."""
+MAX_TOTAL_FIT_LOSS = 0.02
+"""Events that help locally must not cost the song as a whole more than this, counting the
+share of onsets on the grid and the share of beats with an onset together. Either alone can
+mislead: an abrupt tempo change costs the sixteenth grid a few notes at the change itself,
+while putting half the song's beats back on real onsets."""
+_POLISH_BEATS = 4
+_MOVED_S = 0.005
+_MIN_KNOT_SPACING_BEATS = 8
+_MAX_KNOTS = 256
+_KNOT_PATTERNS = ((0,), (-8,), (8,), (-8, 8), (-16, 8), (-8, 16), (-16, 16))
+"""Breaks to try around a region's center, in beats, fewest first."""
+_MIN_DRIFT_IMPROVEMENT_S = 0.002
+_MAIN_TEMPO_RANGE = 0.03
+_FIT_ROUNDS = 3
+MIN_BEATS = 16
 MERGE_BPM_DIFFERENCE = 0.05
 
 GRID_DIVISOR = 4
@@ -103,29 +109,53 @@ class TempoSegment:
 
 
 @dataclass(frozen=True)
+class DriftStats:
+    """How well a grid fits the song."""
+
+    max_ms: float
+    """The worst region's average distance between beats and grid."""
+    median_ms: float
+    """The typical region's average distance between beats and grid."""
+    on_grid: float
+    """Share of strong onsets within :data:`GRID_MATCH_S` of a sixteenth note."""
+    beats_with_onset: float = 0.0
+    """Share of the grid's beats that have a strong onset within :data:`GRID_MATCH_S`. The
+    sixteenth grid alone can be fooled: at 150 BPM it also fits every click played at 120."""
+
+    @property
+    def fit(self) -> float:
+        return self.on_grid + self.beats_with_onset
+
+
+@dataclass(frozen=True)
+class TempoEventDetail:
+    """Why one tempo event exists."""
+
+    time_s: float
+    gain_ms: float
+    """How much closer this event brings the onsets around it to the grid."""
+    drift_without_ms: float
+    """The worst drift around it if this event were merged away."""
+
+
+@dataclass(frozen=True)
 class TempoAnalysis:
     tempo_map: TempoMap
     bpm: float
-    """The main tempo: the single tempo, or the typical one of a variable song."""
+    """The main tempo: the single tempo, or the average one of a variable song."""
     method: str
     """``constant``, ``variable``, ``override`` or ``fallback``."""
     decision: str
     """Why this method was chosen, in words."""
-    segment_count: int
-    on_grid_ratio: float
-    """Share of strong onsets within :data:`GRID_MATCH_S` of a sixteenth note."""
-    grid_error_p95_ms: float
     tempo_strength: float
+    max_beat_drift_ms: float = DEFAULT_MAX_BEAT_DRIFT_S * 1000.0
+    final: DriftStats | None = None
+    """The fit of the map that was chosen."""
+    one_tempo: DriftStats | None = None
+    """The fit one tempo would have, for comparison."""
+    event_details: tuple[TempoEventDetail, ...] = ()
     off_tempo_share: float = 0.0
     """Share of 30 second windows whose local tempo differs from the main tempo."""
-    max_window_drift_ms: float = 0.0
-    """Largest average distance between the beats and one straight tempo in any window."""
-    max_section_deviation: float = 0.0
-    """Largest relative tempo difference of any section from the main tempo."""
-    one_tempo_on_grid: float | None = None
-    """Share of strong onsets on the grid if the song had one tempo."""
-    segments_on_grid: float | None = None
-    """Share of strong onsets on the grid if the map followed the tracked beats."""
     first_downbeat_s: float | None = None
     bar_confidence: float = 0.0
     """How far the chosen bar phase stands out from the runner-up, in standard deviations."""
@@ -136,20 +166,44 @@ class TempoAnalysis:
     def is_fallback(self) -> bool:
         return self.method == "fallback"
 
-    def event_reasons(self) -> list[str]:
+    @property
+    def on_grid_ratio(self) -> float:
+        return self.final.on_grid if self.final else 0.0
+
+    def event_explanations(self) -> list[dict[str, object]]:
         """Explain each tempo event, in the order of ``tempo_map.tempos``."""
         tempos = self.tempo_map.tempos
         has_lead_in = len(tempos) > 1 and tempos[1].tick == self.tempo_map.resolution
         general = {
             "constant": "main tempo",
             "override": "tempo given with --bpm",
-            "variable": "the beats moved too far from the previous tempo",
+            "variable": "tempo up to the first event",
             "fallback": "default tempo: the audio has no clear pulse",
         }[self.method]
-        reasons = [general] * len(tempos)
-        if has_lead_in:
-            reasons[0] = "lead-in: fits the start of the audio to the first grid beat"
-        return reasons
+        explanations: list[dict[str, object]] = []
+        for index, event in enumerate(tempos):
+            time = self.tempo_map.seconds_at(float(event.tick))
+            detail = next(
+                (item for item in self.event_details if abs(item.time_s - time) < 0.002), None
+            )
+            if detail is not None:
+                explanations.append(
+                    {
+                        "reason": (
+                            f"beats stray {detail.drift_without_ms:.0f} ms from the grid here "
+                            f"without this event (limit {self.max_beat_drift_ms:.0f} ms)"
+                        ),
+                        "gain_ms": round(detail.gain_ms, 2),
+                        "drift_without_ms": round(detail.drift_without_ms, 1),
+                    }
+                )
+            elif index == 0 and has_lead_in:
+                explanations.append(
+                    {"reason": "lead-in: fits the start of the audio to the first grid beat"}
+                )
+            else:
+                explanations.append({"reason": general})
+        return explanations
 
 
 def _harmonic_scores(
@@ -269,28 +323,285 @@ def _beats_with_evidence(beats: np.ndarray, envelope: np.ndarray, frame_rate: fl
     return strength >= max(OnsetConfig.min_strength, 0.5 * float(np.median(strength)))
 
 
-def _max_window_mean(times: np.ndarray, residuals: np.ndarray) -> float:
-    """Return the largest absolute average of ``residuals`` in any window of the song."""
-    largest = 0.0
-    start = float(times[0])
-    while start < times[-1]:
-        inside = (times >= start) & (times < start + DRIFT_WINDOW_S)
-        if inside.sum() >= _MIN_WINDOW_BEATS:
-            largest = max(largest, abs(float(residuals[inside].mean())))
-        start += DRIFT_WINDOW_S / 2
-    return largest
+@dataclass(frozen=True)
+class BeatGrid:
+    """A continuous, piecewise-straight map from beat numbers to times. Each breakpoint
+    between the first and last is a tempo change."""
+
+    numbers: np.ndarray
+    times: np.ndarray
+
+    def time_of(self, numbers: np.ndarray) -> np.ndarray:
+        return np.interp(numbers, self.numbers, self.times)
+
+    def number_at(self, times: np.ndarray) -> np.ndarray:
+        return np.interp(times, self.times, self.numbers)
+
+    @property
+    def is_increasing(self) -> bool:
+        return bool(np.all(np.diff(self.times) > 0))
 
 
-def _beat_phase(beats: np.ndarray, period_s: float) -> float:
-    """Return where within a beat the given beats gather. Positions are compared modulo the
-    period because a tracker can add or drop a beat in a sparse passage: numbering beats
-    in sequence would turn that into a whole beat of apparent drift for the rest of the song."""
-    pointer = np.mean(np.exp(2j * np.pi * beats / period_s))
-    return float(np.angle(pointer) * period_s / (2 * np.pi))
+@dataclass(frozen=True)
+class _Evidence:
+    """What a grid is fitted to and judged by."""
+
+    beats: np.ndarray
+    numbers: np.ndarray
+    onsets: np.ndarray
+    onset_weights: np.ndarray
+    first_number: int
+    last_number: int
+    is_sequential: bool = True
+    """Whether beats are numbered along the track, not by their nearest grid line."""
 
 
-def _beat_residuals(beats: np.ndarray, period_s: float, phase_s: float) -> np.ndarray:
-    return np.mod(beats - phase_s + period_s / 2, period_s) - period_s / 2
+def _fit_grid(evidence: _Evidence, knots: list[int], start: BeatGrid | None = None) -> BeatGrid:
+    """Fit a grid with breaks at ``knots`` to the beats and to the onsets near the grid.
+
+    The beats carry the grid across large drifts, and the onsets refine it beyond the
+    tracker's frame size. Without a starting grid, the first round uses the beats alone.
+    """
+    breakpoints = np.array(
+        [evidence.first_number, *sorted(knots), evidence.last_number], dtype=np.float64
+    )
+
+    def design(numbers: np.ndarray) -> np.ndarray:
+        columns = [np.ones_like(numbers), numbers]
+        columns.extend(np.maximum(0.0, numbers - knot) for knot in sorted(knots))
+        return np.stack(columns, axis=1)
+
+    grid = start
+    for _ in range(_FIT_ROUNDS):
+        numbers, times, weights = evidence.numbers, evidence.beats, np.ones_like(evidence.beats)
+        if grid is not None and evidence.onsets.size:
+            position = np.round(grid.number_at(evidence.onsets) * GRID_DIVISOR) / GRID_DIVISOR
+            near = np.abs(evidence.onsets - grid.time_of(position)) <= GRID_MATCH_S
+            numbers = np.r_[numbers, position[near]]
+            times = np.r_[times, evidence.onsets[near]]
+            weights = np.r_[weights, evidence.onset_weights[near]]
+        matrix = design(numbers)
+        coefficients, *_ = np.linalg.lstsq(matrix * weights[:, None], times * weights, rcond=None)
+        grid = BeatGrid(breakpoints, design(breakpoints) @ coefficients)
+    assert grid is not None
+    return grid
+
+
+def _region_drifts(grid: BeatGrid, evidence: _Evidence) -> tuple[np.ndarray, np.ndarray]:
+    """Return each region's center and how far its beats sit from the grid.
+
+    This is the average distance, unless the beats are typically further away than that.
+    Under one tempo, beats are numbered by their nearest grid line, and in a passage at
+    another tempo their distances sweep from one side to the other and average to nothing.
+    """
+    residuals = evidence.beats - grid.time_of(evidence.numbers)
+    centers: list[float] = []
+    drifts: list[float] = []
+    for first in range(evidence.first_number, evidence.last_number, _REGION_HOP_BEATS):
+        inside = (evidence.numbers >= first) & (evidence.numbers < first + REGION_BEATS)
+        if inside.sum() >= _MIN_REGION_BEATS:
+            mean = float(residuals[inside].mean())
+            typical = float(np.median(np.abs(residuals[inside])))
+            centers.append(first + REGION_BEATS / 2)
+            drifts.append(mean if evidence.is_sequential else math.copysign(max(abs(mean), typical), mean))
+    return np.array(centers), np.array(drifts)
+
+
+def _onset_errors(grid: BeatGrid, onsets: np.ndarray) -> np.ndarray:
+    """Return each onset's distance from its nearest sixteenth note, capped at the on-grid
+    limit: an onset that belongs to no grid position must not dominate the average."""
+    position = np.round(grid.number_at(onsets) * GRID_DIVISOR) / GRID_DIVISOR
+    return np.minimum(np.abs(onsets - grid.time_of(position)), GRID_MATCH_S)
+
+
+def _stats(grid: BeatGrid, evidence: _Evidence) -> DriftStats:
+    _, drifts = _region_drifts(grid, evidence)
+    magnitudes = np.abs(drifts) if drifts.size else np.zeros(1)
+    position = np.round(grid.number_at(evidence.onsets) * GRID_DIVISOR) / GRID_DIVISOR
+    errors = np.abs(evidence.onsets - grid.time_of(position))
+    on_grid = float(np.mean(errors <= GRID_MATCH_S)) if errors.size else 0.0
+    supported = 0.0
+    if evidence.onsets.size:
+        first = math.ceil(float(grid.number_at(evidence.onsets[:1])[0]))
+        last = math.floor(float(grid.number_at(evidence.onsets[-1:])[0]))
+        if last > first:
+            lines = grid.time_of(np.arange(first, last + 1, dtype=np.float64))
+            nearest = np.searchsorted(evidence.onsets, lines)
+            before = evidence.onsets[np.clip(nearest - 1, 0, evidence.onsets.size - 1)]
+            after = evidence.onsets[np.clip(nearest, 0, evidence.onsets.size - 1)]
+            distance = np.minimum(np.abs(lines - before), np.abs(lines - after))
+            supported = float(np.mean(distance <= GRID_MATCH_S))
+    return DriftStats(
+        float(magnitudes.max() * 1000.0),
+        float(np.median(magnitudes) * 1000.0),
+        on_grid,
+        supported,
+    )
+
+
+def _event_gain(with_event: BeatGrid, without_event: BeatGrid, onsets: np.ndarray) -> float:
+    """Return how much closer an event brings the onsets it actually moves the grid for.
+
+    Averaging over everything between neighbouring events would dilute a real local
+    improvement until the event looked useless.
+    """
+    numbers = with_event.number_at(onsets)
+    moved = np.abs(with_event.time_of(numbers) - without_event.time_of(numbers)) >= _MOVED_S
+    if not moved.any():
+        return 0.0
+    return float(
+        _onset_errors(without_event, onsets[moved]).mean()
+        - _onset_errors(with_event, onsets[moved]).mean()
+    )
+
+
+def _add_knots(evidence: _Evidence, limit_s: float) -> tuple[BeatGrid, list[int]]:
+    """Break the grid at the worst region until every region is within ``limit_s``.
+
+    One break turns a drift into a corner, which suits a slow wander. A short bump that
+    returns to the old line needs a break on either side, so those are tried too, and the
+    fewest breaks that solve the region win.
+    """
+    knots: list[int] = []
+    grid = _fit_grid(evidence, knots)
+    given_up: set[float] = set()
+
+    while len(knots) < _MAX_KNOTS:
+        centers, drifts = _region_drifts(grid, evidence)
+        worst_index = None
+        for index in np.argsort(-np.abs(drifts)):
+            if abs(drifts[index]) <= limit_s:
+                break
+            if float(centers[index]) not in given_up:
+                worst_index = int(index)
+                break
+        if worst_index is None:
+            break
+        center = float(centers[worst_index])
+        worst = abs(float(drifts[worst_index]))
+
+        best: tuple[float, list[int], BeatGrid] | None = None
+        for offsets in _KNOT_PATTERNS:
+            added = [int(center) + offset for offset in offsets]
+            acceptable = all(
+                evidence.first_number < knot < evidence.last_number
+                and all(abs(knot - other) >= _MIN_KNOT_SPACING_BEATS for other in knots)
+                for knot in added
+            )
+            if not acceptable:
+                continue
+            trial = _fit_grid(evidence, [*knots, *added], grid)
+            if not trial.is_increasing:
+                continue
+            new_centers, new_drifts = _region_drifts(trial, evidence)
+            here = np.abs(new_drifts[new_centers == center])
+            remaining = float(here[0]) if here.size else 0.0
+            if best is None or remaining < best[0]:
+                best = (remaining, added, trial)
+            if remaining <= limit_s:
+                break
+
+        if best is None or best[0] > worst - _MIN_DRIFT_IMPROVEMENT_S:
+            given_up.add(center)
+            continue
+        knots.extend(best[1])
+        grid = best[2]
+    return grid, sorted(knots)
+
+
+def _event_details(
+    evidence: _Evidence, grid: BeatGrid, knots: list[int]
+) -> tuple[list[TempoEventDetail], list[float]]:
+    """Work out what each knot contributes, by refitting the grid without it."""
+    details: list[TempoEventDetail] = []
+    gains: list[float] = []
+    for position, knot in enumerate(knots):
+        others = knots[:position] + knots[position + 1 :]
+        without = _fit_grid(evidence, others, grid)
+        low = knots[position - 1] if position > 0 else evidence.first_number
+        high = knots[position + 1] if position + 1 < len(knots) else evidence.last_number
+        gain = _event_gain(grid, without, evidence.onsets)
+        gains.append(gain)
+        centers, drifts = _region_drifts(without, evidence)
+        around = (centers >= low) & (centers <= high)
+        worst = float(np.abs(drifts[around]).max()) if around.any() else 0.0
+        time = float(grid.time_of(np.array([float(knot)]))[0])
+        details.append(TempoEventDetail(time, gain * 1000.0, worst * 1000.0))
+    return details, gains
+
+
+def _polish_knots(
+    evidence: _Evidence, grid: BeatGrid, knots: list[int]
+) -> tuple[BeatGrid, list[int]]:
+    """Slide each knot a few beats to where the grid fits the beats best. Knots start at
+    region centers, but an abrupt tempo change happens wherever it happens."""
+    knots = list(knots)
+
+    def misfit(candidate: BeatGrid) -> float:
+        return float(np.sum(np.square(evidence.beats - candidate.time_of(evidence.numbers))))
+
+    for position in range(len(knots)):
+        best_error = misfit(grid)
+        for shift in range(-_POLISH_BEATS, _POLISH_BEATS + 1):
+            moved = knots[position] + shift
+            neighbours = knots[:position] + knots[position + 1 :]
+            if shift == 0 or not evidence.first_number < moved < evidence.last_number:
+                continue
+            if any(abs(moved - other) < _MIN_KNOT_SPACING_BEATS for other in neighbours):
+                continue
+            trial = _fit_grid(evidence, [*neighbours, moved], grid)
+            error = misfit(trial)
+            if trial.is_increasing and error < best_error:
+                best_error = error
+                best_knots = sorted([*neighbours, moved])
+                best_grid = trial
+        if best_error < misfit(grid):
+            knots = best_knots
+            grid = best_grid
+    return grid, knots
+
+
+def _merge_useless_knots(
+    evidence: _Evidence, grid: BeatGrid, knots: list[int]
+) -> tuple[BeatGrid, list[int], list[TempoEventDetail]]:
+    """Remove every knot that does not bring the onsets around it closer to the grid."""
+    while True:
+        details, gains = _event_details(evidence, grid, knots)
+        weakest = [i for i, gain in enumerate(gains) if gain < MIN_EVENT_GAIN_S]
+        if not weakest:
+            return grid, knots, details
+        # Removing one knot changes its neighbours' gains, so never remove two adjacent ones.
+        doomed: set[int] = set()
+        for index in sorted(weakest, key=lambda i: gains[i]):
+            if index - 1 not in doomed and index + 1 not in doomed:
+                doomed.add(index)
+        knots = [knot for i, knot in enumerate(knots) if i not in doomed]
+        grid = _fit_grid(evidence, knots, grid)
+
+
+def _segments_from_grid(grid: BeatGrid) -> list[TempoSegment]:
+    first = int(grid.numbers[0])
+    return [
+        TempoSegment(
+            int(grid.numbers[i]) - first,
+            int(grid.numbers[i + 1]) - first,
+            float(grid.times[i]),
+            float((grid.times[i + 1] - grid.times[i]) / (grid.numbers[i + 1] - grid.numbers[i])),
+        )
+        for i in range(len(grid.numbers) - 1)
+    ]
+
+
+def _main_bpm(segments: list[TempoSegment]) -> float:
+    """Return the song's average tempo, leaving out sections far from its typical tempo,
+    such as a free intro."""
+    periods = np.array([segment.period_s for segment in segments])
+    lengths = np.array([segment.last_beat - segment.first_beat for segment in segments], float)
+    order = np.argsort(periods)
+    middle = np.searchsorted(np.cumsum(lengths[order]), lengths.sum() / 2)
+    typical = periods[order[min(middle, len(order) - 1)]]
+    close = np.abs(periods / typical - 1.0) <= _MAIN_TEMPO_RANGE
+    return 60.0 / float(np.average(periods[close], weights=lengths[close]))
 
 
 def _fit_one_tempo(
@@ -298,75 +609,138 @@ def _fit_one_tempo(
 ) -> tuple[float, float]:
     """Return (start, period) of the best single tempo.
 
-    The tracker's beats say which onsets are on the beat; every onset on the sixteenth
-    grid around them then refines period and phase, far beyond the tracker's frame size.
+    Beats are compared modulo the period because a tracker can add or drop a beat in a
+    sparse passage: numbering them in sequence would turn that into a whole beat of drift
+    for the rest of the song. Every onset on the sixteenth grid around them then refines
+    period and phase, far beyond the tracker's frame size.
     """
     period = 60.0 / bpm
     start = _beat_phase(beats, period)
     step = period / GRID_DIVISOR
-    for _ in range(_REGRESSION_ROUNDS):
+    for _ in range(4):
         index = np.round((onsets - start) / step)
         matched = np.abs(onsets - (start + index * step)) <= GRID_MATCH_S
-        if matched.sum() < _MIN_WINDOW_BEATS:
+        if matched.sum() < _MIN_REGION_BEATS:
             break
         step, start = np.polyfit(index[matched], onsets[matched], 1, w=np.sqrt(heights[matched]))
     return float(start), float(step * GRID_DIVISOR)
 
 
-def _section_deviation(beats: np.ndarray, period_s: float) -> float:
-    """Return the largest difference between a section's own tempo and ``period_s``.
+def _beat_phase(beats: np.ndarray, period_s: float) -> float:
+    """Return where within a beat the given beats gather."""
+    pointer = np.mean(np.exp(2j * np.pi * beats / period_s))
+    return float(np.angle(pointer) * period_s / (2 * np.pi))
 
-    Sections are long enough that frame-sized jitter in the tracker's beats cannot
-    masquerade as a tempo change. ``beats`` should hold only beats with evidence.
+
+def _sequential_numbers(beats: np.ndarray, period_s: float) -> np.ndarray:
+    """Number beats along the track, so that a skipped beat keeps its place."""
+    steps = np.maximum(1, np.round(np.diff(beats) / period_s))
+    return np.r_[0.0, np.cumsum(steps)]
+
+
+def _one_tempo_evidence(
+    beats: np.ndarray, onsets: np.ndarray, weights: np.ndarray, start: float, period: float
+) -> tuple[BeatGrid, _Evidence]:
+    """Express one tempo as a grid, numbering each beat by the grid line nearest to it."""
+    numbers = np.round((beats - start) / period)
+    low = int(numbers.min()) - 1
+    high = int(numbers.max()) + 1
+    grid = BeatGrid(
+        np.array([low, high], dtype=np.float64),
+        np.array([start + low * period, start + high * period]),
+    )
+    return grid, _Evidence(beats, numbers, onsets, weights, low, high, is_sequential=False)
+
+
+@dataclass(frozen=True)
+class GridChoice:
+    """The tempo decision for one song."""
+
+    segments: list[TempoSegment]
+    bpm: float
+    method: str
+    decision: str
+    final: DriftStats
+    one_tempo: DriftStats
+    details: tuple[TempoEventDetail, ...] = ()
+
+
+def choose_grid(
+    beats: np.ndarray,
+    onsets: np.ndarray,
+    heights: np.ndarray,
+    bpm: float,
+    duration_s: float,
+    max_beat_drift_s: float = DEFAULT_MAX_BEAT_DRIFT_S,
+) -> GridChoice:
+    """Decide between one tempo and a grid with events.
+
+    Args:
+        beats: Tracked beats that coincide with an onset.
+        onsets: Strong onsets of the song.
+        heights: Their strengths.
+        bpm: The whole-song tempo.
+        duration_s: Length of the song.
+        max_beat_drift_s: How far a region's beats may stray before it gets an event.
     """
-    largest = 0.0
-    for first in range(0, max(1, len(beats) - SECTION_BEATS + 1), SECTION_BEATS // 2):
-        section = beats[first : first + SECTION_BEATS]
-        if len(section) < SECTION_BEATS // 2:
-            continue
-        count = np.round((section - section[0]) / period_s)
-        local_period = float(np.polyfit(count, section, 1)[0])
-        largest = max(largest, abs(local_period / period_s - 1.0))
-    return largest
+    weights = np.sqrt(heights) / max(float(np.mean(np.sqrt(heights))), 1e-9)
+    start, period = _fit_one_tempo(beats, onsets, heights, bpm)
+    single_grid, single_evidence = _one_tempo_evidence(beats, onsets, weights, start, period)
+    single_stats = _stats(single_grid, single_evidence)
+    phase = float(np.mod(start, period))
+    single_segments = [TempoSegment(0, max(1, int((duration_s - phase) / period)), phase, period)]
+    limit_ms = max_beat_drift_s * 1000.0
 
+    def one_tempo(decision: str) -> GridChoice:
+        return GridChoice(
+            single_segments, 60.0 / period, "constant", decision, single_stats, single_stats
+        )
 
-def _fit_line(beats: np.ndarray, anchor: float | None) -> tuple[float, float, float]:
-    """Fit evenly spaced beats; return (start, period, largest absolute residual).
+    if single_stats.max_ms <= limit_ms:
+        return one_tempo(
+            f"beats stay within {single_stats.max_ms:.0f} ms of one tempo in every region "
+            f"(limit {limit_ms:.0f} ms)"
+        )
 
-    With ``anchor``, the line must start there, which keeps neighbouring segments
-    continuous.
-    """
-    index = np.arange(len(beats), dtype=np.float64)
-    if anchor is None:
-        period, start = np.polyfit(index, beats, 1)
-    else:
-        start = anchor
-        period = float(np.dot(index, beats - anchor) / np.dot(index, index))
-    residual = beats - (start + period * index)
-    return float(start), float(period), float(np.abs(residual).max())
+    numbers = _sequential_numbers(beats, period)
+    evidence = _Evidence(beats, numbers, onsets, weights, int(numbers.min()), int(numbers.max()))
+    grid, knots = _add_knots(evidence, max_beat_drift_s)
+    grid, knots, details = _merge_useless_knots(evidence, grid, knots)
+    grid, knots = _polish_knots(evidence, grid, knots)
+    details = _event_details(evidence, grid, knots)[0]
+    final_stats = _stats(grid, evidence)
+    harmful = final_stats.fit < single_stats.fit - MAX_TOTAL_FIT_LOSS
+    if not knots or harmful or not grid.is_increasing:
+        return one_tempo(
+            f"beats stray {single_stats.max_ms:.0f} ms from one tempo (limit {limit_ms:.0f} ms), "
+            f"but tempo events would not bring the onsets closer to the grid "
+            f"(with one tempo {single_stats.on_grid:.0%} of onsets are on the grid and "
+            f"{single_stats.beats_with_onset:.0%} of beats have an onset; with {len(knots)} "
+            f"events {final_stats.on_grid:.0%} and {final_stats.beats_with_onset:.0%})"
+        )
 
-
-def fit_segments(beats: np.ndarray, tolerance_s: float = FIT_TOLERANCE_S) -> list[TempoSegment]:
-    """Greedily cover ``beats`` with the longest constant-tempo segments within tolerance."""
-    segments: list[TempoSegment] = []
-    first = 0
-    anchor: float | None = None
-    last_index = len(beats) - 1
-    while first < last_index:
-        last = min(first + MIN_SEGMENT_BEATS - 1, last_index)
-        start, period, _ = _fit_line(beats[first : last + 1], anchor)
-        candidate = last + 1
-        while candidate <= last_index:
-            fitted = _fit_line(beats[first : candidate + 1], anchor)
-            if fitted[2] > tolerance_s:
-                break
-            start, period, _ = fitted
-            last = candidate
-            candidate += 1
-        segments.append(TempoSegment(first, last, start, period))
-        anchor = start + period * (last - first)
-        first = last
-    return segments
+    _, final_drifts = _region_drifts(grid, evidence)
+    over_limit = int(np.sum(np.abs(final_drifts) > max_beat_drift_s))
+    decision = (
+        f"beats stray {single_stats.max_ms:.0f} ms from one tempo (limit {limit_ms:.0f} ms): "
+        f"{len(knots)} events bring the worst region to {final_stats.max_ms:.0f} ms and onsets "
+        f"on the grid from {single_stats.on_grid:.0%} to {final_stats.on_grid:.0%}"
+    )
+    if over_limit:
+        decision += (
+            f"; {over_limit} of {final_drifts.size} regions stay over the limit because events "
+            f"there would not bring the onsets closer"
+        )
+    segments = _segments_from_grid(grid)
+    return GridChoice(
+        segments,
+        _main_bpm(segments),
+        "variable",
+        decision,
+        final_stats,
+        single_stats,
+        tuple(details),
+    )
 
 
 def tempo_map_from_segments(
@@ -392,27 +766,23 @@ def tempo_map_from_segments(
 
     for segment in segments[1:]:
         bpm = 60.0 / segment.period_s
-        if abs(bpm - tempos[-1].bpm) >= MERGE_BPM_DIFFERENCE:
-            # Beat i of the fitted sequence sits (i - steps + 1) quarter notes in.
-            tick = (segment.first_beat - steps + 1) * resolution
+        # Beat i of the fitted sequence sits (i - steps + 1) quarter notes in.
+        tick = (segment.first_beat - steps + 1) * resolution
+        if tick > tempos[-1].tick and abs(bpm - tempos[-1].bpm) >= MERGE_BPM_DIFFERENCE:
             tempos.append(TempoEvent(tick, bpm))
     return TempoMap(tempos, [TimeSignatureEvent(0, 4, 4)], resolution)
 
 
-def fit_tempo_map(beats: np.ndarray, resolution: int = DEFAULT_RESOLUTION) -> tuple[TempoMap, int]:
-    """Return the tempo map for ``beats`` and its number of constant-tempo segments."""
-    segments = fit_segments(beats)
-    return tempo_map_from_segments(segments, resolution), len(segments)
-
-
-def _grid_statistics(tempo_map: TempoMap, times: np.ndarray) -> tuple[float, float]:
-    """Return the on-grid share and the 95th percentile grid error of the given onsets."""
-    if times.size == 0:
-        return 0.0, float("nan")
-    step = tempo_map.resolution / GRID_DIVISOR
-    grid = np.round(tempo_map.ticks_at(times) / step) * step
-    errors = np.abs(tempo_map.seconds_at(grid) - times)
-    return float(np.mean(errors <= GRID_MATCH_S)), float(np.percentile(errors, 95) * 1000.0)
+def fit_tempo_map(
+    beats: np.ndarray,
+    max_beat_drift_s: float = DEFAULT_MAX_BEAT_DRIFT_S,
+    resolution: int = DEFAULT_RESOLUTION,
+) -> tuple[TempoMap, GridChoice]:
+    """Build a tempo map from beats alone, treating them as the song's onsets too."""
+    bpm = 60.0 / float(np.median(np.diff(beats)))
+    duration = float(beats[-1]) + 1.0
+    choice = choose_grid(beats, beats, np.ones_like(beats), bpm, duration, max_beat_drift_s)
+    return tempo_map_from_segments(choice.segments, resolution), choice
 
 
 def _z_scored(values: np.ndarray) -> np.ndarray:
@@ -471,122 +841,52 @@ def align_bars(
     return aligned, float(tempo_map.seconds_at(first * resolution)), confidence
 
 
-@dataclass(frozen=True)
-class _Choice:
-    """The tempo decision, before bars and statistics are worked out."""
-
-    segments: list[TempoSegment]
-    bpm: float
-    method: str
-    decision: str
-    off_share: float = 0.0
-    drift_s: float = 0.0
-    deviation: float = 0.0
-    one_tempo_on_grid: float | None = None
-    segments_on_grid: float | None = None
-
-
-def _single_segment(start_s: float, period_s: float, duration_s: float) -> list[TempoSegment]:
-    phase = float(np.mod(start_s, period_s))
-    return [TempoSegment(0, max(1, int((duration_s - phase) / period_s)), phase, period_s)]
-
-
-def _choose_override(
-    bpm: float, envelope: np.ndarray, samplerate: int, duration_s: float, estimated: float
-) -> _Choice:
-    """Keep the given tempo exactly and only look for the phase."""
-    period = 60.0 / bpm
-    beats = _track_beats(envelope, samplerate, bpm)
-    phase = 0.0
-    drift = 0.0
-    if beats.size >= _MIN_WINDOW_BEATS:
-        phase = _beat_phase(beats, period)
-        drift = _max_window_mean(beats, _beat_residuals(beats, period, phase))
-    return _Choice(
-        _single_segment(phase, period, duration_s),
-        bpm,
-        "override",
-        f"--bpm {bpm:g} given on the command line (whole-song estimate: {estimated:.2f})",
-        drift_s=drift,
-    )
-
-
-def _choose_automatically(
+def _override_grid(
+    bpm: float,
     envelope: np.ndarray,
     samplerate: int,
     frame_rate: float,
-    base_bpm: float,
     onsets: np.ndarray,
     heights: np.ndarray,
     duration_s: float,
-) -> _Choice | None:
-    """Prefer one tempo; return None when the tracker finds no usable beats."""
-    off_share = off_tempo_share(envelope, frame_rate, base_bpm)
-    changes_tempo = off_share > MAX_OFF_TEMPO_SHARE
-    expected = local_tempo_curve(envelope, frame_rate, base_bpm) if changes_tempo else base_bpm
-    beats = _track_beats(envelope, samplerate, expected)
-    if len(beats) < MIN_SEGMENT_BEATS:
-        return None
-
-    segments = fit_segments(beats)
-    lengths = np.array([segment.last_beat - segment.first_beat for segment in segments], float)
-    periods = np.array([segment.period_s for segment in segments])
-    typical_bpm = 60.0 / float(np.average(periods, weights=lengths))
-    segments_grid, _ = _grid_statistics(tempo_map_from_segments(segments), onsets)
-
-    if changes_tempo:
-        decision = (
-            f"{off_share:.0%} of the 30 s windows hold another tempo "
-            f"(limit {MAX_OFF_TEMPO_SHARE:.0%}): {len(segments)} constant sections"
-        )
-        return _Choice(
-            segments, typical_bpm, "variable", decision, off_share, segments_on_grid=segments_grid
-        )
-
-    evidence = beats[_beats_with_evidence(beats, envelope, frame_rate)]
-    usable = evidence if evidence.size >= _MIN_WINDOW_BEATS else beats
-    start, period = _fit_one_tempo(usable, onsets, heights, base_bpm)
-    single = _single_segment(start, period, duration_s)
-    single_grid, _ = _grid_statistics(tempo_map_from_segments(single), onsets)
-    drift = _max_window_mean(usable, _beat_residuals(usable, period, start))
-    deviation = _section_deviation(usable, period)
-    gain = segments_grid - single_grid
-    comparison = (
-        f"{single_grid:.0%} of onsets on the grid with one tempo, "
-        f"{segments_grid:.0%} with {len(segments)} sections"
-    )
-
-    if gain <= NO_BENEFIT_ON_GRID_GAIN:
-        decision = f"{comparison}: tempo changes would not help"
-        chosen, bpm, method = single, 60.0 / period, "constant"
-    elif deviation <= MAX_TEMPO_DEVIATION and gain <= MAX_PERFORMANCE_ON_GRID_LOSS:
-        decision = (
-            f"{comparison}, but sections differ at most {deviation:.2%} from the main tempo "
-            f"(limit {MAX_TEMPO_DEVIATION:.1%}): treated as performance, one tempo kept"
-        )
-        chosen, bpm, method = single, 60.0 / period, "constant"
+    estimated: float,
+) -> GridChoice:
+    """Keep the given tempo exactly and only look for the phase."""
+    period = 60.0 / bpm
+    beats = _track_beats(envelope, samplerate, bpm)
+    if beats.size < _MIN_REGION_BEATS:
+        stats = DriftStats(0.0, 0.0, 0.0)
+        phase = 0.0
     else:
-        decision = (
-            f"{comparison}, and sections differ up to {deviation:.2%} from the main tempo "
-            f"(limit {MAX_TEMPO_DEVIATION:.1%}): following the beats"
-        )
-        chosen, bpm, method = segments, typical_bpm, "variable"
-    return _Choice(chosen, bpm, method, decision, off_share, drift, deviation, single_grid, segments_grid)
+        kept = beats[_beats_with_evidence(beats, envelope, frame_rate)]
+        kept = kept if kept.size >= _MIN_REGION_BEATS else beats
+        phase = _beat_phase(kept, period)
+        weights = np.sqrt(heights) / max(float(np.mean(np.sqrt(heights))), 1e-9) if heights.size else heights
+        grid, evidence = _one_tempo_evidence(kept, onsets, weights, phase, period)
+        stats = _stats(grid, evidence)
+        phase = float(np.mod(phase, period))
+    return GridChoice(
+        [TempoSegment(0, max(1, int((duration_s - phase) / period)), phase, period)],
+        bpm,
+        "override",
+        f"--bpm {bpm:g} given on the command line (whole-song estimate: {estimated:.2f})",
+        stats,
+        stats,
+    )
 
 
 def _fallback(strength: float) -> TempoAnalysis:
     log.warning("No clear pulse in the audio, falling back to %.0f BPM", FALLBACK_BPM)
     tempo_map = TempoMap([TempoEvent(0, FALLBACK_BPM)], [TimeSignatureEvent(0, 4, 4)])
     decision = f"no clear pulse in the audio: default {FALLBACK_BPM:.0f} BPM"
-    return TempoAnalysis(
-        tempo_map, FALLBACK_BPM, "fallback", decision, 1, 0.0, float("nan"), strength
-    )
+    return TempoAnalysis(tempo_map, FALLBACK_BPM, "fallback", decision, strength)
 
 
 def estimate_tempo_map(
     mono: np.ndarray,
     samplerate: int = ANALYSIS_SAMPLERATE,
     bpm_override: float | None = None,
+    max_beat_drift_s: float = DEFAULT_MAX_BEAT_DRIFT_S,
 ) -> TempoAnalysis:
     """Estimate the song's tempo map from its mix.
 
@@ -594,6 +894,7 @@ def estimate_tempo_map(
         mono: The mix.
         samplerate: Its sample rate.
         bpm_override: Use exactly this tempo; only the phase and bars are detected.
+        max_beat_drift_s: How far a region's beats may stray before it gets a tempo event.
 
     Bars are assumed to be 4/4 until time signature detection exists.
     """
@@ -605,36 +906,38 @@ def estimate_tempo_map(
 
     base_bpm, strength = select_tempo(envelope, frame_rate)
     onsets, heights = _strong_onsets(envelope, frame_rate)
+    off_share = 0.0
 
     if bpm_override is not None:
-        choice = _choose_override(bpm_override, envelope, samplerate, duration_s, base_bpm)
-    else:
-        if strength < MIN_TEMPO_STRENGTH or onsets.size < _MIN_WINDOW_BEATS:
-            return _fallback(strength)
-        automatic = _choose_automatically(
-            envelope, samplerate, frame_rate, base_bpm, onsets, heights, duration_s
+        choice = _override_grid(
+            bpm_override, envelope, samplerate, frame_rate, onsets, heights, duration_s, base_bpm
         )
-        if automatic is None:
+    else:
+        if strength < MIN_TEMPO_STRENGTH or onsets.size < _MIN_REGION_BEATS:
             return _fallback(strength)
-        choice = automatic
+        off_share = off_tempo_share(envelope, frame_rate, base_bpm)
+        changes_tempo = off_share > MAX_OFF_TEMPO_SHARE
+        expected = local_tempo_curve(envelope, frame_rate, base_bpm) if changes_tempo else base_bpm
+        beats = _track_beats(envelope, samplerate, expected)
+        if len(beats) < MIN_BEATS:
+            return _fallback(strength)
+        kept = beats[_beats_with_evidence(beats, envelope, frame_rate)]
+        kept = kept if kept.size >= MIN_BEATS else beats
+        choice = choose_grid(kept, onsets, heights, base_bpm, duration_s, max_beat_drift_s)
 
     tempo_map = tempo_map_from_segments(choice.segments)
     tempo_map, first_downbeat, bar_confidence = align_bars(tempo_map, mono, samplerate)
-    on_grid, error_p95 = _grid_statistics(tempo_map, onsets)
     return TempoAnalysis(
         tempo_map=tempo_map,
         bpm=choice.bpm,
         method=choice.method,
         decision=choice.decision,
-        segment_count=len(choice.segments),
-        on_grid_ratio=on_grid,
-        grid_error_p95_ms=error_p95,
         tempo_strength=strength,
-        off_tempo_share=choice.off_share,
-        max_window_drift_ms=choice.drift_s * 1000.0,
-        max_section_deviation=choice.deviation,
-        one_tempo_on_grid=choice.one_tempo_on_grid,
-        segments_on_grid=choice.segments_on_grid,
+        max_beat_drift_ms=max_beat_drift_s * 1000.0,
+        final=choice.final,
+        one_tempo=choice.one_tempo,
+        event_details=choice.details,
+        off_tempo_share=off_share,
         first_downbeat_s=first_downbeat,
         bar_confidence=bar_confidence,
         estimated_bpm=base_bpm,

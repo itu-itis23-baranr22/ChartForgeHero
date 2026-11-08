@@ -80,6 +80,7 @@ python -m chartgen build song.mp3 --artist "Artist" --title "Title" --bpm 97 --c
 `--click-overlay` adds `debug_click.wav`: the original mix with a metronome taken from the written
 `notes.chart`, the first beat of each bar an octave higher. A wrong tempo audibly slides away from
 the drums. `--bpm` forces one exact tempo; the phase and the first downbeat are still detected.
+`--max-beat-drift-ms` sets how far a region's beats may stray from one tempo before it gets an event.
 
 ## How it works
 
@@ -88,9 +89,11 @@ the drums. `--bpm` forces one exact tempo; the phase and the first downbeat are 
    and a stem that is only bleed gets no chart. Its audio moves to `song.ogg` rather than vanishing.
 3. **Track tempo** once on the original mix; all instruments share this map. A whole-song analysis
    finds the tempo, because a beat tracker left to itself read 129 BPM for a 97 BPM song. Told that
-   tempo, the same tracker finds the beats: against a human-made map of one real song, a median 10 ms
-   off, with 97.7% of bars agreeing. Tempo events must earn their place: `analysis.json` records the
-   comparison behind the decision and the reason for each event.
+   tempo, the same tracker finds the beats. A song keeps one tempo unless a region's beats stray more
+   than `--max-beat-drift-ms` (25 by default) from it. Then that region gets a tempo event, but only
+   if the event brings the onsets around it closer to the grid. `analysis.json` records each event's
+   reason and gain. Against a human-made map of one real song: 94% of beats within 35 ms, using 25
+   tempo events where the human used 123.
 4. **Detect onsets** on each stem, behind a noise gate and an adaptive threshold that reject bleed.
 5. **Package and verify**: every encoded file is decoded again and must match its source's length
    exactly with zero lag, and the finished folder must pass an independent validator. The folder

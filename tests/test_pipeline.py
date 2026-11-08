@@ -94,6 +94,9 @@ def test_analysis_records_the_whole_build(song_file, tmp_path):
     assert analysis["tempo"]["decision"]
     assert analysis["tempo"]["tempo_event_count"] == len(analysis["tempo"]["tempo_events"])
     assert all(event["reason"] for event in analysis["tempo"]["tempo_events"])
+    assert analysis["tempo"]["fit"]["on_grid"] > 0.9
+    assert analysis["tempo"]["one_tempo_fit"]["max_ms"] >= 0
+    assert analysis["tempo"]["max_beat_drift_limit_ms"] == 25.0
     assert analysis["click_overlay"] is None
     assert analysis["song_ini"]["difficulty"]["guitar"] >= 0
     assert set(analysis["timings_s"]) == {

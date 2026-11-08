@@ -5,7 +5,12 @@ from conftest import click_times, click_track, clicks_at, sine
 from chartgen.audio.io import ANALYSIS_SAMPLERATE, resample
 from chartgen.audio.onsets import detect_onsets
 from chartgen.audio.presence import PresenceThreshold, analyze_presence
-from chartgen.audio.tempo import estimate_tempo_map, fit_segments, fit_tempo_map
+from chartgen.audio.tempo import (
+    MIN_EVENT_GAIN_S,
+    choose_grid,
+    estimate_tempo_map,
+    fit_tempo_map,
+)
 
 SR = ANALYSIS_SAMPLERATE
 
@@ -68,7 +73,7 @@ def test_120_bpm_click_gives_one_tempo_and_aligned_beats(start):
     analysis = estimate_tempo_map(clicks_at(truth, 30, SR), SR)
     assert analysis.method == "constant"
     assert analysis.bpm == pytest.approx(120, abs=0.1)
-    assert analysis.segment_count == 1
+    assert len(analysis.tempo_map.tempos) <= 2
     # A click before the first grid beat falls in the lead-in, which is not on the grid.
     assert analysis.on_grid_ratio >= 0.98
     # Every other click sits on a quarter-note tick of the fitted map.
@@ -116,31 +121,100 @@ def test_human_jitter_stays_a_single_tempo():
     assert analysis.bpm == pytest.approx(100, abs=0.1)
 
 
-def test_performance_wander_keeps_one_tempo():
-    """A real recording wandered -24 to +19 ms around one tempo: that is no tempo change."""
-    bpm = 97.0
-    seconds = 240.0
+def wandering_clicks(amplitude_s: float, bpm: float = 97.0, seconds: float = 240.0) -> np.ndarray:
     nominal = click_times(bpm, seconds, 0.3)
-    played = nominal + 0.03 * np.sin(2 * np.pi * nominal / 120.0)
-    analysis = estimate_tempo_map(clicks_at(played, seconds, SR), SR)
+    return nominal + amplitude_s * np.sin(2 * np.pi * nominal / 120.0)
+
+
+def test_wander_within_the_limit_keeps_one_tempo():
+    played = wandering_clicks(0.012)
+    analysis = estimate_tempo_map(clicks_at(played, 240, SR), SR)
     assert analysis.method == "constant"
-    assert analysis.bpm == pytest.approx(bpm, abs=0.2)
+    assert analysis.bpm == pytest.approx(97.0, abs=0.2)
     assert len(analysis.tempo_map.tempos) <= 2
-    assert analysis.max_window_drift_ms > 12, "the wander must still be reported"
-    assert analysis.max_section_deviation < 0.015
+    assert analysis.final.max_ms <= 25
     assert "one tempo" in analysis.decision
 
 
+def test_wander_over_the_limit_gets_events_until_every_region_is_within_it():
+    """The owner's rule is in milliseconds: this is only 0.3 % of tempo deviation, yet the
+    beats stray 50 ms, and that is what counts."""
+    played = wandering_clicks(0.05)
+    analysis = estimate_tempo_map(clicks_at(played, 240, SR), SR)
+    assert analysis.method == "variable"
+    assert analysis.one_tempo.max_ms > 25
+    assert analysis.final.max_ms <= 25
+    assert analysis.final.on_grid >= analysis.one_tempo.on_grid
+    assert analysis.bpm == pytest.approx(97.0, abs=1.0)
+
+
+@pytest.mark.parametrize("limit_s,expected", [(0.005, "variable"), (0.2, "constant")])
+def test_drift_limit_is_a_parameter(limit_s, expected):
+    played = wandering_clicks(0.05)
+    analysis = estimate_tempo_map(clicks_at(played, 240, SR), SR, max_beat_drift_s=limit_s)
+    assert analysis.method == expected
+    assert analysis.max_beat_drift_ms == pytest.approx(limit_s * 1000)
+
+
+def test_stricter_limit_never_means_fewer_events():
+    played = wandering_clicks(0.05)
+    counts = [
+        len(estimate_tempo_map(clicks_at(played, 240, SR), SR, max_beat_drift_s=limit).tempo_map.tempos)
+        for limit in (0.2, 0.04, 0.015)
+    ]
+    assert counts == sorted(counts)
+
+
+def test_every_event_earns_its_place():
+    played = wandering_clicks(0.05)
+    analysis = estimate_tempo_map(clicks_at(played, 240, SR), SR)
+    assert analysis.event_details
+    for detail in analysis.event_details:
+        assert detail.gain_ms >= MIN_EVENT_GAIN_S * 1000
+    explanations = analysis.event_explanations()
+    assert len(explanations) == len(analysis.tempo_map.tempos)
+    explained = [item for item in explanations if "gain_ms" in item]
+    assert len(explained) == len(analysis.event_details)
+    assert all("limit 25 ms" in item["reason"] for item in explained)
+
+
+def test_short_bump_gets_events_only_around_it():
+    """One tempo fits all but 16 s of this song, which runs 60 ms late and then returns.
+    Bending the rest of the song would be wasted events."""
+    nominal = click_times(97, 240, 0.3)
+    truth = nominal + np.interp(nominal, [0, 100, 104, 116, 120, 240], [0, 0, 0.06, 0.06, 0, 0])
+    analysis = estimate_tempo_map(clicks_at(truth, 241, SR), SR)
+    assert analysis.method == "variable"
+    assert analysis.final.max_ms <= 25
+    assert len(analysis.event_details) <= 6
+    times = [detail.time_s for detail in analysis.event_details]
+    assert min(times) > 70 and max(times) < 150
+
+
+def test_tracker_mistake_cannot_spend_events():
+    """Regression test: in a sparse intro, the tracker locked onto an off-beat pattern and
+    strayed 223 ms from a song whose onsets fit one tempo perfectly."""
+    period = 60 / 130
+    grid = 0.2 + np.arange(400) * period
+    beats = grid.copy()
+    beats[:60] += period / 4  # The first beats sit one sixteenth late.
+    onsets = 0.2 + np.arange(1600) * period / 4
+    choice = choose_grid(beats, onsets, np.ones_like(onsets), 130.0, float(grid[-1] + 1))
+    assert choice.method == "constant"
+    assert choice.final.on_grid == pytest.approx(1.0)
+    assert choice.one_tempo.max_ms > 25, "the stray beats must still be reported"
+    assert "would not bring" in choice.decision
+
+
 def test_section_that_moves_the_song_away_from_one_tempo_is_followed():
-    """The middle of this song sits 70 ms late, which no single tempo can explain. The
-    tempo itself hardly differs, but one tempo would cost too many onsets their grid."""
+    """The middle of this song sits 70 ms late, which no single tempo can explain, although
+    the tempo itself hardly differs."""
     nominal = click_times(97, 240, 0.3)
     truth = nominal + np.interp(nominal, [0, 80, 90, 160, 170, 240], [0, 0, 0.07, 0.07, 0, 0])
     analysis = estimate_tempo_map(clicks_at(truth, 241, SR), SR)
     assert analysis.method == "variable"
-    assert analysis.max_section_deviation < 0.015
-    assert analysis.segments_on_grid - analysis.one_tempo_on_grid > 0.15
-    assert "following the beats" in analysis.decision
+    assert analysis.one_tempo.max_ms > 25
+    assert analysis.final.max_ms <= 25
     assert analysis.on_grid_ratio > 0.9
 
 
@@ -159,8 +233,9 @@ def test_short_faster_section_keeps_every_beat_on_the_grid():
 def test_decision_explains_every_tempo_event():
     analysis = estimate_tempo_map(clicks_at(click_times(120, 30, 0.2), 30, SR), SR)
     assert analysis.decision
-    assert len(analysis.event_reasons()) == len(analysis.tempo_map.tempos)
-    assert analysis.event_reasons()[-1] == "main tempo"
+    explanations = analysis.event_explanations()
+    assert len(explanations) == len(analysis.tempo_map.tempos)
+    assert explanations[-1]["reason"] == "main tempo"
 
 
 def test_bpm_override_is_used_exactly_even_when_it_is_wrong():
@@ -252,7 +327,6 @@ def test_real_tempo_change_uses_a_variable_map():
     seconds = float(truth[-1] + 1)
     analysis = estimate_tempo_map(clicks_at(truth, seconds, SR), SR)
     assert analysis.method == "variable"
-    assert analysis.segment_count >= 2
     bpms = [event.bpm for event in analysis.tempo_map.tempos]
     assert min(abs(bpm - 120) for bpm in bpms) < 2
     assert min(abs(bpm - 150) for bpm in bpms) < 2
@@ -267,20 +341,21 @@ def test_slow_drift_uses_a_variable_map():
     assert analysis.on_grid_ratio > 0.8
 
 
-def test_segment_fit_keeps_beats_on_the_grid_across_a_tempo_change():
+def test_beats_alone_can_build_a_map_across_a_tempo_change():
     first = 0.3 + np.arange(40) * 0.5
     second = first[-1] + np.arange(1, 41) * (60 / 150)
     beats = np.concatenate([first, second])
-    tempo_map, segments = fit_tempo_map(beats)
-    assert segments == 2
-    assert 150 == pytest.approx(tempo_map.tempos[-1].bpm, abs=0.5)
+    tempo_map, choice = fit_tempo_map(beats)
+    assert choice.method == "variable"
+    assert 150 == pytest.approx(tempo_map.tempos[-1].bpm, abs=1.0)
     ticks = tempo_map.ticks_at(beats)
     assert np.abs(ticks - np.round(ticks / 192) * 192).max() < 8
 
 
-def test_small_jitter_does_not_split_a_segment():
+def test_small_jitter_is_not_a_tempo_change():
     beats = 0.2 + np.arange(200) * 0.5 + np.random.default_rng(0).uniform(-0.012, 0.012, 200)
-    assert len(fit_segments(beats)) == 1
+    _, choice = fit_tempo_map(beats)
+    assert choice.method == "constant"
 
 
 def test_lead_in_never_exceeds_twice_the_song_tempo():
