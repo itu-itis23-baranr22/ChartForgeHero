@@ -98,6 +98,7 @@ def test_shared_gain_prevents_clipping_and_keeps_balance(tmp_path):
     assert ratio == pytest.approx(4.0, rel=0.05)
 
 
+@pytest.mark.heavy
 def test_long_audio_encodes_to_the_exact_length(tmp_path):
     rng = np.random.default_rng(0)
     frames = SR * 200 + 137

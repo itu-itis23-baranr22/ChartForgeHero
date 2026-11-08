@@ -45,8 +45,15 @@ Decisions made since it was written are listed first and take precedence.
    measured again on test references.
 13. **The median-based chord limit is a temporary measure** for heavy distortion. It warns in the
    terminal and in `analysis.json` whenever it is in force.
-14. **No commit unless everything passes.** `scripts/check.ps1` runs the tests and the validator; the
-   hook in `.githooks` runs it on every commit (`git config core.hooksPath .githooks`).
+14. **No commit unless the checks pass.** The hook in `.githooks` runs `scripts/check.ps1` on every
+   commit (`git config core.hooksPath .githooks`): the quick tests and the validator, under a minute.
+   Before each phase commit, `scripts/check.ps1 -Full` runs every test, with real Demucs and the
+   reference songs, and the report says so.
+15. **Separation is reproducible.** Demucs draws a random time shift for each pass, which made two
+   caches of one song differ by up to 0.01 note F1. The shift is now seeded, and the cache key names
+   the model, device kind, seed and shifts. A first build reads its stems back from the cache, so it
+   sees the same 24-bit samples as every later build. Checked bit for bit on one CPU. GPU results are
+   not verified, neither against each other nor against the CPU, so they never share a cache entry.
 
 ## Phase B1 targets (one reference song so far)
 

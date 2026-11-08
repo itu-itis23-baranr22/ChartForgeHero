@@ -3,6 +3,10 @@
 Separation takes minutes on a CPU, so a song is only ever separated once. Torch
 and Demucs are imported lazily: everything except real separation works, and
 the default test run passes, without them.
+
+The same file with the same settings gives the same stems. Demucs draws a random time
+shift for every pass, which is seeded here, and the first build reads the stems back
+from the cache, so it sees the very samples that every later build will see.
 """
 
 from __future__ import annotations
@@ -10,11 +14,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import re
 import shutil
 import tempfile
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
@@ -28,6 +34,9 @@ log = logging.getLogger(__name__)
 
 STEM_NAMES = ("drums", "bass", "other", "vocals", "guitar", "piano")
 """The six sources of the ``htdemucs_6s`` model."""
+
+DEFAULT_SEED = 42
+"""Fixes the time shifts of Demucs. Changing it gives different stems and a new cache entry."""
 
 _MANIFEST = "manifest.json"
 _CACHE_VERSION = 1
@@ -78,6 +87,29 @@ def resolve_device(requested: str) -> str:
     return "cpu"
 
 
+def _device_kind(requested: str) -> str:
+    """Return the kind of device stems would come from, such as ``cpu`` or ``cuda``.
+
+    Without torch nothing can be separated here, and stems found in the cache are all that is left:
+    ``cpu`` then finds the ones made on this kind of machine, and a miss reports what to install.
+    """
+    try:
+        return resolve_device(requested).split(":")[0]
+    except ImportError:
+        return "cpu"
+
+
+@contextmanager
+def fixed_python_random(seed: int) -> Iterator[None]:
+    """Seed Python's global random generator for the duration, then put its state back."""
+    state = random.getstate()
+    random.seed(seed)
+    try:
+        yield
+    finally:
+        random.setstate(state)
+
+
 class DemucsSeparator:
     """Runs a pretrained Demucs model through its Python API."""
 
@@ -87,15 +119,22 @@ class DemucsSeparator:
         device: str = "auto",
         shifts: int = 1,
         overlap: float = 0.25,
+        seed: int = DEFAULT_SEED,
     ) -> None:
         self.model_name = model_name
         self.device = device
         self.shifts = shifts
         self.overlap = overlap
+        self.seed = seed
 
     @property
     def cache_id(self) -> str:
-        return f"{self.model_name}-shifts{self.shifts}-overlap{self.overlap}"
+        """Names everything that can change the stems. Stems from different devices stay apart:
+        identical results are only verified on one CPU, not between devices."""
+        return (
+            f"{self.model_name}-{_device_kind(self.device)}-seed{self.seed}"
+            f"-shifts{self.shifts}-overlap{self.overlap}"
+        )
 
     def separate(self, audio: AudioData) -> tuple[int, dict[str, np.ndarray]]:
         # The weights come from Hugging Face. Windows without developer mode cannot make
@@ -130,7 +169,8 @@ class DemucsSeparator:
             if float(std) == 0.0:
                 raise SeparationError("The input audio is silent")
             normalized = (wave - mean) / std
-            with torch.no_grad():
+            with torch.no_grad(), torch.random.fork_rng(), fixed_python_random(self.seed):
+                torch.manual_seed(self.seed)
                 sources = apply_model(
                     model,
                     normalized[None],
@@ -245,4 +285,7 @@ def separate_with_cache(
         _write_entry(entry, stems)
     except (OSError, sf.LibsndfileError) as error:
         log.warning("Could not cache stems: %s", error)
-    return stems
+        return stems
+    # FLAC rounds to 24 bits. Reading back gives this build the samples every later build gets.
+    written = _load_entry(entry, sha256, separator.cache_id)
+    return replace(written, from_cache=False) if written is not None else stems

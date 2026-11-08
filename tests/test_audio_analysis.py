@@ -68,6 +68,7 @@ def resampled(signal: np.ndarray) -> np.ndarray:
 
 
 @pytest.mark.parametrize("start", [0.0, 0.11, 0.25, 0.4, 1.3])
+@pytest.mark.heavy
 def test_120_bpm_click_gives_one_tempo_and_aligned_beats(start):
     truth = click_times(120, 30, start)
     analysis = estimate_tempo_map(clicks_at(truth, 30, SR), SR)
@@ -83,6 +84,7 @@ def test_120_bpm_click_gives_one_tempo_and_aligned_beats(start):
 
 
 @pytest.mark.parametrize("bpm", [85.0, 97.08, 128.0, 155.0])
+@pytest.mark.heavy
 def test_rock_groove_finds_the_quarter_note_not_a_faster_level(bpm):
     """Regression test: the beat tracker reported 129 for a 97 BPM song."""
     analysis = estimate_tempo_map(resampled(drum_groove(bpm, 60)), SR)
@@ -91,17 +93,20 @@ def test_rock_groove_finds_the_quarter_note_not_a_faster_level(bpm):
     assert len(analysis.tempo_map.tempos) <= 2
 
 
+@pytest.mark.heavy
 def test_very_fast_song_comes_out_at_half_speed():
     analysis = estimate_tempo_map(resampled(drum_groove(180.0, 60)), SR)
     assert analysis.bpm == pytest.approx(90.0, abs=0.1)
 
 
+@pytest.mark.heavy
 def test_three_three_two_groove_finds_the_quarter_note():
     """Regression test: this pattern's strongest period is 3/2 of the real beat."""
     analysis = estimate_tempo_map(resampled(drum_groove(126.0, 60, "dembow")), SR)
     assert analysis.bpm == pytest.approx(126.0, abs=0.1)
 
 
+@pytest.mark.heavy
 def test_long_song_does_not_drift_off_the_grid():
     bpm = 97.08
     truth = click_times(bpm, 240, 0.3)
@@ -112,6 +117,7 @@ def test_long_song_does_not_drift_off_the_grid():
     assert np.abs(analysis.tempo_map.seconds_at(grid) - truth[-20:]).max() < 0.015
 
 
+@pytest.mark.heavy
 def test_human_jitter_stays_a_single_tempo():
     rng = np.random.default_rng(0)
     truth = click_times(100, 120, 0.3)
@@ -126,6 +132,7 @@ def wandering_clicks(amplitude_s: float, bpm: float = 97.0, seconds: float = 240
     return nominal + amplitude_s * np.sin(2 * np.pi * nominal / 120.0)
 
 
+@pytest.mark.heavy
 def test_wander_within_the_limit_keeps_one_tempo():
     played = wandering_clicks(0.012)
     analysis = estimate_tempo_map(clicks_at(played, 240, SR), SR)
@@ -136,6 +143,7 @@ def test_wander_within_the_limit_keeps_one_tempo():
     assert "one tempo" in analysis.decision
 
 
+@pytest.mark.heavy
 def test_wander_over_the_limit_gets_events_until_every_region_is_within_it():
     """The owner's rule is in milliseconds: this is only 0.3 % of tempo deviation, yet the
     beats stray 50 ms, and that is what counts."""
@@ -149,6 +157,7 @@ def test_wander_over_the_limit_gets_events_until_every_region_is_within_it():
 
 
 @pytest.mark.parametrize("limit_s,expected", [(0.005, "variable"), (0.2, "constant")])
+@pytest.mark.heavy
 def test_drift_limit_is_a_parameter(limit_s, expected):
     played = wandering_clicks(0.05)
     analysis = estimate_tempo_map(clicks_at(played, 240, SR), SR, max_beat_drift_s=limit_s)
@@ -156,6 +165,7 @@ def test_drift_limit_is_a_parameter(limit_s, expected):
     assert analysis.max_beat_drift_ms == pytest.approx(limit_s * 1000)
 
 
+@pytest.mark.heavy
 def test_stricter_limit_never_means_fewer_events():
     played = wandering_clicks(0.05)
     counts = [
@@ -165,6 +175,7 @@ def test_stricter_limit_never_means_fewer_events():
     assert counts == sorted(counts)
 
 
+@pytest.mark.heavy
 def test_every_event_earns_its_place():
     played = wandering_clicks(0.05)
     analysis = estimate_tempo_map(clicks_at(played, 240, SR), SR)
@@ -178,6 +189,7 @@ def test_every_event_earns_its_place():
     assert all("limit 25 ms" in item["reason"] for item in explained)
 
 
+@pytest.mark.heavy
 def test_short_bump_gets_events_only_around_it():
     """One tempo fits all but 16 s of this song, which runs 60 ms late and then returns.
     Bending the rest of the song would be wasted events."""
@@ -206,6 +218,7 @@ def test_tracker_mistake_cannot_spend_events():
     assert "would not bring" in choice.decision
 
 
+@pytest.mark.heavy
 def test_section_that_moves_the_song_away_from_one_tempo_is_followed():
     """The middle of this song sits 70 ms late, which no single tempo can explain, although
     the tempo itself hardly differs."""
@@ -218,6 +231,7 @@ def test_section_that_moves_the_song_away_from_one_tempo_is_followed():
     assert analysis.on_grid_ratio > 0.9
 
 
+@pytest.mark.heavy
 def test_short_faster_section_keeps_every_beat_on_the_grid():
     """A 6 % faster section gains almost exactly one beat, so the song returns to the same
     grid 58 ms off: whatever the method, no beat may end up far from a grid line."""
@@ -238,6 +252,7 @@ def test_decision_explains_every_tempo_event():
     assert explanations[-1]["reason"] == "main tempo"
 
 
+@pytest.mark.heavy
 def test_bpm_override_is_used_exactly_even_when_it_is_wrong():
     truth = click_times(120, 40, 0.3)
     analysis = estimate_tempo_map(clicks_at(truth, 40, SR), SR, bpm_override=129.2)
@@ -249,6 +264,7 @@ def test_bpm_override_is_used_exactly_even_when_it_is_wrong():
     assert "129.2" in analysis.decision
 
 
+@pytest.mark.heavy
 def test_bpm_override_still_finds_the_phase():
     truth = click_times(90, 60, 0.47)
     analysis = estimate_tempo_map(clicks_at(truth, 60, SR), SR, bpm_override=90.0)
@@ -300,6 +316,7 @@ def band_song(bpm: float, bars: int, pickup_beats: int, start: float = 0.2) -> t
 
 
 @pytest.mark.parametrize("pickup", [0, 1, 2, 3])
+@pytest.mark.heavy
 def test_bars_begin_on_the_real_downbeat(pickup):
     signal, first_downbeat = band_song(110.0, 40, pickup)
     analysis = estimate_tempo_map(signal, SR)
@@ -312,6 +329,7 @@ def test_bars_begin_on_the_real_downbeat(pickup):
 
 
 @pytest.mark.parametrize("pickup", [1, 3])
+@pytest.mark.heavy
 def test_bpm_override_still_finds_the_downbeat(pickup):
     signal, first_downbeat = band_song(110.0, 40, pickup)
     analysis = estimate_tempo_map(signal, SR, bpm_override=110.0)
@@ -320,6 +338,7 @@ def test_bpm_override_still_finds_the_downbeat(pickup):
     assert min(difference, bar - difference) < 0.03
 
 
+@pytest.mark.heavy
 def test_real_tempo_change_uses_a_variable_map():
     first = 0.3 + np.arange(80) * 0.5
     second = first[-1] + np.arange(1, 100) * (60 / 150)
@@ -333,6 +352,7 @@ def test_real_tempo_change_uses_a_variable_map():
     assert analysis.on_grid_ratio > 0.8
 
 
+@pytest.mark.heavy
 def test_slow_drift_uses_a_variable_map():
     periods = np.linspace(60 / 96, 60 / 108, 260)
     truth = 0.3 + np.concatenate(([0.0], np.cumsum(periods)))

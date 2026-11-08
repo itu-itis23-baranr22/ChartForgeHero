@@ -1,7 +1,14 @@
-# Runs everything that must pass before a commit: the test suite and the song folder validator.
-# The pre-commit hook in .githooks runs this. Exit code 0 means everything passed.
+# Runs what must pass before a commit: the tests and the song folder validator.
+# Exit code 0 means everything passed.
+#
+#   scripts\check.ps1         the quick tests and the validator, under a minute: the pre-commit hook
+#   scripts\check.ps1 -Full   every test, with real Demucs and the reference songs: before a phase commit
 #
 # Enable the hook once per clone with:  git config core.hooksPath .githooks
+
+param(
+    [switch]$Full
+)
 
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
@@ -11,26 +18,37 @@ if (-not (Test-Path $python)) {
     exit 1
 }
 
-Write-Output 'check: running tests ...'
-& $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore
+$watch = [System.Diagnostics.Stopwatch]::StartNew()
+
+if ($Full) {
+    Write-Output 'check: running every test, with real Demucs and the reference songs ...'
+    $references = Join-Path $root 'references'
+    if (Test-Path $references) {
+        $env:CHARTGEN_REFERENCE_DIR = $references
+    } else {
+        Write-Output 'check: no references folder, so the reference test will be skipped'
+    }
+    # An empty -m overrides the "not slow" default from pyproject.toml.
+    & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m '""'
+} else {
+    Write-Output 'check: running the quick tests ...'
+    & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m 'not slow and not heavy'
+}
 if ($LASTEXITCODE -ne 0) {
     Write-Output 'check: FAILED, the tests did not pass'
     exit 1
 }
 
-$failed = $false
 $folders = @(Get-ChildItem (Join-Path $root 'outputs') -Directory -ErrorAction SilentlyContinue)
 Write-Output "check: validating $($folders.Count) song folder(s) in outputs ..."
-foreach ($folder in $folders) {
-    & $python -X utf8 -m chartgen validate $folder.FullName
+if ($folders.Count -gt 0) {
+    # One process for all of them: starting Python takes longer than checking a folder.
+    & $python -X utf8 -m chartgen validate @($folders | ForEach-Object { $_.FullName })
     if ($LASTEXITCODE -ne 0) {
-        $failed = $true
+        Write-Output 'check: FAILED, a song folder did not validate'
+        exit 1
     }
 }
-if ($failed) {
-    Write-Output 'check: FAILED, a song folder did not validate'
-    exit 1
-}
 
-Write-Output 'check: all passed'
+Write-Output ("check: all passed in {0:N0} s" -f $watch.Elapsed.TotalSeconds)
 exit 0

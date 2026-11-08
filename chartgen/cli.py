@@ -97,8 +97,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="also write debug_click.wav: the mix with a metronome taken from the written chart",
     )
 
-    validate = commands.add_parser("validate", help="check an existing song folder")
-    validate.add_argument("folder", type=Path)
+    validate = commands.add_parser("validate", help="check existing song folders")
+    validate.add_argument("folders", type=Path, nargs="+", metavar="folder")
 
     evaluate = commands.add_parser(
         "evaluate", help="compare generated charts with human-made references in a folder"
@@ -159,13 +159,16 @@ def _run_build(args: argparse.Namespace) -> int:
 def _run_validate(args: argparse.Namespace) -> int:
     from chartgen.clonehero.validate import validate_song_folder
 
-    report = validate_song_folder(args.folder)
-    for warning in report.warnings:
-        log.warning("Warning: %s", warning)
-    for error in report.errors:
-        log.error("Error: %s", error)
-    log.info("%s: %s", args.folder, "OK" if report.ok else "FAILED")
-    return 0 if report.ok else 1
+    failed = False
+    for folder in args.folders:
+        report = validate_song_folder(folder)
+        for warning in report.warnings:
+            log.warning("Warning: %s", warning)
+        for error in report.errors:
+            log.error("Error: %s", error)
+        log.info("%s: %s", folder, "OK" if report.ok else "FAILED")
+        failed = failed or not report.ok
+    return 1 if failed else 0
 
 
 def _run_evaluate(args: argparse.Namespace) -> int:

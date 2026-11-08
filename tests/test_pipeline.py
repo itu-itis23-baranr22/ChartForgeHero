@@ -45,6 +45,7 @@ def test_build_produces_a_valid_folder(song_file, tmp_path):
     assert {"notes.chart", "song.ini", "song.ogg", "guitar.ogg", "analysis.json"} <= names
 
 
+@pytest.mark.heavy
 def test_absent_stems_get_no_file_and_no_chart(song_file, tmp_path):
     folder = build_song(config(song_file, tmp_path), FakeSeparator(song_stems())).folder
     names = {path.name for path in folder.iterdir()}
@@ -60,6 +61,7 @@ def test_absent_stems_get_no_file_and_no_chart(song_file, tmp_path):
     assert "[ExpertKeyboard]" not in chart
 
 
+@pytest.mark.heavy
 def test_present_but_not_yet_charted_stems_keep_their_audio(song_file, tmp_path):
     result = build_song(config(song_file, tmp_path), FakeSeparator(song_stems()))
     names = {path.name for path in result.folder.iterdir()}
@@ -67,12 +69,14 @@ def test_present_but_not_yet_charted_stems_keep_their_audio(song_file, tmp_path)
     assert any("bass: chart generation is not implemented" in w for w in result.analysis["warnings"])
 
 
+@pytest.mark.heavy
 def test_all_audio_files_share_the_exact_length(song_file, tmp_path):
     folder = build_song(config(song_file, tmp_path), FakeSeparator(song_stems())).folder
     lengths = {sf.info(str(path)).frames for path in folder.glob("*.ogg")}
     assert lengths == {SR * 20}
 
 
+@pytest.mark.heavy
 def test_guitar_notes_follow_the_clicks(song_file, tmp_path):
     folder = build_song(config(song_file, tmp_path), FakeSeparator(song_stems())).folder
     analysis = json.loads((folder / "analysis.json").read_text(encoding="utf-8"))
@@ -110,6 +114,7 @@ def test_analysis_records_the_whole_build(song_file, tmp_path):
     }
 
 
+@pytest.mark.heavy
 def test_rebuild_uses_the_cache_and_requires_force(song_file, tmp_path):
     separator = FakeSeparator(song_stems())
     build_song(config(song_file, tmp_path), separator)
@@ -123,6 +128,7 @@ def test_rebuild_uses_the_cache_and_requires_force(song_file, tmp_path):
     assert result.analysis["separation"]["from_cache"] is True
 
 
+@pytest.mark.heavy
 def test_only_guitar_requested_moves_the_rest_to_backing(song_file, tmp_path):
     cfg = config(song_file, tmp_path, frozenset({Instrument.GUITAR}))
     folder = build_song(cfg, FakeSeparator(song_stems())).folder
@@ -139,6 +145,7 @@ def test_song_without_guitar_stops_with_an_explanation_and_no_folder(song_file, 
     assert not out.exists() or list(out.iterdir()) == []
 
 
+@pytest.mark.heavy
 def test_failed_packaging_leaves_no_partial_folder(song_file, tmp_path, monkeypatch):
     def fail(*args, **kwargs):
         raise PackagingError("disk full")
@@ -149,6 +156,7 @@ def test_failed_packaging_leaves_no_partial_folder(song_file, tmp_path, monkeypa
     assert list((tmp_path / "out").iterdir()) == []
 
 
+@pytest.mark.heavy
 def test_failed_rebuild_keeps_the_previous_song(song_file, tmp_path, monkeypatch):
     separator = FakeSeparator(song_stems())
     folder = build_song(config(song_file, tmp_path), separator).folder
@@ -162,6 +170,7 @@ def test_failed_rebuild_keeps_the_previous_song(song_file, tmp_path, monkeypatch
     assert validate_song_folder(folder).ok
 
 
+@pytest.mark.heavy
 def test_stages_are_reported_with_durations(song_file, tmp_path, caplog):
     with caplog.at_level(logging.INFO, logger="chartgen"):
         build_song(config(song_file, tmp_path), FakeSeparator(song_stems()))
@@ -212,10 +221,13 @@ def test_track_on_silence_has_no_notes():
 # ---------------------------------------------------------------- CLI
 
 
+@pytest.mark.heavy
 def test_cli_validate_reports_ok_and_failure(song_file, tmp_path, capsys):
     folder = build_song(config(song_file, tmp_path), FakeSeparator(song_stems())).folder
     assert main(["validate", str(folder)]) == 0
     assert main(["validate", str(tmp_path / "nothing")]) == 1
+    assert main(["validate", str(folder), str(folder)]) == 0
+    assert main(["validate", str(tmp_path / "nothing"), str(folder)]) == 1, "one bad folder is enough"
 
 
 def test_cli_build_turns_expected_failures_into_a_message(tmp_path):
@@ -245,6 +257,7 @@ def test_cli_rejects_unknown_instruments(song_file, value):
         main(["build", str(song_file), "--artist", "A", "--title", "T", "--instruments", value])
 
 
+@pytest.mark.heavy
 def test_generated_chart_text_validates_alone(song_file, tmp_path):
     folder = build_song(config(song_file, tmp_path), FakeSeparator(song_stems())).folder
     text = (folder / "notes.chart").read_text(encoding="utf-8-sig")

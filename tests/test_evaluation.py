@@ -324,6 +324,7 @@ def test_folder_gives_a_result_per_song_and_an_average(tmp_path):
     assert "move these into one of them" in text
 
 
+@pytest.mark.heavy
 def test_broken_reference_does_not_stop_the_others(tmp_path):
     make_sng(tmp_path / "refs" / "good", name="good.sng")
     (tmp_path / "refs" / "bad.sng").write_bytes(b"corrupt")
@@ -337,6 +338,7 @@ def test_empty_folder_gives_a_clear_error(tmp_path):
         evaluate_folder(tmp_path, separator_for(), tmp_path / "cache")
 
 
+@pytest.mark.heavy
 def test_report_can_be_written_as_json(tmp_path):
     make_sng(tmp_path / "refs")
     report = evaluate_folder(tmp_path / "refs", separator_for(), tmp_path / "cache")
@@ -363,6 +365,7 @@ def test_splits_come_from_the_folder_under_the_root(tmp_path):
     assert split_of(root / "TEST" / "song.sng", root) == "test"
 
 
+@pytest.mark.heavy
 def test_train_and_test_are_reported_separately(tmp_path):
     root = train_test_folder(tmp_path)
     report = evaluate_folder(root, separator_for(), tmp_path / "cache")
@@ -373,6 +376,7 @@ def test_train_and_test_are_reported_separately(tmp_path):
     assert "No test references" not in text
 
 
+@pytest.mark.heavy
 def test_train_songs_never_count_toward_the_test_average(tmp_path):
     root = train_test_folder(tmp_path)
     report = evaluate_folder(root, separator_for(), tmp_path / "cache")
@@ -386,12 +390,14 @@ def test_train_songs_never_count_toward_the_test_average(tmp_path):
 
 
 @pytest.mark.parametrize("split,expected", [("train", {"tuned"}), ("test", {"unseen", "unseen2"})])
+@pytest.mark.heavy
 def test_one_split_can_be_evaluated_alone(tmp_path, split, expected):
     root = train_test_folder(tmp_path)
     report = evaluate_folder(root, separator_for(), tmp_path / "cache", split)
     assert set(report.songs) == expected
 
 
+@pytest.mark.heavy
 def test_missing_test_references_are_pointed_out(tmp_path):
     make_sng(tmp_path / "refs" / "train", name="tuned.sng")
     report = evaluate_folder(tmp_path / "refs", separator_for(), tmp_path / "cache")
@@ -400,6 +406,7 @@ def test_missing_test_references_are_pointed_out(tmp_path):
         evaluate_folder(tmp_path / "refs", separator_for(), tmp_path / "cache", "test")
 
 
+@pytest.mark.heavy
 def test_json_report_keeps_the_splits_apart(tmp_path):
     root = train_test_folder(tmp_path)
     report = evaluate_folder(root, separator_for(), tmp_path / "cache")
@@ -410,6 +417,7 @@ def test_json_report_keeps_the_splits_apart(tmp_path):
     assert set(saved["test"]["songs"]) == {"unseen", "unseen2"}
 
 
+@pytest.mark.heavy
 def test_cli_evaluate(tmp_path, monkeypatch):
     make_sng(tmp_path / "refs")
     monkeypatch.setattr("chartgen.audio.separation.DemucsSeparator", lambda device="auto": separator_for())

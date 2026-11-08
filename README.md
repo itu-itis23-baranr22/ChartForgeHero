@@ -39,7 +39,13 @@ pip install -e ".[separation,dev]"
 
 The first build downloads the Demucs `htdemucs_6s` weights from Hugging Face. Without a GPU,
 separation took 74-99 s for songs of 166-235 s on a 16-thread CPU. Each song is only ever separated
-once: stems are cached under `.cache/stems`, at about 160 MB per song.
+once: stems are cached under `.cache/stems`, at about 160 MB per song. The same file gives the same
+stems: the randomness in Demucs is seeded, and the cache key names the model, device kind, seed and
+shifts.
+
+**GPU:** identical stems are verified bit for bit on one CPU only. Whether a GPU repeats its own results,
+or matches the CPU, has not been checked. Each kind of device therefore gets its own cache entry, and
+a chart built on a GPU may differ slightly from one built on a CPU.
 
 ## Usage
 
@@ -128,8 +134,9 @@ The limits for vocal bleed live in `chartgen/audio/vocal_bleed.toml`.
 ```
 pytest                 # no model download: separation is mocked
 pytest -m slow         # runs real Demucs
-scripts\check.ps1      # the tests and the validator: what must pass before a commit
-git config core.hooksPath .githooks     # makes every commit run it
+scripts\check.ps1      # quick tests and the validator, under a minute: runs on every commit
+scripts\check.ps1 -Full   # every test, with real Demucs and the references: before a phase commit
+git config core.hooksPath .githooks     # makes every commit run the quick check
 ```
 
 The code is layered so that `chartgen.core` knows nothing about Clone Hero:

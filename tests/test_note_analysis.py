@@ -268,6 +268,7 @@ def downbeat_error(found, truth, bar):
 
 
 @pytest.mark.parametrize("pickup", [0, 1, 3])
+@pytest.mark.heavy
 def test_four_four_is_detected_with_its_downbeat(pickup):
     signal, first, bar = groove(4, 110.0, 40, pickup)
     analysis = estimate_tempo_map(signal, SR)
@@ -278,6 +279,7 @@ def test_four_four_is_detected_with_its_downbeat(pickup):
 
 
 @pytest.mark.parametrize("pickup", [0, 1, 2])
+@pytest.mark.heavy
 def test_three_four_is_detected_with_its_downbeat(pickup):
     signal, first, bar = groove(3, 110.0, 50, pickup)
     analysis = estimate_tempo_map(signal, SR)
@@ -305,6 +307,7 @@ def six_eight(pulse_bpm, bars, start=0.3):
     return place(events, start + bars * 6 * eighth + 1)
 
 
+@pytest.mark.heavy
 def test_six_eight_is_detected_with_its_downbeat():
     analysis = estimate_tempo_map(six_eight(70.0, 50), SR)
     assert analysis.meter.label == "6/8"
@@ -318,6 +321,7 @@ def test_six_eight_is_detected_with_its_downbeat():
     )
 
 
+@pytest.mark.heavy
 def test_shuffle_in_four_is_not_mistaken_for_six_eight():
     """A shuffle also splits its beats in three, but its bars have four beats."""
     rng = np.random.default_rng(9)
@@ -340,6 +344,7 @@ def test_shuffle_in_four_is_not_mistaken_for_six_eight():
     assert analysis.meter.label == "4/4"
 
 
+@pytest.mark.heavy
 def test_uncertain_bars_are_flagged():
     """Identical beats give no way to tell where a bar begins."""
     from conftest import click_times, clicks_at
@@ -358,6 +363,7 @@ def test_too_little_audio_reports_no_downbeat():
     assert result.tempo_map is tempo_map
 
 
+@pytest.mark.heavy
 def test_stems_are_used_when_given():
     signal, first, bar = groove(4, 110.0, 40, 1)
     rng = np.random.default_rng(1)
@@ -367,6 +373,7 @@ def test_stems_are_used_when_given():
     assert fed.meter.confidence != plain.meter.confidence
 
 
+@pytest.mark.heavy
 def test_bpm_override_is_not_rescaled_by_the_meter():
     analysis = estimate_tempo_map(six_eight(70.0, 40), SR, bpm_override=70.0)
     assert analysis.tempo_map.tempos[-1].bpm == 70.0

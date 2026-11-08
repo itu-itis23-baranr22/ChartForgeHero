@@ -162,6 +162,7 @@ def fake_demucs(monkeypatch):
     )
 
 
+@pytest.mark.heavy
 def test_cli_click_overlay_flag_writes_the_file(song_file, tmp_path, fake_demucs):
     assert main(cli_arguments(song_file, tmp_path, "--click-overlay")) == 0
     folder = tmp_path / "out" / "A - T"
@@ -171,11 +172,13 @@ def test_cli_click_overlay_flag_writes_the_file(song_file, tmp_path, fake_demucs
     assert main(["validate", str(folder)]) == 0, "the extra file must not break the song"
 
 
+@pytest.mark.heavy
 def test_no_click_file_without_the_flag(song_file, tmp_path, fake_demucs):
     assert main(cli_arguments(song_file, tmp_path)) == 0
     assert not (tmp_path / "out" / "A - T" / CLICK_FILE).exists()
 
 
+@pytest.mark.heavy
 def test_cli_bpm_flag_reaches_the_chart(song_file, tmp_path, fake_demucs):
     assert main(cli_arguments(song_file, tmp_path, "--bpm", "133.5")) == 0
     chart = (tmp_path / "out" / "A - T" / "notes.chart").read_text(encoding="utf-8-sig")
@@ -188,6 +191,7 @@ def test_cli_rejects_a_bad_bpm(song_file, tmp_path, value):
         main(cli_arguments(song_file, tmp_path, "--bpm", value))
 
 
+@pytest.mark.heavy
 def test_cli_drift_limit_reaches_the_analysis(song_file, tmp_path, fake_demucs):
     assert main(cli_arguments(song_file, tmp_path, "--max-beat-drift-ms", "40")) == 0
     analysis = (tmp_path / "out" / "A - T" / "analysis.json").read_text(encoding="utf-8")

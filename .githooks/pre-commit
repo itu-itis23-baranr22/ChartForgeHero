@@ -1,3 +1,4 @@
 #!/bin/sh
-# No commit unless the tests and the validator pass. Takes a few minutes.
+# No commit unless the quick tests and the validator pass. Takes under a minute.
+# Before a phase commit, run the whole suite by hand: scripts\check.ps1 -Full
 exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1

@@ -207,6 +207,7 @@ def build(tmp_path, stems, sr=44100):
     return build_song(config, FakeSeparator(stems, sr))
 
 
+@pytest.mark.heavy
 def test_analysis_lists_vocal_notes_with_times_and_reasons(tmp_path, caplog):
     import logging
 
@@ -237,6 +238,7 @@ def distorted_stems(sr: int = 44100) -> dict[str, np.ndarray]:
     return stems
 
 
+@pytest.mark.heavy
 def test_distortion_chord_limit_warns_in_analysis_and_terminal(tmp_path, caplog):
     import logging
 
@@ -250,6 +252,7 @@ def test_distortion_chord_limit_warns_in_analysis_and_terminal(tmp_path, caplog)
     assert "temporary chord limit" in caplog.text
 
 
+@pytest.mark.heavy
 def test_clean_song_does_not_warn_about_distortion(tmp_path):
     result = build(tmp_path, stems_for_pipeline())
     analysis = json.loads((result.folder / "analysis.json").read_text(encoding="utf-8"))

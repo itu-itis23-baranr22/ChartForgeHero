@@ -31,6 +31,9 @@ include = ["chartgen*"]
 
 [tool.pytest.ini_options]
 addopts = '-m "not slow"'
-markers = ["slow: runs real Demucs and may download model weights"]
+markers = [
+    "slow: runs real Demucs and may download model weights",
+    "heavy: analyses long synthetic audio or builds a whole song; takes seconds, skipped by the pre-commit hook",
+]
 testpaths = ["tests"]
 pythonpath = ["."]
