@@ -119,10 +119,19 @@ Decisions made since it was written are listed first and take precedence.
    Guitar's weights kept bass off orange altogether (0.1% against the human chart's 14.7%): a line climbing
    from blue did better staying there, however far it climbed. The chosen weights match the share of
    orange, not its notes, since the human chart also has orange on low notes. Because they were chosen on
-   Californication, its bass counts as train.
+   Californication, its bass counts as train. Hard's shortest gap of 0.25 s also allows an eighth note
+   (`min_gap_beats`), so that it does not thin out a fast song. Below 120 BPM that changes nothing.
 29. **Which pitches are orange is reported.** `analysis.json` and `evaluate` give each level's orange notes
    by pitch. More than 70% on one pitch warns (`orange_pitches` in `bass_difficulty.toml`) and fails nothing.
    A guitar's notes have no pitch to read, so this applies to bass only.
+30. **Keys are not verified on real data.** None of the five songs measured has a piano stem that counts as
+   present, and the one human keyboard chart has 17 positions. Keys therefore follow guitar's path and
+   files, have no soft targets, and were tested on synthetic audio only. Builds say so in the terminal and
+   in `analysis.json`. The presence limit for piano stays where it was. Once a song with a dominant piano
+   turns up, keys are to be checked in the game and with `evaluate`.
+31. **Section names are guarded.** An instrument may only be written under its own name: guitar `*Single`,
+   bass `*DoubleBass`, keys `*Keyboard`, drums `*Drums`. GHL and 6-fret sections are never generated. The
+   validator keeps its own table of these names rather than reading the writer's.
 
 ## Phase B1 targets (one reference song so far)
 

@@ -4,7 +4,9 @@ B3 devam ediyor, alt adımlara bölündü ve her birinin sonunda onay bekleniyor
 
 ## Şu anki adım
 
-**B3.2 (bas Hard/Medium/Easy) bitti. Sırada B3.3 (keys).**
+**B3 bitti: bas ve keys chart'lanıyor, şarkının gitara ihtiyacı yok. Sırada Faz C (davul): kod yazmadan önce plan onaya sunulacak.**
+
+Proje sahibi Danza'nın güncel bas Hard'ını çaldı: ritim rahat, sekizlik notalar doğal geliyor, sıkışıklık yok.
 
 Proje sahibi Danza'nın bas Expert'ini çaldı: senkron iyi, 37-38 sn'deki hayalet notalar rahatsız etmiyor. Seviye kuralı kapalı kalıyor.
 
@@ -17,6 +19,38 @@ Proje sahibi Toca'nın bas Easy ve Hard'ını çaldı: vuruşlar ve zamanlama iy
 ```powershell
 scripts\check.ps1 -Full
 ```
+
+## B3.3: Keys
+
+**Gerçek veriyle doğrulanmadı.** Ölçülen beş şarkının hiçbirinde piyano stem'i "var" çıkmıyor ve tek insan klavye chart'ı 17 konum. Build terminalde ve `analysis.json`'da bunu yazıyor (`not_verified_on_real_data`).
+
+Keys gitarın yolunu izliyor: gitarın ayar dosyaları, gitarın vokal süzgeci, akorlar açık. Yumuşak hedefi yok, çünkü gitarın sayıları keys için anlamsız uyarı üretirdi.
+
+**Kabul kriterleri:**
+- Stem "var" ise `[ExpertKeyboard]`'dan `[EasyKeyboard]`'a dört seviye ve `keys.ogg`. Stem "yok" ise chart yok, sesi `song.ogg`'da.
+- Piyano eşiği değişmez (-18 dB, %25 aktif). Toca piyanosu "yok" kalır (-19,3 dB).
+- B2'nin kesin kuralları: konum zinciri, Medium'da en fazla 2 notalı akor ve turuncu yok, Easy'de akor ve turuncu yok, sustain taşmaz. Başlangıca nota girmez.
+- Şarkı yalnızca keys ile de derlenir. Hiç çalınabilir enstrüman yoksa açıklamalı hata, klasör kalmaz.
+- Üç enstrüman tek `[SyncTrack]` paylaşır.
+- `evaluate` keys'i ayrı raporlar. Stem yoksa puanlamaz, referansta keys yoksa rapor bozulmaz.
+
+**Sınırlar:** akor eşiği gitardan geliyor, piyanoda ölçülmedi. Vokal süzgeci piyanoda ölçülmedi. Californication'ın 17 konumluk insan klavye chart'ı puanlanamıyor, çünkü piyano stem'i orada "yok". Proje sahibi bu durumu kabul etti; "Bilinen sınırlar ve açık konular"da açık konu olarak duruyor.
+
+## Validator: bölüm adı koruması
+
+Her enstrüman yalnızca kendi bölüm adıyla yazılabilir: gitar `*Single`, bas `*DoubleBass`, keys `*Keyboard`, davul `*Drums`. GHL ve 6-fret bölümleri hiç üretilmez. Validator bilinmeyen bölüm adlarını zaten reddediyordu, ama adları yazıcıyla aynı tablodan okuyordu; yazıcıda yanlış bir ad validator'dan da geçerdi. Artık kendi tablosu var. Kasıtlı yanlış adlarla test ediliyor (`ExpertGHLGuitar`, `EasyGHLBass`, `ExpertDoubleRhythm`, `expertsingle` ve diğerleri).
+
+## B3.2'ye ek: Hard'da tempoya göre aralık
+
+En kısa aralık 0,25 sn hızlı şarkılarda sekizlik notayı eliyordu. Bas Hard'da artık sekizlik nota aralığı da kabul (`min_gap_beats = 0.5`). 120 BPM'in altında hiçbir şeyi değiştirmez.
+
+| | Hard pozisyon | En kısa aralık | Değişen |
+|---|---|---|---|
+| Danza (130 BPM) | 403 -> 483 (%60 -> %72, hedef %66-78) | 0,308 -> 0,231 sn | 53 nota çıktı, 133 nota girdi; vuruş üstü %84 -> %70 |
+| Toca (126 BPM) | 197 -> 197 | 0,275 -> 0,238 sn | 19 nota değişti |
+| Californication (97 BPM) | aynı | aynı | bayt bayt aynı, F1 0,774 |
+
+F1 şartı yalnızca Californication'da ölçülebiliyor ve orada kural devreye girmiyor, yani etkisi insan chart'ıyla ölçülmedi. Expert, Medium ve Easy üç şarkıda da aynı. `Songs`'daki Danza ve Toca bu sürüm.
 
 ## B3.2: Bas Hard, Medium ve Easy
 
@@ -49,7 +83,7 @@ Danza ve Toca'nın ikisi de uyarıyor: bu şarkılarda turuncu pratikte en yüks
 
 **Oyun:** iki şarkı da önizleme modunda botla dört seviyede açıldı. Ekran görüntülerinde dört bas şeridi notaları çalıyor, log temiz. Bot isabet oranı ölçülmedi.
 
-**Danza ve Toca'nın diğer yumuşak uyarıları:** Danza Hard'da yoğunluk %60 (hedef %66-78; 130 BPM'de 0,25 sn aralık sıkıştırıyor). Toca Hard'da turuncu %26 (üst sınır 25), sustain %44 (üst sınır 39), Easy'de kırmızı %47 (üst sınır 45). Şerit paylarının bir kısmı Californication'dan geldiği için bu şarkılarda sert olabilir.
+**Danza ve Toca'nın diğer yumuşak uyarıları:** Toca Hard'da turuncu %26 (üst sınır 25), sustain %44 (üst sınır 39), Easy'de kırmızı %47 (üst sınır 45). Şerit paylarının bir kısmı Californication'dan geldiği için bu şarkılarda sert olabilir.
 
 ### Turuncu teşhisi
 
@@ -205,7 +239,8 @@ Toca, LastResort, Şarkı Testi ve Californication'ın tempo haritaları, `final
 | B2 | Hard, Medium, Easy (gitar) | `5668319` |
 | B3.0 | Danza tempo haritası: beat fazı, uymayan başlangıç | `5b04df5` |
 | B3.1 | Gitarsız build, bas Expert, başlangıç kuralı, section'lar | `e5aff06` |
-| B3.2 | Bas Hard, Medium, Easy, ayrı bas ayarları, turuncu perde dağılımı | bu commit |
+| B3.2 | Bas Hard, Medium, Easy, ayrı bas ayarları, turuncu perde dağılımı | `e380ae5` |
+| B3.3 | Keys (gerçek veriyle doğrulanmadı), Hard'da tempoya göre aralık, validator bölüm adı koruması | bu commit |
 
 Proje sahibi LastResort ve Şarkı Testi'nin güncel Hard ve Medium sürümlerini de çaldı: akorlar rahat, fret dağılımı dengeli, senkron iyi.
 
@@ -227,6 +262,7 @@ Pre-commit hook 39–62 sn sürüyor (hızlı testler + validator, makine yükü
 
 ## Bilinen sınırlar ve açık konular
 
+- **Keys gerçek veriyle doğrulanmadı:** piyanosu baskın bir şarkı bulunduğunda keys oyunda ve `evaluate` ile doğrulanacak.
 - **Tek referans şarkı:** ölçümler ve yumuşak hedefler yalnızca Californication'a dayanıyor, `references/test` boş. Yeni referanslar `test`'e konur, önce ölçülür, hiçbir ayar yapılmaz, sonra proje sahibine sorulur.
 - **Expert yeşil-sarı şerit sapması:** yeşil %10 / 25, sarı %30 / 19, ikisi de ±10 dışında ve yalnızca uyarıyor. Expert ayar taramasında ±10'a giren bir ayar bulunamadı, çalınmış sürümü değiştirmemek için Expert'e dokunulmadı.
 - **Hard akor oranı %42 / %58:** şerit düzeltmesi yalnızca freti değiştirdiği için bu oranı etkilemedi. Expert'te de oran insandan düşük (%50 / 59).
@@ -265,7 +301,7 @@ Bunlar proje sahibinin ön tercihleri. B3 bu varsayımlarla başlar.
 
 ### Kabul kriterleri
 
-Kesin kriterlerden 1, 2, 4 ve 5 B3.1'de bitti. 3 ve 6 ile yumuşak hedefler B3.2 ve B3.3'te.
+Hepsi B3.1, B3.2 ve B3.3'te karşılandı. Keys'in durumu için B3.3'e bak.
 
 **Kesin (kodda, test edilir):**
 1. Danza ve Toca derlenir ve validator'dan geçer: `diff_guitar = -1`, `diff_bass ≥ 0`, gitar bölümü yok, gitar stem'inin sesi `song.ogg`'da.

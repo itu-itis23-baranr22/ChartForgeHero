@@ -32,6 +32,7 @@ from chartgen.chart.difficulty import (
     load_config,
     measure_level,
     reduce_track,
+    select_positions,
 )
 from chartgen.chart.fret_mapping import (
     BASS_WEIGHTS_PATH,
@@ -314,6 +315,37 @@ def test_no_settings_can_bring_a_chord_or_medium_orange_back(seed):
         assert all(len(lanes) == 1 for lanes in positions(result.track).values())
         if level is not Difficulty.HARD:
             assert max(note.lane for note in result.track.notes) < 4
+
+
+def test_eighth_notes_stay_on_hard_however_fast_the_song():
+    """At 130 BPM an eighth note is 0.23 s, under the 0.25 s that Hard otherwise keeps."""
+    fast = TempoMap([TempoEvent(0, 130.0)])
+    ticks = np.arange(0, 96 * 40, 96)
+    times = fast.seconds_at(ticks.astype(np.float64))
+    candidates = np.arange(ticks.size)
+    keep_all = np.zeros(ticks.size, dtype=bool)
+    scores = np.ones(ticks.size)
+    in_seconds = select_positions(candidates, times, scores, keep_all, ticks.size, 0.25)
+    in_beats = select_positions(candidates, times, scores, keep_all, ticks.size, 0.25, ticks, 96)
+    assert in_seconds.size == ticks.size // 2, "every other eighth note goes"
+    assert in_beats.size == ticks.size
+
+
+def test_sixteenth_notes_stay_apart_however_fast_the_song():
+    fast = TempoMap([TempoEvent(0, 130.0)])
+    ticks = np.arange(0, 48 * 40, 48)
+    times = fast.seconds_at(ticks.astype(np.float64))
+    chosen = select_positions(
+        np.arange(ticks.size), times, np.ones(ticks.size), np.zeros(ticks.size, dtype=bool), ticks.size, 0.25, ticks, 96
+    )
+    assert np.diff(ticks[chosen]).min() >= 96
+
+
+def test_only_hard_on_bass_counts_beats_as_well_as_seconds():
+    assert load_config(BASS_CONFIG_PATH).levels[Difficulty.HARD].min_gap_beats == 0.5
+    assert load_config(BASS_CONFIG_PATH).levels[Difficulty.MEDIUM].min_gap_beats is None
+    assert load_config(BASS_CONFIG_PATH).levels[Difficulty.EASY].min_gap_beats is None
+    assert all(level.min_gap_beats is None for level in load_config().levels.values()), "not guitar"
 
 
 def test_a_chord_on_a_lower_level_of_bass_is_a_hard_rule_problem():
@@ -790,9 +822,11 @@ def test_real_songs_without_a_guitar_build(tmp_path, file_name, lead_in):
     assert report.ok, report.errors
     text = (result.folder / "notes.chart").read_text(encoding="utf-8-sig")
     assert "Single]" not in text
+    assert "Keyboard]" not in text
     for level in ("Expert", "Hard", "Medium", "Easy"):
         assert f"[{level}DoubleBass]" in text
     assert "guitar" in result.analysis["audio_files"]["song.ogg"]["stems"]
+    assert "piano" in result.analysis["audio_files"]["song.ogg"]["stems"]
     assert set(result.analysis["song_ini"]["difficulty"]) == {"bass"}
     for level in ("expert", "hard", "medium", "easy"):
         assert result.analysis["charts"]["bass"][level]["chord_positions"] == 0

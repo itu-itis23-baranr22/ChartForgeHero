@@ -14,7 +14,6 @@ from pathlib import Path
 
 import soundfile as sf
 
-from chartgen.clonehero.chart_format import DIFFICULTY_SECTIONS, INSTRUMENT_SECTIONS
 from chartgen.clonehero.song_ini import DIFFICULTY_KEYS, NOT_CHARTED
 from chartgen.core.model import Instrument
 
@@ -33,10 +32,19 @@ _SINGLE_NOTES_ONLY = frozenset({Instrument.BASS})
 _OPENING_SLACK_S = 0.001
 """Tick positions are rounded, so a note exactly on the line may land this far before it."""
 
+_INSTRUMENT_SECTIONS: dict[Instrument, str] = {
+    Instrument.GUITAR: "Single",
+    Instrument.BASS: "DoubleBass",
+    Instrument.KEYS: "Keyboard",
+    Instrument.DRUMS: "Drums",
+}
+"""The only section names an instrument may be written under. Spelled out here rather than taken from
+the writer, or a wrong name there would pass here too. GHL and 6-fret sections are never generated."""
+
 _PLAYABLE_SECTIONS: dict[str, Instrument] = {
-    f"{difficulty}{section}": instrument
-    for instrument, section in INSTRUMENT_SECTIONS.items()
-    for difficulty in DIFFICULTY_SECTIONS.values()
+    f"{level}{section}": instrument
+    for instrument, section in _INSTRUMENT_SECTIONS.items()
+    for level in _LEVELS_FROM_THE_TOP
 }
 _KNOWN_SECTIONS = frozenset({"Song", "SyncTrack", "Events", *_PLAYABLE_SECTIONS})
 
@@ -190,7 +198,7 @@ def _check_difficulty_rules(parsed: ParsedChart, report: ValidationReport) -> No
     Medium has no orange and chords of at most two notes. Bass has no chords at all. A sustain
     never runs into the next note.
     """
-    for instrument, section in INSTRUMENT_SECTIONS.items():
+    for instrument, section in _INSTRUMENT_SECTIONS.items():
         if instrument is Instrument.DRUMS:
             continue
         names = [f"{difficulty}{section}" for difficulty in _LEVELS_FROM_THE_TOP]
@@ -341,8 +349,8 @@ def validate_song_folder(folder: Path) -> ValidationReport:
     if parsed is not None and ini:
         for instrument, key in DIFFICULTY_KEYS.items():
             charted = any(
-                parsed.note_count(f"{difficulty}{INSTRUMENT_SECTIONS[instrument]}")
-                for difficulty in DIFFICULTY_SECTIONS.values()
+                parsed.note_count(f"{level}{_INSTRUMENT_SECTIONS[instrument]}")
+                for level in _LEVELS_FROM_THE_TOP
             )
             try:
                 declared = int(ini.get(key, str(NOT_CHARTED)))

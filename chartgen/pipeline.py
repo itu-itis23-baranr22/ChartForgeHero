@@ -27,6 +27,7 @@ from chartgen.chart.difficulty import HARD_RULES, HardRuleViolation
 from chartgen.chart.instruments import (
     CHARTABLE_INSTRUMENTS,
     STEM_FOR_INSTRUMENT,
+    UNVERIFIED_INSTRUMENTS,
     build_tracks_for,
 )
 from chartgen.clonehero.chart_format import DotChartExporter
@@ -137,6 +138,11 @@ def _build_tracks(
         )
         if not built:
             warnings.append(f"{instrument.value}: no notes detected in the {stem} stem")
+        elif instrument in UNVERIFIED_INSTRUMENTS:
+            warnings.append(
+                f"{instrument.value}: not verified on real data: this chart generator has only been "
+                f"tested on synthetic audio"
+            )
         for item in built:
             _report_track(instrument, item, warnings)
         charted.extend(built)
@@ -429,6 +435,9 @@ def _analysis(
             for item in encoded
         },
         "charts": charts,
+        "not_verified_on_real_data": sorted(
+            instrument.value for instrument in UNVERIFIED_INSTRUMENTS if instrument.value in charts
+        ),
         "difficulty_hard_rules": list(HARD_RULES),
         "song_ini": {
             "preview_start_time_ms": preview_start_ms,

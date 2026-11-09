@@ -35,6 +35,7 @@ _MIDI_FORCE_STRUM = 6
 """Above each level's green, these notes mark a span in which notes are forced."""
 _MAIN_TRACK = "PART GUITAR"
 _BASS_TRACK = "PART BASS"
+_KEYS_TRACK = "PART KEYS"
 _CHART_SECTIONS = {
     Difficulty.EXPERT: "ExpertSingle",
     Difficulty.HARD: "HardSingle",
@@ -46,6 +47,12 @@ _BASS_CHART_SECTIONS = {
     Difficulty.HARD: "HardDoubleBass",
     Difficulty.MEDIUM: "MediumDoubleBass",
     Difficulty.EASY: "EasyDoubleBass",
+}
+_KEYS_CHART_SECTIONS = {
+    Difficulty.EXPERT: "ExpertKeyboard",
+    Difficulty.HARD: "HardKeyboard",
+    Difficulty.MEDIUM: "MediumKeyboard",
+    Difficulty.EASY: "EasyKeyboard",
 }
 _CHART_FORCE = 5
 _PEAK = 0.95
@@ -79,6 +86,8 @@ class ReferenceSong:
     is_midi: bool = False
     bass_levels: Mapping[Difficulty, tuple[ReferenceNote, ...]] = field(default_factory=dict)
     """The same for bass. Empty if the chart has none."""
+    keys_levels: Mapping[Difficulty, tuple[ReferenceNote, ...]] = field(default_factory=dict)
+    """The same for keys. Empty if the chart has none."""
 
 
 class _Clock:
@@ -201,12 +210,15 @@ def _from_midi(
     }
     if Difficulty.EXPERT not in levels:
         raise ChartgenError(f"{name}: the chart has no Expert guitar notes")
-    bass_levels = {
-        level: notes
-        for level in _MIDI_BASE
-        if _BASS_TRACK in midi.tracks
-        and (notes := _midi_level(midi, clock, level, midi.division, _BASS_TRACK))
-    }
+    bass_levels, keys_levels = (
+        {
+            level: notes
+            for level in _MIDI_BASE
+            if track_name in midi.tracks
+            and (notes := _midi_level(midi, clock, level, midi.division, track_name))
+        }
+        for track_name in (_BASS_TRACK, _KEYS_TRACK)
+    )
     signatures = tuple(sorted({(n, d) for _, n, d in midi.signatures})) or ((4, 4),)
     return ReferenceSong(
         name,
@@ -220,6 +232,7 @@ def _from_midi(
         levels,
         is_midi=True,
         bass_levels=bass_levels,
+        keys_levels=keys_levels,
     )
 
 
@@ -271,11 +284,14 @@ def _from_chart(
     }
     if Difficulty.EXPERT not in levels:
         raise ChartgenError(f"{name}: the chart has no [{_CHART_SECTIONS[Difficulty.EXPERT]}] notes")
-    bass_levels = {
-        level: notes
-        for level, section in _BASS_CHART_SECTIONS.items()
-        if (notes := _chart_level(parsed.sections.get(section, []), clock, resolution))
-    }
+    bass_levels, keys_levels = (
+        {
+            level: notes
+            for level, section in sections.items()
+            if (notes := _chart_level(parsed.sections.get(section, []), clock, resolution))
+        }
+        for sections in (_BASS_CHART_SECTIONS, _KEYS_CHART_SECTIONS)
+    )
     beats, bars = _beats_and_bars(clock, resolution, signatures, audio.duration_s)
     plain = tuple(sorted({(n, d) for _, n, d in signatures})) or ((4, 4),)
     return ReferenceSong(
@@ -289,6 +305,7 @@ def _from_chart(
         resolution,
         levels,
         bass_levels=bass_levels,
+        keys_levels=keys_levels,
     )
 
 

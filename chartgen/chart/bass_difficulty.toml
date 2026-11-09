@@ -34,6 +34,9 @@ auto_hopo_share = [0.07, 0.17]
 lane_shares = [0.245, 0.263, 0.160, 0.177, 0.154]
 position_ratio = 0.72
 min_gap_s = 0.25
+# Eighth notes may always stay. In a fast song 0.25 s is longer than an eighth note and thins the level
+# out: at 130 BPM an eighth note is 0.23 s. Up to 120 BPM, this changes nothing.
+min_gap_beats = 0.5
 top_lane = 4
 lane_map = [0, 1, 2, 3, 4]
 fidelity = 8.0
@@ -44,7 +47,8 @@ keep_auto_hopos = true
 position_ratio = [0.66, 0.78]
 orange_share = [0.10, 0.25]
 busiest_lane_share = [0.0, 0.45]
-min_gap_s = [0.25, inf]
+# An eighth note at 160 BPM, the fastest tempo the tracker reads.
+min_gap_s = [0.18, inf]
 sustain_share = [0.19, 0.39]
 auto_hopo_share = [0.0, 0.03]
 

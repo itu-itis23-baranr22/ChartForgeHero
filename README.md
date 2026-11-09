@@ -14,12 +14,12 @@ It only processes files you give it. It does not download audio or touch streami
 | Tempo check | `--click-overlay`, `--bpm`, `--max-beat-drift-ms`, explained tempo events | Done |
 | B1 | Time signature, chords, sustains, Viterbi fret mapping, vocal bleed removal (Expert) | Done |
 | B2 | Difficulty reduction to Hard, Medium and Easy | Done |
-| B3 | Bass and keys; a song no longer needs a guitar | Bass done; keys planned |
+| B3 | Bass and keys; a song no longer needs a guitar | Done; keys not verified on real data |
 | C | Drums: percussion classification, four difficulties | Planned |
 | D | Vocal events, sections, star power | Planned |
 
-Guitar and bass are charted at all four difficulties, so a song needs at least one of the two.
-Telling chords from single notes on heavily distorted guitar is unverified. 3/4 and 6/8 have only
+Guitar, bass and keys are charted at all four difficulties, so a song needs at least one of the three.
+Keys have only been tested on synthetic audio, and a build says so. Telling chords from single notes on heavily distorted guitar is unverified. 3/4 and 6/8 have only
 been tested on synthetic audio.
 
 See [docs/SPEC.md](docs/SPEC.md) for the full specification.

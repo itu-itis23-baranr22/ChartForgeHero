@@ -17,7 +17,8 @@ from pathlib import Path
 import numpy as np
 
 from chartgen.audio.io import ANALYSIS_SAMPLERATE, analysis_mono
-from chartgen.audio.separation import Separator, separate_with_cache
+from chartgen.audio.presence import analyze_presence
+from chartgen.audio.separation import STEM_NAMES, Separator, separate_with_cache
 from chartgen.audio.tempo import estimate_tempo_map
 from chartgen.chart.charter import ChartedTrack
 from chartgen.chart.difficulty import LANE_NAMES, LevelMeasures, load_config
@@ -254,6 +255,23 @@ def evaluate_song(
         )
         if bass:
             result["bass"] = compare_levels(bass, tempo.tempo_map, song, song.bass_levels)
+    if song.keys_levels:
+        # As in a build, an absent stem gets no chart: scoring its bleed would mean nothing.
+        stem_name = STEM_FOR_INSTRUMENT[Instrument.KEYS]
+        mix = np.sum([stems.stems[name] for name in STEM_NAMES], axis=0)
+        present = analyze_presence(stem_name, stems.stems[stem_name], mix, stems.samplerate).present
+        result["keys_stem"] = "present" if present else "absent"
+        if present:
+            keys = build_tracks_for(
+                Instrument.KEYS,
+                analysis_mono(stems.stems[stem_name], stems.samplerate),
+                tempo.tempo_map,
+                stems.duration_s,
+                vocals=vocals,
+                not_before_s=tempo.lead_in_end_s,
+            )
+            if keys:
+                result["keys"] = compare_levels(keys, tempo.tempo_map, song, song.keys_levels)
     return result
 
 
@@ -344,6 +362,13 @@ def _level_table(title: str, levels: dict[str, dict[str, dict[str, object]]]) ->
     return lines
 
 
+def _keys_lines(name: str, song: dict[str, object]) -> list[str]:
+    """Show a song's keys, or say why there is nothing to show."""
+    if song.get("keys_stem") == "absent":
+        return [f"Keys of {name}: the human chart has keys, but the piano stem is absent: no chart.", ""]
+    return _level_table(f"Keys of {name}", song.get("keys", {}))  # type: ignore[arg-type]
+
+
 def format_report(report: EvaluationReport) -> str:
     """Render one table per split, test first: it is the score that counts."""
     lines: list[str] = []
@@ -364,6 +389,7 @@ def format_report(report: EvaluationReport) -> str:
         for name in names:
             lines.extend(_level_table(f"Difficulties of {name}", report.songs[name].get("levels", {})))
             lines.extend(_level_table(f"Bass of {name}", report.songs[name].get("bass", {})))
+            lines.extend(_keys_lines(name, report.songs[name]))
         if len(names) > 1:
             lines.extend(
                 _level_table("Difficulties, average", report.level_averages.get(split, {}))

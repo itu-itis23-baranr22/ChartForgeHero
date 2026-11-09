@@ -60,6 +60,86 @@ def test_section_names_match_the_format(instrument, difficulty, expected):
     assert section_name(instrument, difficulty) == expected
 
 
+EXPECTED_SECTIONS = {
+    Instrument.GUITAR: "Single",
+    Instrument.BASS: "DoubleBass",
+    Instrument.KEYS: "Keyboard",
+    Instrument.DRUMS: "Drums",
+}
+
+
+@pytest.mark.parametrize("instrument", list(Instrument))
+@pytest.mark.parametrize("difficulty", list(Difficulty))
+def test_every_instrument_is_only_ever_written_under_its_own_name(instrument, difficulty):
+    name = section_name(instrument, difficulty)
+    assert name == f"{difficulty.value.title()}{EXPECTED_SECTIONS[instrument]}"
+    assert "GHL" not in name
+    assert "6" not in name
+
+
+def test_the_validator_accepts_every_name_the_writer_uses():
+    for instrument in Instrument:
+        for difficulty in Difficulty:
+            body = f"[{section_name(instrument, difficulty)}]\n{{\n  0 = N 0 0\n}}\n"
+            _, report = validate_chart_text(GOOD_HEADER + body)
+            assert not any("unknown section" in error for error in report.errors), body
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        # Guitar Hero Live, six frets. Real sections in other charts, and never ours.
+        "ExpertGHLGuitar",
+        "HardGHLGuitar",
+        "EasyGHLBass",
+        "MediumGHLRhythm",
+        "ExpertGHLCoop",
+        # Real five-fret sections, but not the ones this project writes.
+        "ExpertDoubleGuitar",
+        "ExpertDoubleRhythm",
+        "ExpertKeyboardPro",
+        # Instruments under the wrong name, and near misses.
+        "ExpertBass",
+        "ExpertGuitar",
+        "ExpertKeys",
+        "ExpertDrum",
+        "expertsingle",
+        "EXPERTSINGLE",
+        "ExpertSingle2",
+        "BeginnerSingle",
+    ],
+)
+def test_the_validator_rejects_a_section_name_no_instrument_may_use(name):
+    body = f"[{name}]\n{{\n  0 = N 0 0\n}}\n"
+    _, report = validate_chart_text(GOOD_HEADER + "[ExpertSingle]\n{\n  0 = N 0 0\n}\n" + body)
+    assert any(f"unknown section [{name}]" in error for error in report.errors), report.errors
+
+
+def test_a_song_folder_with_a_wrong_section_name_fails(tmp_path):
+    """The same check, through what `check.ps1` and every build actually call."""
+    chart = render(make_chart(Track(Instrument.GUITAR, Difficulty.EXPERT, [ChartNote(0, 0)])))
+    wrong = chart.replace("[ExpertSingle]", "[ExpertGHLGuitar]")
+    assert wrong != chart
+    (tmp_path / "notes.chart").write_text(wrong, encoding="utf-8")
+    (tmp_path / "song.ini").write_text("[song]\nname = A\nartist = B\n", encoding="utf-8")
+    sf.write(str(tmp_path / "song.ogg"), np.zeros((4410, 2), dtype=np.float32), 44100, format="OGG")
+    report = validate_song_folder(tmp_path)
+    assert any("unknown section [ExpertGHLGuitar]" in error for error in report.errors), report.errors
+
+
+def test_the_validator_does_not_take_its_names_from_the_writer(monkeypatch):
+    """A wrong name in the writer must not pass here because both read the same table."""
+    from chartgen.clonehero import chart_format, validate
+
+    monkeypatch.setitem(chart_format.INSTRUMENT_SECTIONS, Instrument.BASS, "GHLBass")
+    track = Track(Instrument.BASS, Difficulty.EXPERT, [ChartNote(0, 0)])
+    text = render(make_chart(track))
+    assert "[ExpertGHLBass]" in text, "the writer now uses the wrong name"
+    _, report = validate_chart_text(text)
+    assert any("unknown section [ExpertGHLBass]" in error for error in report.errors)
+    assert not hasattr(validate, "INSTRUMENT_SECTIONS")
+
+
 def test_rendered_chart_passes_the_independent_validator():
     track = Track(
         Instrument.GUITAR,

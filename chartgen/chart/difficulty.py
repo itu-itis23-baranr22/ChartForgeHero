@@ -154,6 +154,9 @@ class LevelConfig:
     three_note_chords: bool
     importance: Importance
     soft_targets: SoftTargets
+    min_gap_beats: float | None = None
+    """Notes this many beats apart are far enough apart whatever ``min_gap_s`` says, which keeps a
+    fixed gap in seconds from thinning out a fast song. None: only the seconds count."""
 
 
 @dataclass(frozen=True)
@@ -226,6 +229,9 @@ def _load_level(
     importance = _load_importance({**shared, **values.pop("importance", {})}, where)
     chord_lanes = values.pop("chord_lane_map", values.get("lane_map", ()))
     chord_fidelity = float(values.pop("chord_fidelity", values.get("fidelity", 0.0)))
+    min_gap_beats = values.pop("min_gap_beats", None)
+    if min_gap_beats is not None and float(min_gap_beats) <= 0:
+        raise ValueError(f"{where}: min_gap_beats must be positive")
     targets = _load_targets(values, tolerance, where)
     expected = {
         "position_ratio",
@@ -272,6 +278,7 @@ def _load_level(
         three_note,
         importance,
         targets,
+        None if min_gap_beats is None else float(min_gap_beats),
     )
 
 
@@ -449,12 +456,23 @@ def select_positions(
     protected: np.ndarray,
     target: int,
     min_gap_s: float,
+    ticks: np.ndarray | None = None,
+    min_gap_ticks: int | None = None,
 ) -> np.ndarray:
     """Choose indices among ``candidates``, best score first, keeping notes apart.
 
     Protected notes always stay, whatever the target says. Others are added until ``target`` is
     reached or nothing fits, so a level can end up short of its target, which then warns.
+
+    Two notes are far enough apart if they are ``min_gap_s`` apart or, when ``ticks`` and
+    ``min_gap_ticks`` are given, that many ticks apart.
     """
+
+    def apart(earlier: int, later: int) -> bool:
+        if times[later] - times[earlier] >= min_gap_s:
+            return True
+        return ticks is not None and min_gap_ticks is not None and ticks[later] - ticks[earlier] >= min_gap_ticks
+
     chosen = sorted(int(index) for index in candidates if protected[index])
     others = [int(index) for index in candidates if not protected[index]]
     # Best score first; between equals, the earlier note.
@@ -463,8 +481,8 @@ def select_positions(
         if len(chosen) >= target:
             break
         place = bisect_left(chosen, index)
-        before_ok = place == 0 or times[index] - times[chosen[place - 1]] >= min_gap_s
-        after_ok = place == len(chosen) or times[chosen[place]] - times[index] >= min_gap_s
+        before_ok = place == 0 or apart(chosen[place - 1], index)
+        after_ok = place == len(chosen) or apart(index, chosen[place])
         if before_ok and after_ok:
             chosen.insert(place, index)
     return np.array(chosen, dtype=np.int64)
@@ -805,6 +823,7 @@ def reduce_track(
     inputs = [NoteInput(position.time_s) for position in ordered]
     labels = phrase_labels(inputs, fret_weights.phrase_gap_s)
     times = np.array([position.time_s for position in ordered], dtype=np.float64)
+    ticks = np.array([position.tick for position in ordered], dtype=np.int64)
     protected = _phrase_starts(labels)
 
     candidates = np.arange(len(ordered))
@@ -813,7 +832,10 @@ def reduce_track(
         cfg = settings.levels[level]
         target = round(cfg.position_ratio * len(ordered))
         scores = importance_scores(ordered, labels, tempo_map, cfg.importance)
-        candidates = select_positions(candidates, times, scores, protected, target, cfg.min_gap_s)
+        gap_ticks = None if cfg.min_gap_beats is None else round(cfg.min_gap_beats * tempo_map.resolution)
+        candidates = select_positions(
+            candidates, times, scores, protected, target, cfg.min_gap_s, ticks, gap_ticks
+        )
         chosen = [ordered[int(index)] for index in candidates]
         shapes = _assign_shapes(chosen, labels[candidates], level, cfg, fret_weights)
         track = _build_level(instrument, level, chosen, shapes, cfg, tempo_map.resolution)

@@ -14,6 +14,7 @@ from chartgen.chart.difficulty import (
     DifficultyConfig,
     OrangePitches,
     Position,
+    SoftTargets,
     check_soft_targets,
     count_orange_pitches,
     load_config,
@@ -31,20 +32,37 @@ STEM_FOR_INSTRUMENT: Mapping[Instrument, str] = {
     Instrument.KEYS: "piano",
 }
 
-CHARTABLE_INSTRUMENTS = frozenset({Instrument.GUITAR, Instrument.BASS})
+CHARTABLE_INSTRUMENTS = frozenset({Instrument.GUITAR, Instrument.BASS, Instrument.KEYS})
 """Instruments with a chart generator so far. Later phases add the others."""
-VOCAL_BLEED_CHECKED = frozenset({Instrument.GUITAR})
+UNVERIFIED_INSTRUMENTS = frozenset({Instrument.KEYS})
+"""Charted, but only ever tested on synthetic audio: none of the songs measured so far has a piano
+stem that counts as present, and the one human keyboard chart has 17 positions."""
+VOCAL_BLEED_CHECKED = frozenset({Instrument.GUITAR, Instrument.KEYS})
 """Bass stays out. On the human bass chart we measured, 83% of the notes the check removed were
-real, and on one song it removed 153 of 674 notes."""
+real, and on one song it removed 153 of 674 notes. Keys simply follow guitar: nothing was measured."""
 QUIET_NOTES_CHECKED = frozenset({Instrument.BASS})
 """Where the kick can leak in. Whether anything is removed is set in ``quiet_notes.toml``."""
 
 
 def settings_for(instrument: Instrument) -> tuple[DifficultyConfig, FretWeights]:
-    """Return an instrument's own preferences. Bass has its own files, so tuning it leaves guitar be."""
+    """Return an instrument's own preferences. Bass has its own files, so tuning it leaves guitar be.
+
+    Keys use guitar's, with nothing to tune them on, and no soft targets: guitar's numbers would only
+    warn about a guitar chart that keys need not resemble.
+    """
     if instrument is Instrument.BASS:
         return load_config(BASS_CONFIG_PATH), load_weights(BASS_WEIGHTS_PATH)
-    return load_config(), load_weights()
+    config = load_config()
+    if instrument is Instrument.KEYS:
+        config = replace(
+            config,
+            expert_targets=SoftTargets(),
+            levels={
+                level: replace(settings, soft_targets=SoftTargets())
+                for level, settings in config.levels.items()
+            },
+        )
+    return config, load_weights()
 
 
 def _orange_of(
