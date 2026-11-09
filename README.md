@@ -124,7 +124,10 @@ lives in `chartgen/chart/difficulty.toml`, whose soft targets only warn. The rul
    than `--max-beat-drift-ms` (25 by default) from it. Then that region gets a tempo event, but only
    if the event brings the onsets around it closer to the grid. `analysis.json` records each event's
    reason and gain. Against a human-made map of one real song: 94% of beats within 35 ms, using 25
-   tempo events where the human used 123.
+   tempo events where the human used 123. The drum stem then checks the beat itself: a 3-3-2 groove
+   can lead the tracker half a beat off the kick, so the grid moves if the kick and the snare both say
+   so. An opening whose onsets do not fit the grid, such as the talking start of a video, is reported
+   apart and warned about rather than counted as drift.
 4. **Detect onsets** on each stem, behind a noise gate and an adaptive threshold that reject bleed.
 5. **Remove vocal bleed**: a note where the singer is louder than a stem that is unusually quiet and
    does not stay is a trace of the vocals, not an instrument. `analysis.json` lists these.

@@ -14,16 +14,23 @@ was a median 6 ms off. So the two problems are solved separately:
    bring the song's onsets measurably closer to the grid, or it is merged away again: in
    a sparse intro the tracker can lock onto an off-beat pattern, and no event should be
    spent following that.
-4. ``chartgen.audio.meter`` decides how the beats group into bars and where they begin.
+4. ``chartgen.audio.meter`` checks that the grid's beats are not half a beat off the kick, then
+   decides how the beats group into bars and where they begin.
 
 ``--bpm`` replaces steps 1-3 for the tempo (method ``override``), not for phase or bars.
+
+When events are turned down, the beats can still sit far from the grid while the song does not:
+a tracker on the off-beat is half a beat away for as long as it stays there, and an opening
+that is not part of the song has nothing to do with its tempo. So the chosen grid is then
+measured against the nearest eighth note, from where the song's onsets start to fit it, and the
+opening is reported apart.
 """
 
 from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import librosa
 import numpy as np
@@ -31,7 +38,7 @@ from scipy.ndimage import median_filter
 from scipy.signal import find_peaks
 
 from chartgen.audio.io import ANALYSIS_SAMPLERATE
-from chartgen.audio.meter import MeterResult, detect_meter
+from chartgen.audio.meter import BeatPhaseCheck, MeterResult, check_beat_phase, detect_meter
 from chartgen.audio.onsets import ENVELOPE_LATENCY_S, HOP_LENGTH, onset_envelope
 from chartgen.core.timing import DEFAULT_RESOLUTION, TempoEvent, TempoMap, TimeSignatureEvent
 
@@ -103,6 +110,17 @@ GRID_DIVISOR = 4
 GRID_MATCH_S = 0.035
 """Onsets this close to a sixteenth note count as being on the grid."""
 
+LEAD_IN_WINDOW_BEATS = 8
+LEAD_IN_MATCH_S = 0.02
+"""Tighter than :data:`GRID_MATCH_S`, which a sixteenth grid at 130 BPM passes 61% of the time by
+chance. This one passes 35% of the time by chance, and 97% on a song that fits."""
+LEAD_IN_FIT = 0.6
+"""A window fits the grid if this share of its onsets are on it."""
+LEAD_IN_MIN_ONSETS = 3
+"""A window with fewer onsets says nothing either way."""
+LEAD_IN_CONFIRM_WINDOWS = 3
+"""The song has begun once this many windows in a row fit: one can do so by chance."""
+
 
 @dataclass(frozen=True)
 class TempoSegment:
@@ -163,6 +181,12 @@ class TempoAnalysis:
     meter: MeterResult | None = None
     estimated_bpm: float | None = None
     """The whole-song estimate, also reported when ``--bpm`` overrides it."""
+    beat_phase: BeatPhaseCheck | None = None
+    """What the kick says about the grid's beats. None without a drum stem."""
+    lead_in_end_s: float = 0.0
+    """Where the song's onsets begin to fit the grid, if an opening before that does not."""
+    lead_in_on_grid: float = 1.0
+    """Share of that opening's onsets on the grid."""
 
     @property
     def is_fallback(self) -> bool:
@@ -675,6 +699,84 @@ def _sequential_numbers(beats: np.ndarray, period_s: float) -> np.ndarray:
     return np.r_[0.0, np.cumsum(steps)]
 
 
+def _unfit_lead_in(onsets: np.ndarray, start: float, period: float) -> tuple[float, float]:
+    """Find an opening that is not part of the song the grid was fitted to.
+
+    A film scene or a talking intro has onsets of its own, as many as you like, and they fall
+    on the grid by chance alone. Only an opening counts, and only one that is followed by a
+    song that fits: a grid that fits nothing has a different problem.
+
+    Returns:
+        Where the song's onsets begin to fit and the share of the opening's onsets on the grid,
+        or ``(0.0, 1.0)`` if there is no such opening.
+    """
+    step = period / GRID_DIVISOR
+    on_grid = np.abs((onsets - start + step / 2) % step - step / 2) <= LEAD_IN_MATCH_S
+    window = LEAD_IN_WINDOW_BEATS * period
+    numbers = (onsets // window).astype(int)
+    run = 0
+    first_fitting: int | None = None
+    for number in np.unique(numbers):
+        inside = on_grid[numbers == number]
+        if inside.size < LEAD_IN_MIN_ONSETS:
+            continue
+        if inside.mean() < LEAD_IN_FIT:
+            run = 0
+            continue
+        run += 1
+        if run == 1:
+            first_fitting = int(number)
+        if run == LEAD_IN_CONFIRM_WINDOWS:
+            break
+    if run < LEAD_IN_CONFIRM_WINDOWS or first_fitting is None:
+        return 0.0, 1.0
+    end = first_fitting * window
+    before = on_grid[onsets < end]
+    if before.size < LEAD_IN_MIN_ONSETS or before.mean() >= LEAD_IN_FIT:
+        return 0.0, 1.0
+    return float(end), float(before.mean())
+
+
+def _onset_weights(heights: np.ndarray) -> np.ndarray:
+    return np.sqrt(heights) / max(float(np.mean(np.sqrt(heights))), 1e-9) if heights.size else heights
+
+
+def _grid_from_segments(segments: list[TempoSegment]) -> BeatGrid:
+    last = segments[-1]
+    numbers = [segment.first_beat for segment in segments] + [last.last_beat]
+    end = last.start_s + (last.last_beat - last.first_beat) * last.period_s
+    times = [segment.start_s for segment in segments] + [end]
+    return BeatGrid(np.array(numbers, dtype=np.float64), np.array(times))
+
+
+def _fit_on_eighths(
+    segments: list[TempoSegment],
+    beats: np.ndarray,
+    onsets: np.ndarray,
+    heights: np.ndarray,
+    from_s: float,
+) -> DriftStats:
+    """Measure a grid from ``from_s`` on, counting each beat from its nearest eighth note.
+
+    A tracker on the off-beat is half a beat from the grid for as long as it stays there, while
+    the grid and the song agree: every note still falls on a grid line.
+    """
+    grid = _grid_from_segments(segments)
+    kept_beats = beats[beats >= from_s]
+    kept = onsets >= from_s
+    numbers = np.round(grid.number_at(kept_beats) * 2.0) / 2.0
+    evidence = _Evidence(
+        kept_beats,
+        numbers,
+        onsets[kept],
+        _onset_weights(heights)[kept],
+        int(grid.numbers[0]),
+        int(grid.numbers[-1]),
+        is_sequential=False,
+    )
+    return _stats(grid, evidence)
+
+
 def _one_tempo_evidence(
     beats: np.ndarray, onsets: np.ndarray, weights: np.ndarray, start: float, period: float
 ) -> tuple[BeatGrid, _Evidence]:
@@ -700,6 +802,8 @@ class GridChoice:
     final: DriftStats
     one_tempo: DriftStats
     details: tuple[TempoEventDetail, ...] = ()
+    lead_in_end_s: float = 0.0
+    lead_in_on_grid: float = 1.0
 
 
 def choose_grid(
@@ -720,7 +824,7 @@ def choose_grid(
         duration_s: Length of the song.
         max_beat_drift_s: How far a region's beats may stray before it gets an event.
     """
-    weights = np.sqrt(heights) / max(float(np.mean(np.sqrt(heights))), 1e-9)
+    weights = _onset_weights(heights)
     start, period = _fit_one_tempo(beats, onsets, heights, bpm)
     single_grid, single_evidence = _one_tempo_evidence(beats, onsets, weights, start, period)
     single_stats = _stats(single_grid, single_evidence)
@@ -753,12 +857,29 @@ def choose_grid(
         or final_stats.beats_with_onset >= single_stats.beats_with_onset + MIN_BEAT_SUPPORT_GAIN
     )
     if not knots or harmful or not helpful or not grid.is_increasing:
-        return one_tempo(
+        lead_in_end, lead_in_on_grid = _unfit_lead_in(onsets, start, period)
+        song_stats = _fit_on_eighths(single_segments, beats, onsets, heights, lead_in_end)
+        decision = (
             f"beats stray {single_stats.max_ms:.0f} ms from one tempo (limit {limit_ms:.0f} ms), "
             f"but tempo events would not bring the onsets closer to the grid "
             f"(with one tempo {single_stats.on_grid:.0%} of onsets are on the grid and "
             f"{single_stats.beats_with_onset:.0%} of beats have an onset; with {len(knots)} "
-            f"events {final_stats.on_grid:.0%} and {final_stats.beats_with_onset:.0%})"
+            f"events {final_stats.on_grid:.0%} and {final_stats.beats_with_onset:.0%}). "
+            f"Counted from the nearest eighth note"
+        )
+        if lead_in_end > 0:
+            decision += f" and from {lead_in_end:.1f} s on"
+        decision += f", the worst region is {song_stats.max_ms:.0f} ms from the grid"
+        if lead_in_end > 0:
+            decision += (
+                f"; the {lead_in_end:.1f} s before that are not part of this grid: only "
+                f"{lead_in_on_grid:.0%} of their onsets are on it"
+            )
+        return replace(
+            one_tempo(decision),
+            final=song_stats,
+            lead_in_end_s=lead_in_end,
+            lead_in_on_grid=lead_in_on_grid,
         )
 
     _, final_drifts = _region_drifts(grid, evidence)
@@ -836,28 +957,49 @@ def _override_grid(
     heights: np.ndarray,
     duration_s: float,
     estimated: float,
-) -> GridChoice:
-    """Keep the given tempo exactly and only look for the phase."""
+) -> tuple[GridChoice, np.ndarray]:
+    """Keep the given tempo exactly and only look for the phase. Also return the beats used."""
     period = 60.0 / bpm
-    beats = _track_beats(envelope, samplerate, bpm)
-    if beats.size < _MIN_REGION_BEATS:
+    kept = _track_beats(envelope, samplerate, bpm)
+    if kept.size < _MIN_REGION_BEATS:
         stats = DriftStats(0.0, 0.0, 0.0)
         phase = 0.0
     else:
+        beats = kept
         kept = beats[_beats_with_evidence(beats, envelope, frame_rate)]
         kept = kept if kept.size >= _MIN_REGION_BEATS else beats
         phase = _beat_phase(kept, period)
-        weights = np.sqrt(heights) / max(float(np.mean(np.sqrt(heights))), 1e-9) if heights.size else heights
-        grid, evidence = _one_tempo_evidence(kept, onsets, weights, phase, period)
+        grid, evidence = _one_tempo_evidence(kept, onsets, _onset_weights(heights), phase, period)
         stats = _stats(grid, evidence)
         phase = float(np.mod(phase, period))
-    return GridChoice(
+    choice = GridChoice(
         [TempoSegment(0, max(1, int((duration_s - phase) / period)), phase, period)],
         bpm,
         "override",
         f"--bpm {bpm:g} given on the command line (whole-song estimate: {estimated:.2f})",
         stats,
         stats,
+    )
+    return choice, kept
+
+
+def _half_beat_later(
+    choice: GridChoice, check: BeatPhaseCheck, beats: np.ndarray, onsets: np.ndarray, heights: np.ndarray
+) -> GridChoice:
+    """Move the grid half a beat later. Every tempo stays, so every note stays on a grid line."""
+    shift = choice.segments[0].period_s / 2.0
+    segments = [replace(item, start_s=item.start_s + shift) for item in choice.segments]
+    final = _fit_on_eighths(segments, beats, onsets, heights, choice.lead_in_end_s)
+    return replace(
+        choice,
+        segments=segments,
+        final=final,
+        decision=(
+            f"{choice.decision}. Grid moved half a beat: the kick lands {check.kick_ratio:.1f} times "
+            f"harder between its beats and the snare does not mark them. On the moved grid the "
+            f"worst region is {final.max_ms:.0f} ms away and {final.beats_with_onset:.0%} of beats "
+            f"have an onset"
+        ),
     )
 
 
@@ -899,7 +1041,7 @@ def estimate_tempo_map(
     off_share = 0.0
 
     if bpm_override is not None:
-        choice = _override_grid(
+        choice, kept = _override_grid(
             bpm_override, envelope, samplerate, frame_rate, onsets, heights, duration_s, base_bpm
         )
     else:
@@ -914,6 +1056,14 @@ def estimate_tempo_map(
         kept = beats[_beats_with_evidence(beats, envelope, frame_rate)]
         kept = kept if kept.size >= MIN_BEATS else beats
         choice = choose_grid(kept, onsets, heights, base_bpm, duration_s, max_beat_drift_s)
+
+    beat_phase = None
+    if drums is not None:
+        beat_phase = check_beat_phase(
+            tempo_map_from_segments(choice.segments), drums, mono, samplerate
+        )
+        if beat_phase is not None and beat_phase.half_beat_off:
+            choice = _half_beat_later(choice, beat_phase, kept, onsets, heights)
 
     meter = detect_meter(
         tempo_map_from_segments(choice.segments),
@@ -937,4 +1087,7 @@ def estimate_tempo_map(
         off_tempo_share=off_share,
         meter=meter,
         estimated_bpm=base_bpm,
+        beat_phase=beat_phase,
+        lead_in_end_s=choice.lead_in_end_s,
+        lead_in_on_grid=choice.lead_in_on_grid,
     )

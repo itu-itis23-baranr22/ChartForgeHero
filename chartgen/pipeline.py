@@ -295,6 +295,20 @@ def _analysis(
             "one_tempo_fit": tempo.one_tempo and asdict(tempo.one_tempo),
             "off_tempo_share": round(tempo.off_tempo_share, 3),
             "tempo_strength": round(tempo.tempo_strength, 4),
+            "beat_phase": tempo.beat_phase
+            and {
+                "kick_ratio": round(tempo.beat_phase.kick_ratio, 2),
+                "snare_ratio": round(tempo.beat_phase.snare_ratio, 2),
+                "section_agreement": round(tempo.beat_phase.section_agreement, 2),
+                "confidence": round(tempo.beat_phase.confidence, 1),
+                "moved_half_a_beat": tempo.beat_phase.half_beat_off,
+            },
+            "unfit_lead_in": {
+                "end_s": round(tempo.lead_in_end_s, 3),
+                "onsets_on_grid": round(tempo.lead_in_on_grid, 3),
+            }
+            if tempo.lead_in_end_s > 0
+            else None,
             "time_signature_events": [asdict(s) for s in tempo.tempo_map.time_signatures],
             "meter": tempo.meter
             and {
@@ -410,6 +424,12 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
             tempo.on_grid_ratio * 100,
         )
         log.info("    why: %s", tempo.decision)
+        if tempo.lead_in_end_s > 0:
+            warnings.append(
+                f"the first {tempo.lead_in_end_s:.1f} s do not fit the song's grid (only "
+                f"{tempo.lead_in_on_grid:.0%} of their onsets are on it): anything charted there "
+                f"is not in time with what you hear"
+            )
         meter = tempo.meter
         if meter is not None and meter.first_downbeat_s is not None:
             log.info(

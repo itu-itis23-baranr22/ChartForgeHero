@@ -28,6 +28,12 @@ if ($Full) {
     } else {
         Write-Output 'check: no references folder, so the reference test will be skipped'
     }
+    $music = Join-Path $HOME 'Desktop\musica'
+    if (Test-Path $music) {
+        $env:CHARTGEN_MUSIC_DIR = $music
+    } else {
+        Write-Output 'check: no music folder, so the real song tests will be skipped'
+    }
     # An empty -m overrides the "not slow" default from pyproject.toml.
     & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m '""'
 } else {

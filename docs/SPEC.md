@@ -81,6 +81,19 @@ Decisions made since it was written are listed first and take precedence.
 20. **A note that could not be snapped still has a place in the bar**: the nearest sixteenth. Otherwise
    a slightly late beat counts as a rhythm of its own. On the measured chart this raised note F1 on
    Hard from 0.70 to 0.73 and on Easy from 0.54 to about 0.75.
+21. **The grid's beat is checked against the kick.** A 3-3-2 groove leads the tracker onto snares half a
+   beat from the pulse, which no onset measure can see, since every note stays on a sixteenth. The
+   grid moves half a beat if the drum stem is really there, its kick lands at least twice as hard
+   between the grid's beats, the snare does not mark those beats (off-beats at least 0.8 of beats), at
+   least half the song's sections agree and the lead is two standard errors or more. This also applies
+   with `--bpm`. It needs the drum stem. The limits rest on five songs, one of which moved, and that
+   one has no human chart. A bare 3-3-2 with nothing else up high looks like a backbeat and stays off.
+22. **An opening that does not fit is not drift.** When tempo events are turned down, the grid is
+   measured from where the onsets start to fit it, with each beat counted from its nearest eighth note,
+   because a tracker on the off-beat is half a beat from a grid that is right. The opening is reported
+   in `analysis.json` and in a warning. This changes what is reported and never the tempo map.
+23. **Tied bar phases go to the harder kick.** Below one standard error the phases are a tie. The bars
+   still report low confidence, so the warning to check them by ear stays on.
 
 ## Phase B1 targets (one reference song so far)
 
