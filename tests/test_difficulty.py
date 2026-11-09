@@ -366,7 +366,7 @@ def test_check_hard_rules_notices_each_kind_of_break():
 
 
 def test_the_rules_are_listed_for_the_report():
-    assert len(HARD_RULES) == 5
+    assert len(HARD_RULES) == 7
 
 
 # ---------------------------------------------------------------- the chord rule

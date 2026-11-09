@@ -1,0 +1,16 @@
+# Bass notes far quieter than the song's typical bass note. See chartgen/audio/quiet_notes.py.
+#
+# The rule is off. The project owner set two conditions for turning it on: note F1 on the human bass
+# chart may drop by at most 0.005, and none of the 11 notes checked by ear in Toca Toca may be removed.
+#
+#   limit    F1 change    Toca notes removed    Danza's 16 suspect notes caught
+#   18 dB     -0.0012            1                         3
+#   20 dB     -0.0017            1                         3
+#   24 dB     -0.0006            0                         2
+#
+# 18 and 20 dB fail on one Toca note, 22.6 dB below the median. 24 dB meets both conditions but catches
+# almost nothing it was meant to catch: the suspect notes of Danza and the real ones of Toca both lie
+# about 10 dB below their median (10.3 and 10.6), so this measure cannot tell them apart.
+enabled = false
+# A note this many decibels below the song's median bass note counts as too quiet.
+below_median_db = 24.0

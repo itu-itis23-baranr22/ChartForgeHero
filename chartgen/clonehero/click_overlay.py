@@ -17,6 +17,8 @@ from chartgen.clonehero.validate import ValidationReport, parse_chart
 from chartgen.core.timing import TempoEvent, TempoMap, TimeSignatureEvent
 from chartgen.errors import PackagingError
 
+CLICK_DIR = "debug"
+"""Inside the song folder, so the song's own files stay on their own."""
 CLICK_FILE = "debug_click.wav"
 
 BEAT_HZ = 1000.0
@@ -115,6 +117,7 @@ def write_click_overlay(chart_path: Path, audio: AudioData, destination: Path) -
     tempo_map = tempo_map_from_chart(chart_path.read_text(encoding="utf-8-sig"))
     schedule = click_schedule(tempo_map, audio.duration_s)
     try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
         sf.write(
             str(destination),
             render_click_overlay(audio, schedule),

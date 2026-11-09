@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from chartgen.audio.bass_pitch import note_semitones
 from chartgen.audio.io import ANALYSIS_SAMPLERATE
 from chartgen.audio.onsets import OnsetConfig, detect_onsets
 from chartgen.audio.pitch import (
@@ -15,10 +16,17 @@ from chartgen.audio.pitch import (
     chord_limit_for,
     contour_with_repeats,
 )
+from chartgen.audio.quiet_notes import QuietNote, QuietNoteLimits, levels_below_median
 from chartgen.audio.sustain import SustainConfig, note_durations
 from chartgen.audio.vocal_bleed import BleedThresholds, NoteBleed, analyze_bleed
-from chartgen.chart.difficulty import LevelMeasures, Position, SoftTargetResult
-from chartgen.chart.fret_mapping import FretWeights, NoteInput, map_notes
+from chartgen.chart.difficulty import (
+    SINGLE_NOTE_INSTRUMENTS,
+    LevelMeasures,
+    Position,
+    SoftTargetResult,
+    check_single_notes,
+)
+from chartgen.chart.fret_mapping import FretWeights, NoteInput, map_notes, single_notes_only
 from chartgen.core.model import ChartNote, Difficulty, Instrument, Track
 from chartgen.core.timing import TempoMap
 
@@ -51,6 +59,10 @@ class ChartedTrack:
     measures: LevelMeasures | None = None
     soft_targets: tuple[SoftTargetResult, ...] = ()
     """How this level compares with its soft targets."""
+    quiet_limits: QuietNoteLimits | None = None
+    """The limits this stem was checked against, if it was checked for quiet notes."""
+    quiet: tuple[QuietNote, ...] = ()
+    """The notes under that limit, whether or not the rule is in force."""
 
 
 def _quantize(times: np.ndarray, tempo_map: TempoMap) -> np.ndarray:
@@ -111,18 +123,27 @@ def build_expert_track(
     weights: FretWeights | None = None,
     vocals: np.ndarray | None = None,
     bleed_thresholds: BleedThresholds | None = None,
+    not_before_s: float = 0.0,
+    quiet_limits: QuietNoteLimits | None = None,
 ) -> ChartedTrack:
     """Build an Expert track from a mono stem. No onsets gives a track without notes.
 
-    With ``vocals``, notes that look like the singer leaking into this stem are removed.
+    With ``vocals``, notes that look like the singer leaking into this stem are removed. Nothing
+    lands before ``not_before_s``, where an opening that is not part of the song ends. With
+    ``quiet_limits``, notes far below the stem's median note are reported, and removed if the rule
+    is in force.
     """
     onsets = detect_onsets(mono, samplerate, onset_config)
     keep = onsets.times < duration_s - END_MARGIN_S
     times, strengths = onsets.times[keep], onsets.strengths[keep]
+    ticks = _quantize(times, tempo_map)
+    if not_before_s > 0:
+        # Judged where each note lands: snapping can carry one across the line.
+        allowed = tempo_map.seconds_at(ticks.astype(np.float64)) >= not_before_s
+        times, strengths, ticks = times[allowed], strengths[allowed], ticks[allowed]
     if times.size == 0:
         return ChartedTrack(Track(instrument, Difficulty.EXPERT), int(onsets.times.size))
 
-    ticks = _quantize(times, tempo_map)
     chosen = _thin_out(ticks, strengths, tempo_map)
     times, ticks, strengths = times[chosen], ticks[chosen], strengths[chosen]
     next_times = np.r_[times[1:], duration_s]
@@ -140,36 +161,66 @@ def build_expert_track(
                 Track(instrument, Difficulty.EXPERT), int(onsets.times.size), bleed=bleed
             )
 
-    pitches = analyze_pitches(mono, times, next_times, samplerate, pitch_config)
+    quiet: tuple[QuietNote, ...] = ()
+    if quiet_limits is not None:
+        below = levels_below_median(mono, times, next_times, samplerate)
+        flagged = below >= quiet_limits.below_median_db
+        quiet = tuple(
+            QuietNote(float(time), float(value), quiet_limits.enabled)
+            for time, value in zip(times[flagged], below[flagged])
+        )
+        if quiet_limits.enabled and flagged.any():
+            times, ticks, strengths = times[~flagged], ticks[~flagged], strengths[~flagged]
+            next_times = np.r_[times[1:], duration_s]
+            if times.size == 0:
+                return ChartedTrack(
+                    Track(instrument, Difficulty.EXPERT),
+                    int(onsets.times.size),
+                    quiet_limits=quiet_limits,
+                    quiet=quiet,
+                )
+
     durations = note_durations(mono, times, next_times, samplerate, sustain_config)
     lengths = _sustain_ticks(ticks, durations, tempo_map)
-
     placed = tempo_map.seconds_at(ticks.astype(np.float64))
-    contour = contour_with_repeats(pitches, (pitch_config or PitchConfig()).repeat_similarity)
-    inputs = [
-        NoteInput(float(time), float(value), pitch.voices)
-        for time, value, pitch in zip(placed, contour, pitches)
-    ]
-    shapes = map_notes(inputs, weights)
+
+    cfg = pitch_config or PitchConfig()
+    pitches: list[NotePitch] = []
+    limit = 0.0
+    if instrument in SINGLE_NOTE_INSTRUMENTS:
+        contour = note_semitones(mono, times, next_times, samplerate)
+        inputs = [NoteInput(float(time), float(value)) for time, value in zip(placed, contour)]
+        shapes = map_notes(inputs, weights, single_notes_only(len(inputs)))
+    else:
+        pitches = analyze_pitches(mono, times, next_times, samplerate, pitch_config)
+        contour = contour_with_repeats(pitches, cfg.repeat_similarity)
+        inputs = [
+            NoteInput(float(time), float(value), pitch.voices)
+            for time, value, pitch in zip(placed, contour, pitches)
+        ]
+        shapes = map_notes(inputs, weights)
+        limit = chord_limit_for([pitch.flatness for pitch in pitches if pitch.is_known], cfg)
     notes = [
         ChartNote(int(tick), lane, int(length))
         for tick, length, shape in zip(ticks, lengths, shapes)
         for lane in shape
     ]
-    cfg = pitch_config or PitchConfig()
-    limit = chord_limit_for([pitch.flatness for pitch in pitches if pitch.is_known], cfg)
     positions = tuple(
         Position(int(tick), float(time), shape, int(length), float(strength), float(value))
         for tick, time, shape, length, strength, value in zip(
             ticks, placed, shapes, lengths, strengths, contour
         )
     )
+    track = Track(instrument, Difficulty.EXPERT, notes)
+    check_single_notes(track)
     return ChartedTrack(
-        Track(instrument, Difficulty.EXPERT, notes),
+        track,
         int(onsets.times.size),
         tuple(pitches),
         bleed,
         limit,
         limit > cfg.chord_flatness,
         positions,
+        quiet_limits=quiet_limits,
+        quiet=quiet,
     )

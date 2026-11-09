@@ -14,13 +14,13 @@ It only processes files you give it. It does not download audio or touch streami
 | Tempo check | `--click-overlay`, `--bpm`, `--max-beat-drift-ms`, explained tempo events | Done |
 | B1 | Time signature, chords, sustains, Viterbi fret mapping, vocal bleed removal (Expert) | Done |
 | B2 | Difficulty reduction to Hard, Medium and Easy | Done |
-| B3 | Bass and keys; a song no longer needs a guitar | Planned |
+| B3 | Bass and keys; a song no longer needs a guitar | Bass Expert done; lower levels and keys planned |
 | C | Drums: percussion classification, four difficulties | Planned |
 | D | Vocal events, sections, star power | Planned |
 
-Only guitar is charted so far, at all four difficulties: until Phases B3 and C, a song whose guitar
-stem is rejected as absent cannot be built. Telling chords from single notes on heavily
-distorted guitar is unverified. 3/4 and 6/8 have only been tested on synthetic audio.
+Guitar is charted at all four difficulties and bass at Expert, so a song needs at least one of the two.
+Telling chords from single notes on heavily distorted guitar is unverified. 3/4 and 6/8 have only
+been tested on synthetic audio.
 
 See [docs/SPEC.md](docs/SPEC.md) for the full specification.
 
@@ -63,13 +63,15 @@ The song appears in `outputs/Artist - Title/`:
 | `song.ogg` | Backing track: the `other` stem plus every stem without its own file |
 | `guitar.ogg`, `bass.ogg`, `drums.ogg`, `keys.ogg`, `vocals.ogg` | Stems that are really present |
 | `analysis.json` | Tempo and why, stem presence scores, note counts, stage timings, warnings |
-| `debug_click.wav` | Only with `--click-overlay` |
+| `debug/debug_click.wav` | Only with `--click-overlay` |
 
 Preview it with bot players, without scanning your library:
 
 ```
 "<path to Clone Hero.exe>" --song "<song folder>" --player Guitar,Expert --player Guitar,Hard --player Guitar,Medium --player Guitar,Easy -i
 ```
+
+A build prints this command for each instrument it charted, for example `--player Bass,Expert`.
 
 To add it to your library, copy the folder into Clone Hero's `Songs` folder and press
 *Settings > General > Scan Songs*. Songs the game rejects are listed in `badsongs.txt`.
@@ -81,7 +83,7 @@ python -m chartgen build song.mp3 --artist "Artist" --title "Title" --click-over
 python -m chartgen build song.mp3 --artist "Artist" --title "Title" --bpm 97 --click-overlay --force
 ```
 
-`--click-overlay` adds `debug_click.wav`: the original mix with a metronome taken from the written
+`--click-overlay` adds `debug/debug_click.wav`: the original mix with a metronome taken from the written
 `notes.chart`, the first beat of each bar an octave higher. A wrong tempo audibly slides away from
 the drums. `--bpm` forces one exact tempo; the phase and the first downbeat are still detected.
 `--max-beat-drift-ms` sets how far a region's beats may stray from one tempo before it gets an event.
@@ -109,7 +111,8 @@ level misses.
 
 The weights of the fret mapper all live in `chartgen/chart/fret_weights.toml`. The rules that keep a
 chart playable are in `chartgen/chart/fret_mapping.py`, and tests check them under random weights.
-The limits for vocal bleed live in `chartgen/audio/vocal_bleed.toml`. How difficulties are reduced
+The limits for vocal bleed live in `chartgen/audio/vocal_bleed.toml`, and the rule for bass notes far
+below the song's median note, which is off, in `chartgen/audio/quiet_notes.toml`. How difficulties are reduced
 lives in `chartgen/chart/difficulty.toml`, whose soft targets only warn. The rules that always hold are in
 `chartgen/chart/difficulty.py`, and the file cannot weaken them.
 
@@ -127,7 +130,8 @@ lives in `chartgen/chart/difficulty.toml`, whose soft targets only warn. The rul
    tempo events where the human used 123. The drum stem then checks the beat itself: a 3-3-2 groove
    can lead the tracker half a beat off the kick, so the grid moves if the kick and the snare both say
    so. An opening whose onsets do not fit the grid, such as the talking start of a video, is reported
-   apart and warned about rather than counted as drift.
+   apart and warned about rather than counted as drift. No instrument gets a note there. Its start
+   is marked with the section `Intro`, and the song's own start with the section `Song`.
 4. **Detect onsets** on each stem, behind a noise gate and an adaptive threshold that reject bleed.
 5. **Remove vocal bleed**: a note where the singer is louder than a stem that is unusually quiet and
    does not stay is a trace of the vocals, not an instrument. `analysis.json` lists these.

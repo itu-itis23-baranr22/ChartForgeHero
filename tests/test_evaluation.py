@@ -604,3 +604,6 @@ def test_real_references_when_available():
     assert report.songs, "no reference could be evaluated"
     for averages in report.averages.values():
         assert averages["bars_agreeing"] >= 0.8
+    for averages in report.bass_level_averages.values():
+        assert averages["expert"]["match"]["note_f1"] >= 0.80
+        assert averages["expert"]["match"]["direction_when_human_moves"] >= 0.60

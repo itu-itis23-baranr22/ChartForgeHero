@@ -259,6 +259,7 @@ def test_beats_on_the_off_beat_and_a_foreign_opening_are_not_drift():
     assert choice.lead_in_on_grid < 0.6
     assert choice.final.max_ms <= 25
     assert "not part of this grid" in choice.decision
+    assert choice.song_start_s == onsets[onsets >= choice.lead_in_end_s][0]
 
 
 def test_opening_and_moved_grid_reach_the_analysis_and_the_warnings(song_file, tmp_path, monkeypatch):
@@ -277,7 +278,11 @@ def test_opening_and_moved_grid_reach_the_analysis_and_the_warnings(song_file, t
     )
     folder = build_song(config, FakeSeparator(song_stems())).folder
     analysis = json.loads((folder / "analysis.json").read_text(encoding="utf-8"))
-    assert analysis["tempo"]["unfit_lead_in"] == {"end_s": 5.5, "onsets_on_grid": 0.31}
+    assert analysis["tempo"]["unfit_lead_in"] == {
+        "end_s": 5.5,
+        "onsets_on_grid": 0.31,
+        "song_start_s": 5.5,
+    }
     assert analysis["tempo"]["beat_phase"]["moved_half_a_beat"] is False
     assert any("first 5.5 s do not fit" in warning for warning in analysis["warnings"])
 
@@ -320,6 +325,7 @@ def test_danza_real_grid():
     assert analysis.final.beats_with_onset >= 0.85
     assert analysis.first_downbeat_s == pytest.approx(1.114, abs=0.01)
     assert analysis.meter.low_confidence, "the bar phase was a tie and must say so"
+    assert analysis.song_start_s == pytest.approx(37.1, abs=0.05)
 
 
 @pytest.mark.slow

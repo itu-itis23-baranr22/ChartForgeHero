@@ -4,11 +4,74 @@ B3 devam ediyor, alt adımlara bölündü ve her birinin sonunda onay bekleniyor
 
 ## Şu anki adım
 
-**B3.0 (Danza tempo haritası) bitti ve onaylandı. Sırada B3.1 (gitarsız build + bas Expert), sonra B3.2 (bas Hard/Medium/Easy) ve B3.3 (keys).**
+**B3.1 (gitarsız build + bas Expert) bitti. Sırada B3.2 (bas Hard/Medium/Easy): kod yazmadan önce turuncu teşhisi ve kabul kriterleri onaya sunulacak. Sonra B3.3 (keys).**
 
 ```powershell
 scripts\check.ps1 -Full
 ```
+
+## B3.1: Gitarsız build ve bas Expert
+
+Danza ve Toca artık derleniyor: validator'dan geçiyor, `diff_guitar = -1`, `diff_bass ≥ 0`, gitar bölümü yok, gitar stem'inin sesi `song.ogg`'da. İkisi de oyunda botla hatasız yüklendi (`--song`, yalnızca yükleme logu; bot çalışı ölçülmedi, insan çalmadı). Önizleme tarama yapmadığı için `badsongs.txt` bu konuda kanıt değil.
+
+| Bas Expert | Danza | Toca | Californication (ben / insan) |
+|---|---|---|---|
+| Pozisyon | 671 | 274 | 916 / 918 |
+| Akor | 0 | 0 | 0 / 0 |
+| Yeşil / kırmızı / sarı / mavi / turuncu | %30 / 19 / 23 / 28 / 0 | %38 / 10 / 24 / 28 / 0 | %20 / 26 / 33 / 22 / 0,1 — insan %26 / 27 / 15 / 18 / 15 |
+| Sustain | %16 | %32 | %13 / 20 |
+| Otomatik HOPO | %9,7 | %3,3 | %9,2 / 12,3 |
+
+Californication bası (`train`, ama bas için hiçbir ayar yapılmadı): nota F1 **0,811** (kesinlik 0,812, duyarlılık 0,810; hedef ≥ 0,80), yön insan değiştirince **0,655** (hedef ≥ 0,60; `pyin` öncesi 0,44), sustain F1 0,604. En büyük şerit sapması 0,177: insan turuncuyu %15 kullanıyor, bizde %0,1. Bu B3.2'nin bas şerit tablosunun işi.
+
+**Değişmeyenler:** Californication gitarı aynı (Expert F1 0,794, seviyeler 0,729 / 0,640 / 0,745). LastResort ve Şarkı Testi'nin `[SyncTrack]` ve dört gitar bölümü bayt bayt aynı, bunu `-Full` sabit hash'le denetliyor. Yeni üretilen chart'larda bunlara `[ExpertDoubleBass]` ekleniyor. Oyundaki kopyalara dokunulmadı.
+
+**Yeni kesin kurallar** (`difficulty.py`, `pipeline.py`, config gevşetemez):
+- Bas her seviyede akorsuz. Mapper'da akor şekilleri kapalı, üretilen track ve yazılan dosya ayrıca denetleniyor.
+- Şarkıya ait olmayan başlangıca hiçbir enstrümanda nota girmez. Charter notayı düştüğü tick'e göre eler (snap sınırı geçiremez), build her track'i denetler (henüz yazılmamış enstrümanlar dahil), validator da `analysis.json` ve `[SyncTrack]`'ten bağımsız kontrol eder.
+- Bölgenin başına `0 = E "section Intro"`, şarkının başladığı ilk net onset'e `section Song` yazılır (Danza'da 37,1 sn). Böyle bir başlangıcı olmayan şarkıda section yazılmaz.
+
+**Click:** `build --click-overlay` artık `debug/debug_click.wav` yazıyor. Danza'da bu dosya, proje sahibinin dinlediği `Danza_click_YENI.wav` ile bayt bayt aynı.
+
+**Sınırlar:**
+- Bas şimdilik yalnızca Expert ve yumuşak hedefi yok: gitarınkiler basta anlamsız.
+- Başlangıcın sonu 8 vuruşluk pencere sınırı. Şarkı pencerenin ortasında başlasa ilk notalar en fazla bir pencere kadar kesilebilir. Danza'da kesilen yok: şarkı 37,1, sınır 36,9 sn.
+- Sanatçı adları (Don Omar, Fly Project) dosyada yok, elle verildi. Klasör adı kodda `Sanatçı - Şarkı`, yani `outputs\Don Omar - Danza Kuduro\`.
+
+### Kick sızıntısı teşhisi
+
+| | Danza | Toca | Californication |
+|---|---|---|---|
+| Nota | 671 | 274 | 916 |
+| Kick üstünde (şans) | %55 (%15) | %48 (%9) | %34 (%12) |
+| Kick üstünde ve kısa veya perdesiz | 7 (%1) | 2 (%1) | 6 (%1), hepsi gerçek |
+| Kick üstünde, kendi seviyesinin 9 dB altında, davulun 18 dB altında | 11 (%1,6) | 10 (%3,6) | 5 (%0,5), hepsi gerçek |
+| Şüpheli (ikisinin birleşimi) | 16 (%2,4) | 11 (%4,0) | 11 (%1,2), hepsi gerçek |
+
+- **Tarif edilen imza (kısa, perdesiz) neredeyse yok.** Bas stem'indeki onset'lerin çoğu perdeli ve halka süresi uzun.
+- **Kick üstünde olmak kanıt değil.** Californication'da kick üstündeki notaların %96'sı gerçek, diğerlerinin %73'ü. Bunları silmek F1'i 0,811'den 0,581'e düşürür. 172 yanlış notanın yalnızca 11'i kick üstünde.
+- **Perdeli kick hipotezi desteklenmiyor.** Kick'in baskın frekansı Toca'da 48,4 Hz (G1), ama G1 okunan nota yok. Danza'da 59,2 Hz (A♯1), en sık perdeler arasında yok. Notalar armoniyle değişiyor. A1 ve B1'in kick üstü oranı yüksek (%77, %84), bu tek başına eleyecek kadar güçlü değil.
+- **Tek net aday Danza'nın kick'li girişi:** 37,58 ve 38,04 sn. Bas stem'i orada sessize yakın ve kick'in 23 dB altında.
+- **Toca'daki alçak notalar:** B0 ve D♯1'de enerji var (oktava göre -7,2 ve -1,5 dB). Californication'ın doğrulanan alçak notaları da benzer (A1 -17,5 dB). Oktav hatası kanıtı yok, ama doğrulanmadı da.
+
+**Proje sahibinin kulak testi** (`outputs\<şarkı>\debug\bas_supheli_notalar.wav`):
+- Danza: click'lerden sonra çoğunlukla zayıf, perdesiz bir "tok" sesi. Şüpheli notalar büyük ihtimalle gerçek değil.
+- Toca: perdeli, gerçek bas notaları. Silinmemeli.
+
+**Karar:** genel kick süzgeci yok. Yerine seviye kuralı denendi: nota, şarkının medyan bas notasının X dB altındaysa elenir. Koşullar: Californication bası F1 en fazla 0,005 düşer, Toca'nın 11 notasından hiçbiri elenmez. Tutmazsa kural kapalı kalır. Eşik `audio/quiet_notes.toml`'da.
+
+| X | Californication F1 | Toca'nın duyulan notalarından elenen | Danza'nın 16 şüphelisinden elenen |
+|---|---|---|---|
+| 18 dB | -0,0012 | 1 (67,01) | 3 |
+| 20 dB | -0,0017 | 1 (67,01) | 3 |
+| 24 dB | -0,0006 | 0 | 2 |
+
+| X | Danza'da elenenler (sn) | Toca'da elenenler (sn) |
+|---|---|---|
+| 18-21 dB | 38,06 · 49,58 · 66,58 · 201,47 | 1,29 · 22,46 · 33,23 · 67,01 · 70,45 |
+| 24 dB | 38,06 · 49,58 · 66,58 | 1,29 · 22,46 · 33,23 · 70,45 |
+
+**Sonuç: kural kapalı** (`enabled = false`, `below_median_db = 24`). 18-20 dB Toca koşulunu tek notayla geçemiyor. 24 dB iki koşulu da geçiyor ama amacını tutmuyor: Danza'nın 16 şüphelisinden 2'sini yakalıyor ve Toca'da kulakla denetlenmemiş 4 notayı siliyor. Asıl neden: Danza şüphelileri medyanın 10,3 dB, Toca'nınkiler 10,6 dB altında, yani bu ölçü ikisini ayıramıyor. "Perde kesinliği + hızlı sönme" de denendi, en fazla 2 Danza notası yakalıyor. Kural kapalıyken de `analysis.json` işaret ettiği notaları listeliyor.
 
 ## B3.0: Danza'nın tempo haritası
 
@@ -66,7 +129,8 @@ Toca, LastResort, Şarkı Testi ve Californication'ın tempo haritaları, `final
 | B1 | Ölçü, akor, sustain, Viterbi fret eşleme, vokal sızıntısı (Expert gitar) | `fc4749c` |
 | Tekrarlanabilirlik | Sabit seed, önbellek anahtarı, hızlı pre-commit, `check.ps1 -Full` | `9777680` |
 | B2 | Hard, Medium, Easy (gitar) | `5668319` |
-| B3.0 | Danza tempo haritası: beat fazı, uymayan başlangıç | bu commit |
+| B3.0 | Danza tempo haritası: beat fazı, uymayan başlangıç | `5b04df5` |
+| B3.1 | Gitarsız build, bas Expert, başlangıç kuralı, section'lar | bu commit |
 
 Proje sahibi LastResort ve Şarkı Testi'nin güncel Hard ve Medium sürümlerini de çaldı: akorlar rahat, fret dağılımı dengeli, senkron iyi.
 
@@ -84,7 +148,7 @@ Bu şarkı `train`, ayarlar onunla yapıldı, yani skorlar iyimser.
 | Akor oranı (ben / insan) | %50 / 59 | %42 / 58 | %42 / 57 | %0 / 0 |
 | Otomatik HOPO (ben / insan) | %3.0 / 0.9 | %0 / 0.2 | %0 / 0 | %0 / 0 |
 
-Pre-commit hook 39–58 sn sürüyor (hızlı testler + validator, makine yüküne göre değişiyor). `-Full` yaklaşık 7 dakika.
+Pre-commit hook 39–62 sn sürüyor (hızlı testler + validator, makine yüküne göre değişiyor). `-Full` yaklaşık 8 dakika.
 
 ## Bilinen sınırlar ve açık konular
 
@@ -122,9 +186,11 @@ Bunlar proje sahibinin ön tercihleri. B3 bu varsayımlarla başlar.
 - **Bas iyi başlıyor ama yönü zayıf.** Tek sesli olduğu için `pyin` işe yarıyor. Yeni bağımlılık gerektirmiyor, 324 sn'lik şarkıda 33 sn ekliyor.
 - **Vokal süzgeci basa zarar veriyor.** Californication'da sildiği 29 notanın %83'ü gerçek, kapalıyken F1 0.81. Danza'da 674 notanın 153'ünü siliyor.
 - **Piyano:** beş şarkının hiçbirinde piyano stem'i "var" çıkmıyor (-65, -59, -64, -54, -19 dB). İnsan klavye chart'ı da yalnızca 17 konum. Keys gerçek veriyle doğrulanamıyor.
-- **Danza ve Toca:** gitar yok (-44 / -58 dB), bas var (-10 / -9 dB). Bugün ikisi de "No requested instrument produced a chart" hatasıyla, çıkış kodu 2 ile duruyor.
+- **Danza ve Toca:** gitar yok (-44 / -58 dB), bas var (-10 / -9 dB). B3.1'den önce ikisi de "No requested instrument produced a chart" hatasıyla duruyordu.
 
 ### Kabul kriterleri
+
+Kesin kriterlerden 1, 2, 4 ve 5 B3.1'de bitti. 3 ve 6 ile yumuşak hedefler B3.2 ve B3.3'te.
 
 **Kesin (kodda, test edilir):**
 1. Danza ve Toca derlenir ve validator'dan geçer: `diff_guitar = -1`, `diff_bass ≥ 0`, gitar bölümü yok, gitar stem'inin sesi `song.ogg`'da.
@@ -166,5 +232,5 @@ Bunlar proje sahibinin ön tercihleri. B3 bu varsayımlarla başlar.
 ### Riskler
 
 - Danza ve Toca'nın insan chart'ı yok. Derlenip çalındığını gösterirler, doğruluğunu değil.
-- Reggaeton'da bas stem'ine kick karışabilir, bunu ancak kulak söyler.
+- Reggaeton'da bas stem'ine kick karışabilir, bunu ancak kulak söyler (teşhis: B3.1).
 - Bas hedefleri de tek şarkıdan geliyor, `references/test` hâlâ boş.

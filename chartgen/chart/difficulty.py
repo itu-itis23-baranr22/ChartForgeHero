@@ -85,12 +85,31 @@ HARD_RULES = (
     "Medium has no orange and chords of at most two notes",
     "a sustain never runs into the next note",
     "every phrase of more than four notes keeps at least one note on Easy",
+    "bass has no chords on any level",
+    "no instrument has a note in an opening that is not part of the song",
 )
 """Listed in ``analysis.json``. The result is also deterministic, which the tests check."""
+
+SINGLE_NOTE_INSTRUMENTS = frozenset({Instrument.BASS})
+"""Hard rule: the human bass chart we measured has no chord in 918 positions, and our analysis can
+hear one where there is none."""
 
 
 class HardRuleViolation(ValueError):
     """A reduced chart broke a rule that must always hold: a bug, never a matter of settings."""
+
+
+def check_single_notes(track: Track) -> None:
+    """Raise if a track that may only hold single notes has a chord."""
+    if track.instrument not in SINGLE_NOTE_INSTRUMENTS:
+        return
+    seen: set[int] = set()
+    for note in track.notes:
+        if note.tick in seen:
+            raise HardRuleViolation(
+                f"{track.instrument.value}/{track.difficulty.value} has a chord at tick {note.tick}"
+            )
+        seen.add(note.tick)
 
 
 @dataclass(frozen=True)

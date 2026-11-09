@@ -187,6 +187,8 @@ class TempoAnalysis:
     """Where the song's onsets begin to fit the grid, if an opening before that does not."""
     lead_in_on_grid: float = 1.0
     """Share of that opening's onsets on the grid."""
+    song_start_s: float = 0.0
+    """The first clear onset after such an opening: where the song really begins."""
 
     @property
     def is_fallback(self) -> bool:
@@ -804,6 +806,7 @@ class GridChoice:
     details: tuple[TempoEventDetail, ...] = ()
     lead_in_end_s: float = 0.0
     lead_in_on_grid: float = 1.0
+    song_start_s: float = 0.0
 
 
 def choose_grid(
@@ -875,11 +878,13 @@ def choose_grid(
                 f"; the {lead_in_end:.1f} s before that are not part of this grid: only "
                 f"{lead_in_on_grid:.0%} of their onsets are on it"
             )
+        after = onsets[onsets >= lead_in_end]
         return replace(
             one_tempo(decision),
             final=song_stats,
             lead_in_end_s=lead_in_end,
             lead_in_on_grid=lead_in_on_grid,
+            song_start_s=float(after[0]) if lead_in_end > 0 and after.size else lead_in_end,
         )
 
     _, final_drifts = _region_drifts(grid, evidence)
@@ -1090,4 +1095,5 @@ def estimate_tempo_map(
         beat_phase=beat_phase,
         lead_in_end_s=choice.lead_in_end_s,
         lead_in_on_grid=choice.lead_in_on_grid,
+        song_start_s=choice.song_start_s,
     )

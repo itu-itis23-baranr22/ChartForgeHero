@@ -23,14 +23,19 @@ from chartgen.audio.presence import StemPresence, analyze_presence
 from chartgen.audio.separation import STEM_NAMES, Separator, StemSet, separate_with_cache
 from chartgen.audio.tempo import DEFAULT_MAX_BEAT_DRIFT_S, TempoAnalysis, estimate_tempo_map
 from chartgen.chart.charter import ChartedTrack
-from chartgen.chart.difficulty import HARD_RULES
+from chartgen.chart.difficulty import HARD_RULES, HardRuleViolation
 from chartgen.chart.instruments import (
     CHARTABLE_INSTRUMENTS,
     STEM_FOR_INSTRUMENT,
     build_tracks_for,
 )
 from chartgen.clonehero.chart_format import DotChartExporter
-from chartgen.clonehero.click_overlay import CLICK_FILE, ClickSchedule, write_click_overlay
+from chartgen.clonehero.click_overlay import (
+    CLICK_DIR,
+    CLICK_FILE,
+    ClickSchedule,
+    write_click_overlay,
+)
 from chartgen.clonehero.package import (
     BACKING_STEM,
     EncodedAudio,
@@ -41,12 +46,16 @@ from chartgen.clonehero.package import (
 )
 from chartgen.clonehero.song_ini import SongIni, difficulty_tier, render_song_ini
 from chartgen.clonehero.validate import validate_song_folder
-from chartgen.core.model import Chart, Difficulty, Instrument, SongMetadata
+from chartgen.core.model import Chart, Difficulty, Instrument, Section, SongMetadata, Track
 from chartgen.errors import ChartValidationError, NoPlayableInstrumentError, PackagingError
 
 log = logging.getLogger(__name__)
 
 ANALYSIS_FILE = "analysis.json"
+INTRO_SECTION = "Intro"
+"""Marks the start of an opening that is not part of the song."""
+SONG_SECTION = "Song"
+"""Marks where the song begins after such an opening, or practice mode calls all of it the intro."""
 _BASE_STAGE_COUNT = 7
 
 
@@ -123,7 +132,9 @@ def _build_tracks(
             )
             continue
         mono = analysis_mono(stems.stems[stem], stems.samplerate)
-        built = build_tracks_for(instrument, mono, tempo.tempo_map, stems.duration_s, vocals)
+        built = build_tracks_for(
+            instrument, mono, tempo.tempo_map, stems.duration_s, vocals, tempo.lead_in_end_s
+        )
         if not built:
             warnings.append(f"{instrument.value}: no notes detected in the {stem} stem")
         for item in built:
@@ -132,8 +143,47 @@ def _build_tracks(
     return charted
 
 
+def _check_opening_is_empty(tracks: list[Track], tempo: TempoAnalysis) -> None:
+    """Hold every instrument to the rule, whichever generator it comes from.
+
+    Raises:
+        HardRuleViolation: If a track has a note in an opening that is not part of the song.
+    """
+    if tempo.lead_in_end_s <= 0:
+        return
+    for track in tracks:
+        for note in track.notes:
+            if tempo.tempo_map.seconds_at(float(note.tick)) < tempo.lead_in_end_s:
+                raise HardRuleViolation(
+                    f"{track.instrument.value}/{track.difficulty.value} has a note at tick "
+                    f"{note.tick}, in the opening that ends at {tempo.lead_in_end_s:.1f} s"
+                )
+
+
+def _song_start(tempo: TempoAnalysis) -> float:
+    return tempo.song_start_s or tempo.lead_in_end_s
+
+
+def _sections(tempo: TempoAnalysis) -> list[Section]:
+    """Mark an opening that is not part of the song, and where the song begins after it."""
+    if tempo.lead_in_end_s <= 0:
+        return []
+    sixteenth = tempo.tempo_map.resolution // 4
+    tick = round(tempo.tempo_map.ticks_at(_song_start(tempo)) / sixteenth) * sixteenth
+    return [Section(0, INTRO_SECTION), Section(int(tick), SONG_SECTION)]
+
+
 def _report_track(instrument: Instrument, item: ChartedTrack, warnings: list[str]) -> None:
     """Say what was removed as vocal bleed, and whether the temporary chord limit is on."""
+    if item.quiet and item.quiet_limits is not None:
+        log.info(
+            "    %s: %d notes are %g dB or more below the median note%s, at %s s",
+            instrument.value,
+            len(item.quiet),
+            item.quiet_limits.below_median_db,
+            " and were removed" if item.quiet_limits.enabled else "; the rule is off, so they stay",
+            ", ".join(f"{note.time_s:.1f}" for note in item.quiet),
+        )
     removed = [note for note in item.bleed if note.removed]
     if removed:
         log.info(
@@ -243,7 +293,8 @@ def _analysis(
             "positions_per_second": round(len(per_tick) / stems.duration_s, 3),
             **_level_analysis(item),
         }
-        if track.difficulty is Difficulty.EXPERT:
+        # An instrument that may not have chords has no chord limit, and bass is not checked for bleed.
+        if track.difficulty is Difficulty.EXPERT and item.chord_limit > 0:
             entry["chord_limit"] = {
                 "used": round(item.chord_limit, 3),
                 "temporary_distortion_limit_in_force": item.chord_limit_adjusted,
@@ -261,6 +312,19 @@ def _analysis(
                     }
                     for note in item.bleed
                     if note.vocal_dominant
+                ],
+            }
+        if item.quiet_limits is not None:
+            entry["quiet_notes"] = {
+                "enabled": item.quiet_limits.enabled,
+                "below_median_db": item.quiet_limits.below_median_db,
+                "notes": [
+                    {
+                        "time_s": round(note.time_s, 3),
+                        "below_median_db": round(note.below_median_db, 1),
+                        "removed": note.removed,
+                    }
+                    for note in item.quiet
                 ],
             }
         charts.setdefault(track.instrument.value, {})[track.difficulty.value] = entry
@@ -306,6 +370,7 @@ def _analysis(
             "unfit_lead_in": {
                 "end_s": round(tempo.lead_in_end_s, 3),
                 "onsets_on_grid": round(tempo.lead_in_on_grid, 3),
+                "song_start_s": round(_song_start(tempo), 3),
             }
             if tempo.lead_in_end_s > 0
             else None,
@@ -347,7 +412,7 @@ def _analysis(
         },
         "click_overlay": click_schedule
         and {
-            "file": CLICK_FILE,
+            "file": f"{CLICK_DIR}/{CLICK_FILE}",
             "clicks": int(click_schedule.times.size),
             "downbeats": int(click_schedule.is_downbeat.sum()),
         },
@@ -427,8 +492,8 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
         if tempo.lead_in_end_s > 0:
             warnings.append(
                 f"the first {tempo.lead_in_end_s:.1f} s do not fit the song's grid (only "
-                f"{tempo.lead_in_on_grid:.0%} of their onsets are on it): anything charted there "
-                f"is not in time with what you hear"
+                f"{tempo.lead_in_on_grid:.0%} of their onsets are on it): they are taken not to be "
+                f"part of the song, and no instrument gets a note there"
             )
         meter = tempo.meter
         if meter is not None and meter.first_downbeat_s is not None:
@@ -449,6 +514,7 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
     with stages.stage("Chart instruments"):
         charted = _build_tracks(config, stems, presence, tempo, warnings)
         tracks = [item.track for item in charted]
+        _check_opening_is_empty(tracks, tempo)
         if not tracks:
             raise NoPlayableInstrumentError(
                 "No requested instrument produced a chart, so the song would be unplayable. "
@@ -459,7 +525,7 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
     temporary = Path(tempfile.mkdtemp(prefix=".build-", dir=config.output_dir))
     try:
         with stages.stage("Package song folder"):
-            chart = Chart(config.metadata, tempo.tempo_map, tracks)
+            chart = Chart(config.metadata, tempo.tempo_map, tracks, _sections(tempo))
             DotChartExporter().export(chart, temporary)
 
             plan = plan_audio(presence, config.instruments)
@@ -496,7 +562,9 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
         if config.click_overlay:
             with stages.stage("Write click overlay"):
                 schedule = write_click_overlay(
-                    temporary / DotChartExporter.file_name, audio, temporary / CLICK_FILE
+                    temporary / DotChartExporter.file_name,
+                    audio,
+                    temporary / CLICK_DIR / CLICK_FILE,
                 )
 
         analysis = _analysis(

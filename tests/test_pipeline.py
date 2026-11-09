@@ -66,7 +66,7 @@ def test_present_but_not_yet_charted_stems_keep_their_audio(song_file, tmp_path)
     result = build_song(config(song_file, tmp_path), FakeSeparator(song_stems()))
     names = {path.name for path in result.folder.iterdir()}
     assert {"bass.ogg", "drums.ogg"} <= names
-    assert any("bass: chart generation is not implemented" in w for w in result.analysis["warnings"])
+    assert any("drums: chart generation is not implemented" in w for w in result.analysis["warnings"])
 
 
 @pytest.mark.heavy
@@ -104,7 +104,7 @@ def test_analysis_records_the_whole_build(song_file, tmp_path):
     assert analysis["click_overlay"] is None
     assert analysis["song_ini"]["difficulty"]["guitar"] >= 0
     assert set(analysis["charts"]["guitar"]) == {"expert", "hard", "medium", "easy"}
-    assert len(analysis["difficulty_hard_rules"]) == 5
+    assert len(analysis["difficulty_hard_rules"]) == 7
     for level in ("hard", "medium", "easy"):
         assert analysis["charts"]["guitar"][level]["soft_targets"]
         assert "auto_hopo_share" in analysis["charts"]["guitar"][level]["measures"]

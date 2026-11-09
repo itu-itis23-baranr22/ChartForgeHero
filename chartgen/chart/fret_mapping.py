@@ -120,6 +120,11 @@ def allowed_moves(gap_s: float) -> np.ndarray:
     return allowed
 
 
+def single_notes_only(count: int) -> np.ndarray:
+    """Return the ``extra_cost`` of :func:`map_notes` that rules out every chord for ``count`` notes."""
+    return np.tile(np.where(_SIZES > 1, np.inf, 0.0), (count, 1))
+
+
 def is_playable(shapes: Sequence[tuple[int, ...]], times: Sequence[float]) -> bool:
     """Check a finished mapping against the hard rules."""
     index = {shape: number for number, shape in enumerate(SHAPES)}

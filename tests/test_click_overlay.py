@@ -8,6 +8,7 @@ from chartgen.cli import main
 from chartgen.clonehero.chart_format import DotChartExporter
 from chartgen.clonehero.click_overlay import (
     BEAT_HZ,
+    CLICK_DIR,
     CLICK_FILE,
     CLICK_SECONDS,
     DOWNBEAT_HZ,
@@ -166,16 +167,17 @@ def fake_demucs(monkeypatch):
 def test_cli_click_overlay_flag_writes_the_file(song_file, tmp_path, fake_demucs):
     assert main(cli_arguments(song_file, tmp_path, "--click-overlay")) == 0
     folder = tmp_path / "out" / "A - T"
-    written, rate = sf.read(str(folder / CLICK_FILE), always_2d=True)
+    written, rate = sf.read(str(folder / CLICK_DIR / CLICK_FILE), always_2d=True)
     assert rate == SR
     assert written.shape[0] == SR * 20
     assert main(["validate", str(folder)]) == 0, "the extra file must not break the song"
+    assert not (folder / CLICK_FILE).exists(), "the song's own files stay on their own"
 
 
 @pytest.mark.heavy
 def test_no_click_file_without_the_flag(song_file, tmp_path, fake_demucs):
     assert main(cli_arguments(song_file, tmp_path)) == 0
-    assert not (tmp_path / "out" / "A - T" / CLICK_FILE).exists()
+    assert not (tmp_path / "out" / "A - T" / CLICK_DIR).exists()
 
 
 @pytest.mark.heavy

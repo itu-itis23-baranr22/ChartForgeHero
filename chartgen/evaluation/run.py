@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -37,6 +37,7 @@ from chartgen.evaluation.reference import (
     SPLIT_TEST,
     SPLIT_TRAIN,
     SPLIT_UNASSIGNED,
+    ReferenceNote,
     ReferenceSong,
     find_references,
     load_reference,
@@ -98,6 +99,7 @@ _MATCH_SHOWN = (
     ("beats_first_f1", "F1 beats first"),
     ("worst_lane_gap", "worst lane gap"),
     ("lanes_over_limit", "lanes over limit"),
+    ("direction_when_human_moves", "dir moves"),
     ("direction_all_steps", "direction"),
     ("chord_agreement", "chord agreement"),
     ("sustain_f1", "sustain F1"),
@@ -115,6 +117,8 @@ class EvaluationReport:
     failures: dict[str, str]
     level_averages: dict[str, dict[str, dict[str, dict[str, float]]]] = field(default_factory=dict)
     """Of each split, per difficulty: the average of mine, human and match."""
+    bass_level_averages: dict[str, dict[str, dict[str, dict[str, float]]]] = field(default_factory=dict)
+    """The same for bass, on the songs that have it."""
 
 
 def _measures_dict(measures: LevelMeasures) -> dict[str, float | None]:
@@ -134,11 +138,22 @@ def _lane_gaps(mine: dict[str, object], human: dict[str, object], limit: float) 
 
 
 def compare_levels(
-    charted: Sequence[ChartedTrack], tempo_map: TempoMap, song: ReferenceSong
+    charted: Sequence[ChartedTrack],
+    tempo_map: TempoMap,
+    song: ReferenceSong,
+    levels: Mapping[Difficulty, tuple[ReferenceNote, ...]] | None = None,
 ) -> dict[str, dict[str, dict[str, object]]]:
-    """Compare every difficulty with the human's, next to what naive reductions would score."""
+    """Compare every difficulty with the human's, next to what naive reductions would score.
+
+    Args:
+        charted: The generated tracks of one instrument, the hardest first.
+        tempo_map: The song's tempo map.
+        song: The reference song.
+        levels: The human's notes for that instrument. By default, the guitar's.
+    """
+    human_levels = song.levels if levels is None else levels
     limit = load_config().lane_tolerance
-    human_expert = len(song.levels.get(Difficulty.EXPERT, song.notes))
+    human_expert = len(human_levels.get(Difficulty.EXPERT, song.notes))
     my_expert = np.array(sorted({note.tick for note in charted[0].track.notes}), dtype=np.int64)
     results: dict[str, dict[str, dict[str, object]]] = {}
     for item in charted:
@@ -151,7 +166,7 @@ def compare_levels(
                 for target in item.soft_targets
                 if not target.in_range
             }
-        human = song.levels.get(level, ())
+        human = human_levels.get(level, ())
         if human:
             measures = human_level_measures(human, song.resolution, human_expert, song.is_midi)
             entry["human"] = _measures_dict(measures)
@@ -172,14 +187,14 @@ def compare_levels(
 
 
 def _average_levels(
-    results: Sequence[dict[str, object]],
+    results: Sequence[dict[str, object]], key: str = "levels"
 ) -> dict[str, dict[str, dict[str, float]]]:
     averages: dict[str, dict[str, dict[str, float]]] = {}
     for level in _LEVEL_ORDER:
         for source in ("mine", "human", "match"):
             found = [
                 entry[level.value][source]
-                for entry in (result.get("levels", {}) for result in results)
+                for entry in (result.get(key, {}) for result in results)
                 if source in entry.get(level.value, {})
             ]
             if found:
@@ -203,7 +218,12 @@ def evaluate_song(
     stem = analysis_mono(stems.stems[STEM_FOR_INSTRUMENT[Instrument.GUITAR]], stems.samplerate)
     vocals = analysis_mono(stems.stems["vocals"], stems.samplerate)
     charted = build_tracks_for(
-        Instrument.GUITAR, stem, tempo.tempo_map, stems.duration_s, vocals=vocals
+        Instrument.GUITAR,
+        stem,
+        tempo.tempo_map,
+        stems.duration_s,
+        vocals=vocals,
+        not_before_s=tempo.lead_in_end_s,
     )
 
     duration = len(mono) / ANALYSIS_SAMPLERATE
@@ -221,6 +241,16 @@ def evaluate_song(
         result["removed_as_vocal"] = sum(note.removed for note in charted[0].bleed)
         result["chord_limit_adjusted"] = charted[0].chord_limit_adjusted
         result["levels"] = compare_levels(charted, tempo.tempo_map, song)
+    if song.bass_levels:
+        bass = build_tracks_for(
+            Instrument.BASS,
+            analysis_mono(stems.stems[STEM_FOR_INSTRUMENT[Instrument.BASS]], stems.samplerate),
+            tempo.tempo_map,
+            stems.duration_s,
+            not_before_s=tempo.lead_in_end_s,
+        )
+        if bass:
+            result["bass"] = compare_levels(bass, tempo.tempo_map, song, song.bass_levels)
     return result
 
 
@@ -265,7 +295,11 @@ def evaluate_folder(
         name: _average_levels([songs[song] for song in songs if splits[song] == name])
         for name in averages
     }
-    return EvaluationReport(songs, splits, averages, failures, level_averages)
+    bass_level_averages = {
+        name: _average_levels([songs[song] for song in songs if splits[song] == name], "bass")
+        for name in averages
+    }
+    return EvaluationReport(songs, splits, averages, failures, level_averages, bass_level_averages)
 
 
 def _cell(mine: object, human: object) -> str:
@@ -321,10 +355,12 @@ def format_report(report: EvaluationReport) -> str:
         lines.append("")
         for name in names:
             lines.extend(_level_table(f"Difficulties of {name}", report.songs[name].get("levels", {})))
+            lines.extend(_level_table(f"Bass of {name}", report.songs[name].get("bass", {})))
         if len(names) > 1:
             lines.extend(
                 _level_table("Difficulties, average", report.level_averages.get(split, {}))
             )
+            lines.extend(_level_table("Bass, average", report.bass_level_averages.get(split, {})))
     for name, reason in report.failures.items():
         lines.append(f"Skipped {name}: {reason}")
     if SPLIT_TEST not in report.averages:
@@ -338,6 +374,11 @@ def write_report(report: EvaluationReport, path: Path) -> None:
             "songs": {name: report.songs[name] for name in report.songs if report.splits[name] == split},
             "average": report.averages[split],
             "average_by_difficulty": report.level_averages.get(split, {}),
+            **(
+                {"bass_average_by_difficulty": report.bass_level_averages[split]}
+                if report.bass_level_averages.get(split)
+                else {}
+            ),
         }
         for split in report.averages
     }

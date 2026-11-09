@@ -94,7 +94,7 @@ def _build_parser() -> argparse.ArgumentParser:
     build.add_argument(
         "--click-overlay",
         action="store_true",
-        help="also write debug_click.wav: the mix with a metronome taken from the written chart",
+        help="also write debug/debug_click.wav: the mix with a metronome taken from the written chart",
     )
 
     validate = commands.add_parser("validate", help="check existing song folders")
@@ -148,12 +148,10 @@ def _run_build(args: argparse.Namespace) -> int:
     )
     executable = os.environ.get("CLONE_HERO_EXE", "<path to Clone Hero.exe>")
     log.info("Song folder: %s", result.folder.resolve())
-    log.info(
-        'Preview with: "%s" --song "%s" --player Guitar,Expert --player Guitar,Hard '
-        "--player Guitar,Medium --player Guitar,Easy -i",
-        executable,
-        result.folder.resolve(),
-    )
+    charts: dict[str, dict[str, object]] = result.analysis.get("charts", {})  # type: ignore[assignment]
+    for instrument, levels in charts.items():
+        players = " ".join(f"--player {instrument.title()},{level.title()}" for level in levels)
+        log.info('Preview with: "%s" --song "%s" %s -i', executable, result.folder.resolve(), players)
     return 0
 
 

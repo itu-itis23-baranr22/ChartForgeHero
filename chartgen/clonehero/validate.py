@@ -7,6 +7,7 @@ writer cannot hide itself by being read back the same wrong way.
 from __future__ import annotations
 
 import configparser
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,6 +29,9 @@ _HIGHEST_FRET = 4
 _ORANGE = 4
 _LEVELS_FROM_THE_TOP = ("Expert", "Hard", "Medium", "Easy")
 _MAX_CHORD = {"Medium": 2, "Easy": 1}
+_SINGLE_NOTES_ONLY = frozenset({Instrument.BASS})
+_OPENING_SLACK_S = 0.001
+"""Tick positions are rounded, so a note exactly on the line may land this far before it."""
 
 _PLAYABLE_SECTIONS: dict[str, Instrument] = {
     f"{difficulty}{section}": instrument
@@ -183,7 +187,8 @@ def _check_difficulty_rules(parsed: ParsedChart, report: ValidationReport) -> No
     """Check the structure every generated chart must have, from the written file alone.
 
     Upper levels must contain every position of lower ones. Easy has no chords and no orange,
-    Medium has no orange and chords of at most two notes. A sustain never runs into the next note.
+    Medium has no orange and chords of at most two notes. Bass has no chords at all. A sustain
+    never runs into the next note.
     """
     for instrument, section in INSTRUMENT_SECTIONS.items():
         if instrument is Instrument.DRUMS:
@@ -196,9 +201,10 @@ def _check_difficulty_rules(parsed: ParsedChart, report: ValidationReport) -> No
                 report.errors.append(f"[{lower_name}] has tick {tick}, but [{upper_name}] does not")
         for name, gems in written:
             limit = _MAX_CHORD.get(name.removesuffix(section))
+            size_limit = 1 if instrument in _SINGLE_NOTES_ONLY else limit
             ticks = sorted(gems)
             for tick, following in zip(ticks, [*ticks[1:], None]):
-                if limit is not None and len(gems[tick]) > limit:
+                if size_limit is not None and len(gems[tick]) > size_limit:
                     report.errors.append(f"[{name}] tick {tick}: a chord of {len(gems[tick])} notes")
                 if limit is not None and any(fret == _ORANGE for fret, _ in gems[tick]):
                     report.errors.append(f"[{name}] tick {tick}: orange is not allowed here")
@@ -230,6 +236,46 @@ def validate_chart_text(text: str) -> tuple[ParsedChart, ValidationReport]:
         report.errors.append("no playable section contains notes")
     _check_difficulty_rules(parsed, report)
     return parsed, report
+
+
+def _seconds_at(tick: int, tempos: list[tuple[int, float]], resolution: int) -> float:
+    """Return when ``tick`` falls, from ``(tick, BPM)`` events that start at tick 0."""
+    seconds = 0.0
+    for (start, bpm), (stop, _) in zip(tempos, [*tempos[1:], (tick, 0.0)]):
+        if start >= tick:
+            break
+        seconds += (min(tick, stop) - start) * 60.0 / bpm / resolution
+    return seconds
+
+
+def _check_opening(folder: Path, parsed: ParsedChart, report: ValidationReport) -> None:
+    """Check from the written chart that no note falls in an opening ``analysis.json`` reports.
+
+    A folder without a report has nothing to check: only the generator knows about openings.
+    """
+    path = folder / "analysis.json"
+    if not path.is_file():
+        return
+    try:
+        opening = json.loads(path.read_text(encoding="utf-8"))["tempo"]["unfit_lead_in"]
+        end_s = float(opening["end_s"]) if opening else 0.0
+        resolution = int(parsed.fields["Resolution"])
+        tempos = [
+            (event.tick, int(event.args) / 1000.0)
+            for event in parsed.sections["SyncTrack"]
+            if event.type == "B"
+        ]
+    except (OSError, KeyError, TypeError, ValueError):
+        return
+    if end_s <= 0:
+        return
+    for name in _PLAYABLE_SECTIONS:
+        for event in parsed.sections.get(name, []):
+            if event.type == "N" and _seconds_at(event.tick, tempos, resolution) < end_s - _OPENING_SLACK_S:
+                report.errors.append(
+                    f"[{name}] tick {event.tick}: a note in the opening that ends at {end_s:.1f} s"
+                )
+                break
 
 
 def _read_song_ini(path: Path, report: ValidationReport) -> dict[str, str]:
@@ -277,6 +323,7 @@ def validate_song_folder(folder: Path) -> ValidationReport:
     if chart_path.is_file():
         parsed, chart_report = validate_chart_text(chart_path.read_text(encoding="utf-8-sig"))
         report.extend(chart_report)
+        _check_opening(folder, parsed, report)
     else:
         report.errors.append("missing notes.chart")
 

@@ -94,6 +94,26 @@ Decisions made since it was written are listed first and take precedence.
    in `analysis.json` and in a warning. This changes what is reported and never the tempo map.
 23. **Tied bar phases go to the harder kick.** Below one standard error the phases are a tie. The bars
    still report low confidence, so the warning to check them by ear stays on.
+24. **Bass reads its real pitch and has no chords.** One note at a time means `librosa.pyin` works, with
+   no new dependency, and it raised the direction of the moves from 0.44 to 0.655 on the human chart.
+   A note with no readable pitch falls back to what the mapper does without one. No chords is a hard
+   rule on every level: the mapper cannot choose one, the track is checked, and so is the written file.
+   The vocal bleed check stays off for bass, where 83% of the notes it removed were real. Bass has Expert
+   only until B3.2, without soft targets, as guitar's would mean nothing for it.
+25. **No instrument has a note in an opening that is not part of the song.** The owner's decision, and a
+   hard rule. No separate tempo is written for such an opening. Its start gets the section `Intro`, and
+   the first clear onset after it, snapped to a sixteenth, gets the section `Song`, or practice mode
+   would call the whole song the intro. A song with no such opening gets no section at all.
+   The charter drops a note by where it lands, the build checks every track of any instrument, and the
+   validator checks the written chart against what `analysis.json` reports.
+26. **`--click-overlay` writes `debug/debug_click.wav`**, keeping the song's own files on their own.
+27. **The quiet note rule exists and is off.** A bass note far below the song's median bass note may be
+   the kick leaking in. The owner set two conditions for turning it on: note F1 on the human bass chart
+   drops by at most 0.005, and none of the 11 Toca notes checked by ear is removed. 18 to 20 dB fail the
+   second on one note. 24 dB meets both but catches 2 of Danza's 16 suspect notes, which by ear are mostly
+   not real. Suspect notes of Danza and real ones of Toca lie equally far below their medians, so this
+   measure cannot tell them apart. `analysis.json` lists the notes it points at either way. General kick
+   filtering was rejected: on the human chart, 96% of the bass notes that land on a kick are real.
 
 ## Phase B1 targets (one reference song so far)
 
