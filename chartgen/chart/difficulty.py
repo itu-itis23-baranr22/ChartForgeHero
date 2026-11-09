@@ -48,6 +48,7 @@ from chartgen.core.model import LANE_COUNT, ChartNote, Difficulty, Instrument, T
 from chartgen.core.timing import TempoMap
 
 CONFIG_PATH = Path(__file__).with_name("difficulty.toml")
+BASS_CONFIG_PATH = Path(__file__).with_name("bass_difficulty.toml")
 
 REDUCED_LEVELS = (Difficulty.HARD, Difficulty.MEDIUM, Difficulty.EASY)
 """From the top down: each level is chosen from the one before it."""
@@ -76,6 +77,7 @@ _SOFT_TARGET_NAMES = frozenset(
         "min_gap_s",
         "sustain_share",
         "auto_hopo_share",
+        "busiest_lane_share",
     }
 )
 
@@ -160,6 +162,9 @@ class DifficultyConfig:
     expert_targets: SoftTargets = SoftTargets()
     lane_tolerance: float = 0.1
     """Also how far ``chartgen evaluate`` lets a lane stray from the human chart of that song."""
+    max_orange_pitch_share: float | None = None
+    """More of a level's orange notes than this on one pitch warns. None: orange is not looked at,
+    because a guitar's notes have no pitch to read."""
 
 
 def _load_importance(values: Mapping[str, float], where: str) -> Importance:
@@ -211,9 +216,10 @@ def _load_level(
     values: dict[str, object],
     shared: Mapping[str, float],
     tolerance: float,
+    file_name: str = CONFIG_PATH.name,
 ) -> LevelConfig:
     values = dict(values)
-    where = f"{CONFIG_PATH.name} [{name}]"
+    where = f"{file_name} [{name}]"
     three_note = bool(values.pop("three_note_chords", False))
     if three_note and level is not Difficulty.HARD:
         raise ValueError(f"{where}: only Hard may keep three-note chords")
@@ -277,6 +283,10 @@ def load_config(path: Path = CONFIG_PATH) -> DifficultyConfig:
     """
     with path.open("rb") as stream:
         values = tomllib.load(stream)
+    orange = dict(values.pop("orange_pitches", {}))
+    orange_limit = orange.pop("max_single_pitch_share", None)
+    if orange or (orange_limit is not None and not 0 < orange_limit <= 1):
+        raise ValueError(f"{path.name} [orange_pitches]: needs max_single_pitch_share from 0 to 1")
     expected = {
         "importance",
         "lane_targets",
@@ -293,13 +303,20 @@ def load_config(path: Path = CONFIG_PATH) -> DifficultyConfig:
     if expert_section:
         raise ValueError(f"{path.name} [expert]: only holds soft targets, got {sorted(expert_section)}")
     levels = {
-        level: _load_level(level.value, level, values[level.value], values["importance"], tolerance)
+        level: _load_level(
+            level.value, level, values[level.value], values["importance"], tolerance, path.name
+        )
         for level in REDUCED_LEVELS
     }
     chain = [levels[level].position_ratio for level in REDUCED_LEVELS]
     if chain != sorted(chain, reverse=True):
         raise ValueError(f"{path.name}: position_ratio must fall from Hard to Easy")
-    return DifficultyConfig(levels, expert_targets, tolerance)
+    return DifficultyConfig(
+        levels,
+        expert_targets,
+        tolerance,
+        None if orange_limit is None else float(orange_limit),
+    )
 
 
 @dataclass(frozen=True)
@@ -515,6 +532,15 @@ class LevelMeasures:
     final_hopo_share: float
     """Notes that end up as HOPOs, after force flags."""
     forced_strums: int
+    hand_travel: float = 0.0
+    """How many frets the hand moves per note on average, going by the lowest fret. Note F1 cannot
+    see frets at all, and a chart can match its lane shares with a hand that never moves."""
+
+    @property
+    def busiest_lane_share(self) -> float:
+        return max(
+            self.green_share, self.red_share, self.yellow_share, self.blue_share, self.orange_share
+        )
 
 
 def measure_level(
@@ -541,6 +567,7 @@ def measure_level(
     natural = len(natural_hopo_ticks(positions, resolution, midi_subset_exception))
     final = natural if final_hopos is None else final_hopos
     gaps = np.diff(np.asarray(times, dtype=np.float64))
+    lowest = np.array([min(lanes) for _, lanes in positions])
     return LevelMeasures(
         count,
         round(count / max(1, expert_positions), 3),
@@ -554,6 +581,7 @@ def measure_level(
         round(natural / count, 3),
         round(final / count, 3),
         forced_strums,
+        round(float(np.mean(np.abs(np.diff(lowest)))), 3) if count > 1 else 0.0,
     )
 
 
@@ -605,6 +633,67 @@ def check_soft_targets(measures: LevelMeasures, targets: SoftTargets) -> list[So
     return results
 
 
+_NOTE_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+
+
+@dataclass(frozen=True)
+class OrangePitches:
+    """Which pitches a level's orange notes are.
+
+    Orange is the top of the neck, so if nearly all of it is one pitch, it marks that pitch and says
+    little about where the melody goes. With few pitches in a song that is hard to avoid.
+    """
+
+    counts: tuple[tuple[str, int], ...]
+    """Each pitch's name and how many orange notes it has, the commonest first."""
+    unknown: int = 0
+    """Orange notes whose pitch could not be read. They do not count towards the shares."""
+    limit: float = 1.0
+
+    @property
+    def notes(self) -> int:
+        return sum(count for _, count in self.counts)
+
+    @property
+    def top_share(self) -> float:
+        return self.counts[0][1] / self.notes if self.notes else 0.0
+
+    @property
+    def is_one_pitch(self) -> bool:
+        return self.top_share > self.limit
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "notes": self.notes,
+            "pitch_unknown": self.unknown,
+            "pitches": {name: count for name, count in self.counts},
+            "top_pitch_share": round(self.top_share, 3),
+            "max_single_pitch_share": self.limit,
+            "one_pitch": self.is_one_pitch,
+        }
+
+
+def count_orange_pitches(
+    track: Track, positions: Sequence[Position], limit: float
+) -> OrangePitches:
+    """Count the pitches of ``track``'s orange notes, read from the Expert positions at their ticks."""
+    pitch_at = {position.tick: position.pitch for position in positions}
+    counts: dict[str, int] = {}
+    unknown = 0
+    for note in track.notes:
+        if note.lane != ORANGE:
+            continue
+        pitch = pitch_at.get(note.tick, float("nan"))
+        if math.isnan(pitch):
+            unknown += 1
+            continue
+        number = int(pitch)
+        name = f"{_NOTE_NAMES[number % 12]}{number // 12 - 1}"
+        counts[name] = counts.get(name, 0) + 1
+    ordered = tuple(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+    return OrangePitches(ordered, unknown, limit)
+
+
 # ---------------------------------------------------------------- the hard rules
 
 
@@ -637,6 +726,10 @@ def check_hard_rules(
     for level in REDUCED_LEVELS:
         problems.extend(_shape_violations(level, grouped[level]))
     for level in order:
+        if tracks[level].instrument in SINGLE_NOTE_INSTRUMENTS:
+            problems.extend(
+                f"{level.value} has a chord at tick {tick}" for tick, lanes in grouped[level] if len(lanes) > 1
+            )
         ordered = sorted(ticks[level])
         following = dict(zip(ordered, ordered[1:]))
         for note in tracks[level].notes:

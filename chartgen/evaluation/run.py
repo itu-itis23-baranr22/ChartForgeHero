@@ -92,6 +92,7 @@ _LEVEL_SHOWN = (
     ("sustain_share", "sustains"),
     ("auto_hopo_share", "auto HOPO"),
     ("final_hopo_share", "final HOPO"),
+    ("hand_travel", "hand travel"),
 )
 _MATCH_SHOWN = (
     ("note_f1", "note F1"),
@@ -166,6 +167,8 @@ def compare_levels(
                 for target in item.soft_targets
                 if not target.in_range
             }
+        if item.orange_pitches is not None:
+            entry["orange_pitches"] = item.orange_pitches.as_dict()
         human = human_levels.get(level, ())
         if human:
             measures = human_level_measures(human, song.resolution, human_expert, song.is_midi)
@@ -323,6 +326,11 @@ def _level_table(title: str, levels: dict[str, dict[str, dict[str, object]]]) ->
         cells = [str(levels[name].get("match", {}).get(key, "-")) for name in present]
         lines.append(f"{label:18s}" + "".join(f"{cell:>16s}" for cell in cells))
     for name in present:
+        orange = levels[name].get("orange_pitches")
+        if orange and orange["notes"]:
+            pitches = ", ".join(f"{pitch} {count}" for pitch, count in orange["pitches"].items())
+            warning = "; orange is one pitch" if orange["one_pitch"] else ""
+            lines.append(f"{name} orange notes by pitch: {pitches}{warning}")
         missed = levels[name].get("missed_targets") or {}
         if missed:
             lines.append(

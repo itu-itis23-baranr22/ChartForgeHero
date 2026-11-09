@@ -98,8 +98,7 @@ Decisions made since it was written are listed first and take precedence.
    no new dependency, and it raised the direction of the moves from 0.44 to 0.655 on the human chart.
    A note with no readable pitch falls back to what the mapper does without one. No chords is a hard
    rule on every level: the mapper cannot choose one, the track is checked, and so is the written file.
-   The vocal bleed check stays off for bass, where 83% of the notes it removed were real. Bass has Expert
-   only until B3.2, without soft targets, as guitar's would mean nothing for it.
+   The vocal bleed check stays off for bass, where 83% of the notes it removed were real.
 25. **No instrument has a note in an opening that is not part of the song.** The owner's decision, and a
    hard rule. No separate tempo is written for such an opening. Its start gets the section `Intro`, and
    the first clear onset after it, snapped to a sixteenth, gets the section `Song`, or practice mode
@@ -114,6 +113,16 @@ Decisions made since it was written are listed first and take precedence.
    not real. Suspect notes of Danza and real ones of Toca lie equally far below their medians, so this
    measure cannot tell them apart. `analysis.json` lists the notes it points at either way. General kick
    filtering was rejected: on the human chart, 96% of the bass notes that land on a kick are real.
+28. **Bass has its own settings and four levels.** `chart/bass_fret_weights.toml` and
+   `chart/bass_difficulty.toml` have the same keys as guitar's files, which stay as they are: tests pin
+   their hashes. The reduction is the same code and its hard rules apply, with no chord on any level.
+   Guitar's weights kept bass off orange altogether (0.1% against the human chart's 14.7%): a line climbing
+   from blue did better staying there, however far it climbed. The chosen weights match the share of
+   orange, not its notes, since the human chart also has orange on low notes. Because they were chosen on
+   Californication, its bass counts as train.
+29. **Which pitches are orange is reported.** `analysis.json` and `evaluate` give each level's orange notes
+   by pitch. More than 70% on one pitch warns (`orange_pitches` in `bass_difficulty.toml`) and fails nothing.
+   A guitar's notes have no pitch to read, so this applies to bass only.
 
 ## Phase B1 targets (one reference song so far)
 

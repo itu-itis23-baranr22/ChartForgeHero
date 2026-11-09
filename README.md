@@ -14,11 +14,11 @@ It only processes files you give it. It does not download audio or touch streami
 | Tempo check | `--click-overlay`, `--bpm`, `--max-beat-drift-ms`, explained tempo events | Done |
 | B1 | Time signature, chords, sustains, Viterbi fret mapping, vocal bleed removal (Expert) | Done |
 | B2 | Difficulty reduction to Hard, Medium and Easy | Done |
-| B3 | Bass and keys; a song no longer needs a guitar | Bass Expert done; lower levels and keys planned |
+| B3 | Bass and keys; a song no longer needs a guitar | Bass done; keys planned |
 | C | Drums: percussion classification, four difficulties | Planned |
 | D | Vocal events, sections, star power | Planned |
 
-Guitar is charted at all four difficulties and bass at Expert, so a song needs at least one of the two.
+Guitar and bass are charted at all four difficulties, so a song needs at least one of the two.
 Telling chords from single notes on heavily distorted guitar is unverified. 3/4 and 6/8 have only
 been tested on synthetic audio.
 
@@ -109,11 +109,14 @@ Expert chart would score: deleting every Nth note, and keeping beats first. It a
 lane's share is from the human's (10 points is the limit, which only warns) and which soft targets a
 level misses.
 
-The weights of the fret mapper all live in `chartgen/chart/fret_weights.toml`. The rules that keep a
-chart playable are in `chartgen/chart/fret_mapping.py`, and tests check them under random weights.
+The weights of the fret mapper live in `chartgen/chart/fret_weights.toml`, and bass has its own in
+`bass_fret_weights.toml` next to it. The rules that keep a chart playable are in
+`chartgen/chart/fret_mapping.py`, and tests check them under random weights.
 The limits for vocal bleed live in `chartgen/audio/vocal_bleed.toml`, and the rule for bass notes far
 below the song's median note, which is off, in `chartgen/audio/quiet_notes.toml`. How difficulties are reduced
-lives in `chartgen/chart/difficulty.toml`, whose soft targets only warn. The rules that always hold are in
+lives in `chartgen/chart/difficulty.toml`, and for bass in `bass_difficulty.toml`, whose soft targets only
+warn. For bass, the report also gives each level's orange notes by pitch, and warns if more than 70% are
+one pitch. The rules that always hold are in
 `chartgen/chart/difficulty.py`, and the file cannot weaken them.
 
 ## How it works

@@ -209,15 +209,36 @@ def _report_track(instrument: Instrument, item: ChartedTrack, warnings: list[str
     _report_level(instrument, item, warnings)
 
 
+def _report_orange(instrument: Instrument, item: ChartedTrack, warnings: list[str]) -> None:
+    """Say which pitches a level's orange notes are, and warn if nearly all are the same one."""
+    orange = item.orange_pitches
+    level = item.track.difficulty.value
+    if orange is None or orange.notes == 0:
+        return
+    log.info(
+        "    %s/%s: orange notes by pitch: %s",
+        instrument.value,
+        level,
+        ", ".join(f"{name} {count}" for name, count in orange.counts),
+    )
+    if orange.is_one_pitch:
+        warnings.append(
+            f"{instrument.value}/{level}: orange is one pitch: {orange.counts[0][0]} is "
+            f"{orange.top_share:.0%} of its {orange.notes} orange notes (limit {orange.limit:.0%})"
+        )
+
+
 def _report_level(instrument: Instrument, item: ChartedTrack, warnings: list[str]) -> None:
     """Say what a difficulty came to, and warn about every soft target it misses."""
+    _report_orange(instrument, item, warnings)
     measures = item.measures
     level = item.track.difficulty.value
     if measures is None:
         return
     log.info(
         "    %s/%s: %d positions (%.0f%% of Expert), chords %.0f%%, on the beat %.0f%%, "
-        "sustains %.0f%%, shortest gap %.2f s, auto HOPO %.1f%%, forced to strum %d",
+        "sustains %.0f%%, shortest gap %.2f s, auto HOPO %.1f%%, forced to strum %d, "
+        "hand travel %.2f",
         instrument.value,
         level,
         measures.positions,
@@ -228,6 +249,7 @@ def _report_level(instrument: Instrument, item: ChartedTrack, warnings: list[str
         measures.min_gap_s,
         measures.auto_hopo_share * 100,
         measures.forced_strums,
+        measures.hand_travel,
     )
     missed = [target for target in item.soft_targets if not target.in_range]
     if missed:
@@ -314,6 +336,8 @@ def _analysis(
                     if note.vocal_dominant
                 ],
             }
+        if item.orange_pitches is not None:
+            entry["orange_pitches"] = item.orange_pitches.as_dict()
         if item.quiet_limits is not None:
             entry["quiet_notes"] = {
                 "enabled": item.quiet_limits.enabled,

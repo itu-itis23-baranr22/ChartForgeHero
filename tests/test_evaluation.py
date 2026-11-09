@@ -604,6 +604,18 @@ def test_real_references_when_available():
     assert report.songs, "no reference could be evaluated"
     for averages in report.averages.values():
         assert averages["bars_agreeing"] >= 0.8
+    # The targets for bass approved by the owner. Its settings were chosen on this song, so it is train.
+    floors = {"expert": 0.81, "hard": 0.77, "medium": 0.76, "easy": 0.64}
+    direction = {"expert": 0.65, "hard": 0.60, "medium": 0.60, "easy": 0.60}
+    worst_lane = {"expert": 0.12, "hard": 0.10, "medium": 0.10, "easy": 0.10}
     for averages in report.bass_level_averages.values():
-        assert averages["expert"]["match"]["note_f1"] >= 0.80
-        assert averages["expert"]["match"]["direction_when_human_moves"] >= 0.60
+        for level, floor in floors.items():
+            match = averages[level]["match"]
+            assert match["note_f1"] >= floor, level
+            assert match["direction_when_human_moves"] >= direction[level], level
+            assert match["worst_lane_gap"] <= worst_lane[level], level
+            if level != "expert":
+                assert match["note_f1"] > match["beats_first_f1"], level
+        assert 0.60 <= averages["expert"]["mine"]["hand_travel"] <= 1.00
+        for level in ("expert", "hard"):
+            assert 0.10 <= averages[level]["mine"]["orange_share"] <= 0.25, level

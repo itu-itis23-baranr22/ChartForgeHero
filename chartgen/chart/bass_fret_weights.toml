@@ -1,0 +1,26 @@
+# How the fret mapper trades things off for bass. The same keys as fret_weights.toml, which is guitar's
+# and stays as it is. Every value here is a preference: the rules that must always hold live in
+# chartgen/chart/fret_mapping.py and chartgen/chart/difficulty.py, and cannot be weakened from this file.
+#
+# With guitar's values a bass almost never reached orange: 0.1% against the human chart's 14.7%. Orange
+# cost so much more than blue, and the register ended so far below it, that a line climbing from blue
+# always did better staying there, however far it climbed. These values were chosen on Californication,
+# whose bass therefore counts as train: its scores flatter the result.
+#
+# They bring orange to about the human chart's share, not onto its notes: that chart also has orange on
+# low notes, and only 32% of its orange lies at the top of a phrase.
+contour = 3.0
+hold = 1.0
+repeat = 2.5
+magnitude = 1.0
+semitones_per_lane = 1.5
+# Within a phrase, higher notes sit further up the neck, across all five frets but only weakly.
+register = 0.3
+register_span = [0.0, 4.0]
+speed = 0.02
+voices = 2.5
+# Prefer frets as the human bass chart does, but weakly: a strong pull piles notes onto the commonest.
+lane_prior = 0.25
+lane_shares = [0.255, 0.268, 0.148, 0.182, 0.147]
+consistency = 0.5
+phrase_gap_s = 0.9

@@ -13,15 +13,35 @@ import pytest
 from conftest import SR as STEM_SR
 from conftest import FakeSeparator, click_times, clicks_at, song_stems, stereo
 
+import chartgen
 import chartgen.pipeline
 from chartgen.audio.bass_pitch import note_semitones
 from chartgen.audio.io import ANALYSIS_SAMPLERATE
 from chartgen.audio.pitch import analyze_pitches
 from chartgen.audio.quiet_notes import QuietNoteLimits, levels_below_median, load_limits
 from chartgen.audio.separation import STEM_NAMES
-from chartgen.chart.difficulty import HardRuleViolation, check_single_notes
-from chartgen.chart.fret_mapping import NoteInput, is_playable, load_weights, map_notes, single_notes_only
-from chartgen.chart.instruments import VOCAL_BLEED_CHECKED, build_tracks_for
+from chartgen.chart.charter import ChartedTrack
+from chartgen.chart.difficulty import (
+    BASS_CONFIG_PATH,
+    HardRuleViolation,
+    OrangePitches,
+    Position,
+    check_hard_rules,
+    check_single_notes,
+    count_orange_pitches,
+    load_config,
+    measure_level,
+    reduce_track,
+)
+from chartgen.chart.fret_mapping import (
+    BASS_WEIGHTS_PATH,
+    NoteInput,
+    is_playable,
+    load_weights,
+    map_notes,
+    single_notes_only,
+)
+from chartgen.chart.instruments import VOCAL_BLEED_CHECKED, build_tracks_for, settings_for
 from chartgen.clonehero.chart_format import DotChartExporter
 from chartgen.clonehero.validate import validate_chart_text, validate_song_folder
 from chartgen.core.model import Chart, ChartNote, Difficulty, Instrument, SongMetadata, Track
@@ -29,8 +49,8 @@ from chartgen.core.timing import TempoEvent, TempoMap
 from chartgen.errors import NoPlayableInstrumentError
 from chartgen.evaluation.metrics import chart_metrics
 from chartgen.evaluation.reference import find_references, load_reference
-from chartgen.evaluation.run import evaluate_folder, format_report, write_report
-from chartgen.pipeline import _check_opening_is_empty, build_song, BuildConfig
+from chartgen.evaluation.run import _level_table, evaluate_folder, format_report, write_report
+from chartgen.pipeline import _check_opening_is_empty, _report_track, build_song, BuildConfig
 
 SR = ANALYSIS_SAMPLERATE
 TEMPO = TempoMap([TempoEvent(0, 120.0)])
@@ -227,14 +247,203 @@ def test_loud_vocals_cost_bass_no_note():
     assert with_vocals.track.notes == without.track.notes
 
 
+# ---------------------------------------------------------------- the lower levels
+
+
+def bass_positions(count: int = 120, seed: int = 0) -> list[Position]:
+    """A bass line of quarter notes at 120 BPM, as a charter would hand it to the reduction."""
+    rng = np.random.default_rng(seed)
+    pitches = np.cumsum(rng.integers(-5, 6, count)) % 24 + 30
+    lanes = rng.integers(0, 5, count)
+    return [
+        Position(index * 192, TEMPO.seconds_at(float(index * 192)), (int(lanes[index]),), 0, float(rng.random()), float(pitches[index]))
+        for index in range(count)
+    ]
+
+
+def expert_of(positions: list[Position]) -> Track:
+    return Track(
+        Instrument.BASS,
+        Difficulty.EXPERT,
+        [ChartNote(p.tick, p.shape[0], p.length) for p in positions],
+    )
+
+
 @pytest.mark.heavy
-def test_bass_has_expert_only_for_now_with_no_soft_targets_of_guitars():
-    signal, _ = bass_line()
-    charted = build_tracks_for(Instrument.BASS, signal, TEMPO, 8.0)
-    assert [item.track.difficulty for item in charted] == [Difficulty.EXPERT]
-    assert charted[0].measures.chord_share == 0.0
-    assert charted[0].soft_targets == ()
+def test_bass_has_four_levels_with_its_own_soft_targets():
+    signal, _ = bass_line(tuple(LINE[i % len(LINE)] for i in range(90)), seconds=50.0)
+    charted = build_tracks_for(Instrument.BASS, signal, TEMPO, 50.0)
+    assert [item.track.difficulty for item in charted] == [
+        Difficulty.EXPERT,
+        Difficulty.HARD,
+        Difficulty.MEDIUM,
+        Difficulty.EASY,
+    ]
     assert charted[0].chord_limit == 0.0
+    names = {target.name for target in charted[0].soft_targets}
+    assert {"orange_share", "busiest_lane_share", "auto_hopo_share", "green_lane"} <= names
+    targets = {target.name: target for target in charted[1].soft_targets}
+    assert targets["orange_share"].low == 0.10, "Hard's guitar table only has an upper limit"
+    ticks = [set(positions(item.track)) for item in charted]
+    assert ticks[3] <= ticks[2] <= ticks[1] <= ticks[0]
+    for item in charted:
+        assert all(len(lanes) == 1 for lanes in positions(item.track).values())
+    for item in charted[2:]:
+        assert max(note.lane for note in item.track.notes) < 4, "no orange on Medium or Easy"
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_no_settings_can_bring_a_chord_or_medium_orange_back(seed):
+    rng = np.random.default_rng(seed)
+    weights = replace(
+        load_weights(BASS_WEIGHTS_PATH),
+        voices=float(rng.uniform(0, 50)),
+        contour=float(rng.uniform(0, 10)),
+        lane_prior=float(rng.uniform(0, 10)),
+    )
+    config = load_config(BASS_CONFIG_PATH)
+    allowing = {
+        level: replace(value, three_note_chords=level is Difficulty.HARD, fidelity=float(rng.uniform(0, 10)))
+        for level, value in config.levels.items()
+    }
+    ordered = bass_positions(seed=seed)
+    levels = reduce_track(
+        Instrument.BASS, expert_of(ordered), ordered, TEMPO, replace(config, levels=allowing), weights
+    )
+    for level, result in levels.items():
+        assert all(len(lanes) == 1 for lanes in positions(result.track).values())
+        if level is not Difficulty.HARD:
+            assert max(note.lane for note in result.track.notes) < 4
+
+
+def test_a_chord_on_a_lower_level_of_bass_is_a_hard_rule_problem():
+    ordered = bass_positions(8)
+    expert = expert_of(ordered)
+    easy = Track(Instrument.BASS, Difficulty.EASY, [ChartNote(0, 0)])
+    medium = Track(Instrument.BASS, Difficulty.MEDIUM, [ChartNote(0, 0), ChartNote(192, 1)])
+    hard = Track(Instrument.BASS, Difficulty.HARD, [ChartNote(0, 0), ChartNote(0, 1), ChartNote(192, 1)])
+    problems = check_hard_rules(
+        {Difficulty.EXPERT: expert, Difficulty.HARD: hard, Difficulty.MEDIUM: medium, Difficulty.EASY: easy},
+        ordered,
+        np.zeros(8, dtype=int),
+    )
+    assert any("hard has a chord at tick 0" in problem for problem in problems)
+
+
+@pytest.mark.parametrize(
+    "old,new,message",
+    [
+        ("top_lane = 3", "top_lane = 4", "top_lane must be"),
+        ("position_ratio = 0.27", "position_ratio = 0.9", "must fall from Hard to Easy"),
+        ("max_single_pitch_share = 0.70", "max_single_pitch_share = 1.5", "from 0 to 1"),
+    ],
+    ids=["medium orange", "the chain", "orange limit"],
+)
+def test_the_bass_file_cannot_weaken_a_hard_rule(tmp_path, old, new, message):
+    text = BASS_CONFIG_PATH.read_text(encoding="utf-8")
+    assert old in text
+    path = tmp_path / "bass_difficulty.toml"
+    path.write_text(text.replace(old, new), encoding="utf-8")
+    with pytest.raises(ValueError, match=message):
+        load_config(path)
+
+
+# ---------------------------------------------------------------- bass has its own files
+
+
+GUITAR_CONFIG_SHA256 = {
+    "chart/fret_weights.toml": "01a75c2aa14fbb26d55363ff9ebd13b8ed611474bf88f5015591ee3376bab023",
+    "chart/difficulty.toml": "30d3bf5456f61e292d1ec66208034751703de23b8f94e1fe378f99250b1f61c8",
+    "audio/vocal_bleed.toml": "2dd061dd4341c0d750f203cfd9d3e106d3cf563cae43652b64665f073aca2e33",
+}
+
+
+@pytest.mark.parametrize("name", GUITAR_CONFIG_SHA256)
+def test_tuning_bass_leaves_guitars_settings_alone(name):
+    data = (Path(chartgen.__file__).parent / name).read_bytes().replace(b"\r\n", b"\n")
+    assert hashlib.sha256(data).hexdigest() == GUITAR_CONFIG_SHA256[name]
+
+
+def test_each_instrument_reads_its_own_files():
+    guitar_config, guitar_weights = settings_for(Instrument.GUITAR)
+    bass_config, bass_weights = settings_for(Instrument.BASS)
+    assert guitar_weights == load_weights()
+    assert bass_weights == load_weights(BASS_WEIGHTS_PATH)
+    assert guitar_weights != bass_weights
+    assert guitar_config.max_orange_pitch_share is None, "a guitar's notes have no pitch to read"
+    assert bass_config.max_orange_pitch_share == 0.70
+
+
+# ---------------------------------------------------------------- which pitches are orange
+
+
+def orange_track(ticks_and_lanes: list[tuple[int, int]]) -> Track:
+    return Track(Instrument.BASS, Difficulty.EXPERT, [ChartNote(t, lane) for t, lane in ticks_and_lanes])
+
+
+def test_orange_notes_are_counted_by_pitch():
+    positions_ = [
+        Position(0, 0.0, (4,), pitch=46.0),
+        Position(192, 0.5, (4,), pitch=46.0),
+        Position(384, 1.0, (4,), pitch=39.0),
+        Position(576, 1.5, (4,), pitch=float("nan")),
+        Position(768, 2.0, (0,), pitch=46.0),
+    ]
+    track = orange_track([(0, 4), (192, 4), (384, 4), (576, 4), (768, 0)])
+    orange = count_orange_pitches(track, positions_, 0.70)
+    assert orange.counts == (("A#2", 2), ("D#2", 1))
+    assert orange.unknown == 1
+    assert orange.notes == 3
+    assert orange.top_share == pytest.approx(2 / 3)
+    assert not orange.is_one_pitch
+    report = orange.as_dict()
+    assert report["pitches"] == {"A#2": 2, "D#2": 1}
+    assert report["pitch_unknown"] == 1
+    assert report["one_pitch"] is False
+
+
+def test_no_orange_notes_are_no_warning():
+    orange = count_orange_pitches(orange_track([(0, 1)]), [Position(0, 0.0, (1,), pitch=40.0)], 0.70)
+    assert orange.notes == 0
+    assert orange.top_share == 0.0
+    assert not orange.is_one_pitch
+
+
+@pytest.mark.parametrize(
+    "counts,warns",
+    [((("A#1", 71), ("C2", 29)), True), ((("A#1", 70), ("C2", 30)), False)],
+    ids=["over the limit", "at the limit"],
+)
+def test_one_pitch_above_the_limit_warns_without_failing(counts, warns):
+    item = ChartedTrack(
+        Track(Instrument.BASS, Difficulty.EXPERT, [ChartNote(0, 4)]),
+        1,
+        orange_pitches=OrangePitches(counts, 0, 0.70),
+    )
+    warnings: list[str] = []
+    _report_track(Instrument.BASS, item, warnings)
+    assert any("orange is one pitch: A#1 is 71%" in warning for warning in warnings) == warns
+
+
+def test_evaluate_shows_the_orange_pitches_and_says_when_they_are_one():
+    orange = OrangePitches((("A#1", 9), ("C2", 1)), 0, 0.70).as_dict()
+    lines = _level_table("Bass", {"expert": {"orange_pitches": orange}})
+    assert "expert orange notes by pitch: A#1 9, C2 1; orange is one pitch" in lines
+    empty = OrangePitches(()).as_dict()
+    lines = _level_table("Bass", {"easy": {"orange_pitches": empty}})
+    assert not any("orange notes by pitch" in line for line in lines)
+
+
+def test_hand_travel_and_the_busiest_lane_are_measured():
+    measures = measure_level(
+        [(0, (0,)), (192, (2,)), (384, (2,)), (576, (1,))],
+        [False] * 4,
+        [0.0, 0.5, 1.0, 1.5],
+        192,
+        4,
+    )
+    assert measures.hand_travel == pytest.approx(1.0)
+    assert measures.busiest_lane_share == 0.5
 
 
 # ---------------------------------------------------------------- quiet notes
@@ -432,7 +641,8 @@ def test_a_song_without_a_guitar_builds_on_its_bass(song_file, tmp_path):
     result = build_song(config(song_file, tmp_path), FakeSeparator(stems_without_guitar()))
     assert validate_song_folder(result.folder).ok
     text = (result.folder / "notes.chart").read_text(encoding="utf-8-sig")
-    assert "[ExpertDoubleBass]" in text
+    for level in ("Expert", "Hard", "Medium", "Easy"):
+        assert f"[{level}DoubleBass]" in text
     assert "Single]" not in text, "no guitar section of any level"
     lines = (result.folder / "song.ini").read_text(encoding="utf-8").splitlines()[1:]
     ini = dict(line.split(" = ", 1) for line in lines)
@@ -443,6 +653,7 @@ def test_a_song_without_a_guitar_builds_on_its_bass(song_file, tmp_path):
     assert "guitar" in result.analysis["audio_files"]["song.ogg"]["stems"], "its audio is not lost"
     assert set(result.analysis["charts"]) == {"bass"}
     assert "chord_limit" not in result.analysis["charts"]["bass"]["expert"]
+    assert "orange_pitches" in result.analysis["charts"]["bass"]["expert"]
     quiet = result.analysis["charts"]["bass"]["expert"]["quiet_notes"]
     assert quiet["enabled"] is False
     assert quiet["below_median_db"] == load_limits().below_median_db
@@ -579,10 +790,13 @@ def test_real_songs_without_a_guitar_build(tmp_path, file_name, lead_in):
     assert report.ok, report.errors
     text = (result.folder / "notes.chart").read_text(encoding="utf-8-sig")
     assert "Single]" not in text
-    assert "[ExpertDoubleBass]" in text
+    for level in ("Expert", "Hard", "Medium", "Easy"):
+        assert f"[{level}DoubleBass]" in text
     assert "guitar" in result.analysis["audio_files"]["song.ogg"]["stems"]
     assert set(result.analysis["song_ini"]["difficulty"]) == {"bass"}
-    assert result.analysis["charts"]["bass"]["expert"]["chord_positions"] == 0
+    for level in ("expert", "hard", "medium", "easy"):
+        assert result.analysis["charts"]["bass"][level]["chord_positions"] == 0
+        assert "orange_pitches" in result.analysis["charts"]["bass"][level]
     assert ('section Intro' in text) == (lead_in > 0)
     assert ('section Song' in text) == (lead_in > 0)
     opening = result.analysis["tempo"]["unfit_lead_in"]

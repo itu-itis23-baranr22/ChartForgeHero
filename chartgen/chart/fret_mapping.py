@@ -22,6 +22,7 @@ from pathlib import Path
 import numpy as np
 
 WEIGHTS_PATH = Path(__file__).with_name("fret_weights.toml")
+BASS_WEIGHTS_PATH = Path(__file__).with_name("bass_fret_weights.toml")
 
 SHAPES: tuple[tuple[int, ...], ...] = (
     (0,), (1,), (2,), (3,), (4,),

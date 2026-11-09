@@ -22,6 +22,7 @@ from chartgen.audio.vocal_bleed import BleedThresholds, NoteBleed, analyze_bleed
 from chartgen.chart.difficulty import (
     SINGLE_NOTE_INSTRUMENTS,
     LevelMeasures,
+    OrangePitches,
     Position,
     SoftTargetResult,
     check_single_notes,
@@ -63,6 +64,8 @@ class ChartedTrack:
     """The limits this stem was checked against, if it was checked for quiet notes."""
     quiet: tuple[QuietNote, ...] = ()
     """The notes under that limit, whether or not the rule is in force."""
+    orange_pitches: OrangePitches | None = None
+    """Which pitches this level's orange notes are, for instruments whose pitch can be read."""
 
 
 def _quantize(times: np.ndarray, tempo_map: TempoMap) -> np.ndarray:

@@ -4,11 +4,86 @@ B3 devam ediyor, alt adımlara bölündü ve her birinin sonunda onay bekleniyor
 
 ## Şu anki adım
 
-**B3.1 (gitarsız build + bas Expert) bitti. Sırada B3.2 (bas Hard/Medium/Easy): kod yazmadan önce turuncu teşhisi ve kabul kriterleri onaya sunulacak. Sonra B3.3 (keys).**
+**B3.2 (bas Hard/Medium/Easy) bitti. Sırada B3.3 (keys).**
+
+Proje sahibi Danza'nın bas Expert'ini çaldı: senkron iyi, 37-38 sn'deki hayalet notalar rahatsız etmiyor. Seviye kuralı kapalı kalıyor.
+
+Proje sahibi Toca'nın bas Easy ve Hard'ını çaldı: vuruşlar ve zamanlama iyi, tekdüzelik rahatsız etmiyor, turuncu doğal geliyor. "Turuncu = tek perde" uyarısı yumuşak kalıyor: reggaeton'da tekrarlı bas için bu doğal.
+
+## İleride değerlendirilecek fikirler
+
+- **Basta open note (`N 7`):** tekrar eden en alçak notalar için. Proje sahibinin önerisi, uygulanmadı.
 
 ```powershell
 scripts\check.ps1 -Full
 ```
+
+## B3.2: Bas Hard, Medium ve Easy
+
+Bas artık dört seviye üretiyor ve kendi ayar dosyalarını kullanıyor: `chart/bass_fret_weights.toml`, `chart/bass_difficulty.toml`. Gitarın ayar dosyaları değişmedi, testler hash'lerini sabitliyor.
+
+**Californication bası artık `train`.** Bas ağırlıkları onunla seçildi (240'tan fazla ayar denendi), aşağıdaki skorlar bu yüzden iyimser. `references/test` hâlâ boş.
+
+| Californication bası | Expert | Hard | Medium | Easy | Hedef |
+|---|---|---|---|---|---|
+| Nota F1 | 0,811 | 0,774 | 0,771 | 0,649 | en az 0,81 / 0,77 / 0,76 / 0,64 |
+| "Önce vuruşlar" | – | 0,665 | 0,559 | 0,402 | geçilecek |
+| "Her N'inci" | – | 0,618 | 0,396 | 0,233 | |
+| Yön, insan değiştirince | 0,725 | 0,711 | 0,690 | 0,685 | en az 0,65 / 0,60 / 0,60 / 0,60 |
+| En büyük şerit sapması | 0,103 | 0,075 | 0,048 | 0,052 | en fazla 0,12 / 0,10 / 0,10 / 0,10 |
+| Turuncu (ben / insan) | %15,6 / 14,7 | %17,6 / 15,4 | %0 / 0,9 | %0 / 0,8 | Expert ve Hard'da %10-25 |
+| El hareketi (ben / insan) | 0,86 / 0,94 | 1,13 / 1,07 | 1,17 / 1,26 | 1,05 / 1,25 | Expert'te 0,60-1,00 |
+| Sustain (ben / insan) | %13 / 20 | %18 / 29 | %0,3 / 0,7 | %0,4 / 1,2 | |
+
+Hepsi hedefte. Yumuşak hedeften kaçanlar küçük: Expert sarı %25,1 (üst sınır 24,8), Hard sustain %17,9 (alt sınır 19).
+
+**Turuncu perde dağılımı** (`analysis.json` ve `evaluate`; tek perde %70'i geçerse uyarır):
+
+| | Expert | Hard |
+|---|---|---|
+| Californication | 143 nota, en sık C3 %34: C3 49, D3 30, E3 17, F3 16, A2 8, D♯3 6, D2 6, E2 5, diğer 6 | 116 nota, en sık C3 %30 |
+| Danza | 113 nota, **G2 %85**: G2 96, E2 10, D2 3, A2 2, F♯2 1, G♯2 1 | 42 nota, **G2 %98**: G2 41, A2 1 |
+| Toca | 64 nota, **A♯1 %92**: A♯1 59, G♯1 3, A1 2 | 52 nota, **A♯1 %92**: A♯1 48, A1 2, G♯1 2 |
+
+Danza ve Toca'nın ikisi de uyarıyor: bu şarkılarda turuncu pratikte en yüksek sık perdeyi gösteriyor. Californication'da böyle değil, çünkü perde çeşidi çok daha fazla.
+
+**Oyun:** iki şarkı da önizleme modunda botla dört seviyede açıldı. Ekran görüntülerinde dört bas şeridi notaları çalıyor, log temiz. Bot isabet oranı ölçülmedi.
+
+**Danza ve Toca'nın diğer yumuşak uyarıları:** Danza Hard'da yoğunluk %60 (hedef %66-78; 130 BPM'de 0,25 sn aralık sıkıştırıyor). Toca Hard'da turuncu %26 (üst sınır 25), sustain %44 (üst sınır 39), Easy'de kırmızı %47 (üst sınır 45). Şerit paylarının bir kısmı Californication'dan geldiği için bu şarkılarda sert olabilir.
+
+### Turuncu teşhisi
+
+Californication'ın insan basında turuncu %14,7, gitar ağırlıklarıyla bizde %0,1 idi.
+
+**Neden turuncuya hiç çıkmıyorduk:** gitardan gelen ağırlıklar turuncuyu yapısal olarak kapatıyor.
+- Şerit önceliği: turuncu 5,63, mavi 3,03. Register hedefi de 3. fretle bitiyor, turuncuya 0,6 daha ekliyor.
+- Mavideyken hat yükselince, aralık ne kadar büyük olursa olsun turuncuya çıkmak kalmaktan 1,2 pahalı. Hat 2 ya da 7 yarım ton çıksa da sonuç aynı.
+- Cümlenin tepesindeki 45 notanın 43'ü mavide.
+
+**İnsanın turuncusu "en yüksek perde" demek değil:**
+- Turuncunun yalnızca %32'si cümlenin tepesinde. Alçak notalara da gidiyor: A1'in 38 notasından 15'i, D2'nin 65'inden 16'sı turuncu.
+- Bölüme göre değişiyor: 30 sn'lik dilimlerde %3 ile %31 arasında.
+- Bu yüzden payı tutturabiliriz, ama aynı notaları tam tutturamayız.
+
+| Expert, Californication | Gitar ağırlıkları | A | B (seçilen) | İnsan |
+|---|---|---|---|---|
+| Yeşil / kırmızı / sarı / mavi / turuncu % | 20/26/33/22/0 | 16/29/9/26/20 | 16/22/25/21/16 | 25/27/15/18/15 |
+| En büyük şerit sapması | 0,177 | 0,090 | 0,103 | – |
+| Yön, insan değiştirince | 0,655 | 0,657 | 0,725 | – |
+| El hareketi (nota başına şerit) | 0,66 | 0,84 | 0,86 | 0,94 |
+| Bizim turuncunun insanla aynı olanı (şans %10) | – | %25 | %31 | – |
+| İnsan turuncusunun yakaladığımız payı | %1 | %51 | %51 | – |
+| Danza / Toca turuncu | %0 / %0 | %17 / %23 | %17 / %23 | – |
+
+A: `lane_prior` 1,0, paylar insan + düz karışımı, `register` 0,3, `register_span` 0-4, `hold` 0,5. B: `lane_prior` 0,25, insan payları, `register` 0,3, `register_span` 0-4. Proje sahibi B'yi seçti.
+
+### Kabul kriterleri (onaylandı)
+
+- Kesin: B2 kuralları basta (konum zinciri, Medium ve Easy'de turuncu yok, sustain taşmaz, uzun cümle Easy'de kalır, deterministik). Dört seviyede de akor yok, başlangıca nota yok. Gitar bayt bayt aynı, gitarın ayar dosyaları değişmez. Bas kendi dosyalarını kullanır ve bunlar kesin kuralları gevşetemez. Danza ve Toca dört seviyeyle validator'dan geçer.
+- Ölçüm: F1 en az 0,81 / 0,77 / 0,76 / 0,64 ve "önce vuruşlar"ın üstünde. Yön Expert'te en az 0,65, diğerlerinde en az 0,60. En büyük şerit sapması Expert'te en fazla 0,12, diğerlerinde en fazla 0,10. Turuncu Expert ve Hard'da %10-25. El hareketi Expert'te 0,60-1,00.
+- Yumuşak tablo (yalnızca uyarır): yoğunluk %72 / 47 / 27, en kısa aralık 0,25 / 0,40 / 0,55 sn, şeritler ±10, sustain Hard'da yaklaşık %29, Medium ve Easy'de yaklaşık %1, Expert HOPO yaklaşık %12. Danza ve Toca için turuncu en fazla %25, tek şerit en fazla %45.
+- Oyun: bot `Bass` ile dört seviyeyi çalar, proje sahibi en az bir şarkıda Easy ve Hard'ı çalar.
+- Proje sahibinin ekleri: turuncu perde dağılımı raporlanır ve tek perde %70'i geçerse uyarır; bas ağırlıkları ayrı dosyada durur, gitar dosyaları `-Full`'da hash ile denetlenir; Californication bası `train` sayılır.
 
 ## B3.1: Gitarsız build ve bas Expert
 
@@ -34,7 +109,6 @@ Californication bası (`train`, ama bas için hiçbir ayar yapılmadı): nota F1
 **Click:** `build --click-overlay` artık `debug/debug_click.wav` yazıyor. Danza'da bu dosya, proje sahibinin dinlediği `Danza_click_YENI.wav` ile bayt bayt aynı.
 
 **Sınırlar:**
-- Bas şimdilik yalnızca Expert ve yumuşak hedefi yok: gitarınkiler basta anlamsız.
 - Başlangıcın sonu 8 vuruşluk pencere sınırı. Şarkı pencerenin ortasında başlasa ilk notalar en fazla bir pencere kadar kesilebilir. Danza'da kesilen yok: şarkı 37,1, sınır 36,9 sn.
 - Sanatçı adları (Don Omar, Fly Project) dosyada yok, elle verildi. Klasör adı kodda `Sanatçı - Şarkı`, yani `outputs\Don Omar - Danza Kuduro\`.
 
@@ -130,7 +204,8 @@ Toca, LastResort, Şarkı Testi ve Californication'ın tempo haritaları, `final
 | Tekrarlanabilirlik | Sabit seed, önbellek anahtarı, hızlı pre-commit, `check.ps1 -Full` | `9777680` |
 | B2 | Hard, Medium, Easy (gitar) | `5668319` |
 | B3.0 | Danza tempo haritası: beat fazı, uymayan başlangıç | `5b04df5` |
-| B3.1 | Gitarsız build, bas Expert, başlangıç kuralı, section'lar | bu commit |
+| B3.1 | Gitarsız build, bas Expert, başlangıç kuralı, section'lar | `e5aff06` |
+| B3.2 | Bas Hard, Medium, Easy, ayrı bas ayarları, turuncu perde dağılımı | bu commit |
 
 Proje sahibi LastResort ve Şarkı Testi'nin güncel Hard ve Medium sürümlerini de çaldı: akorlar rahat, fret dağılımı dengeli, senkron iyi.
 

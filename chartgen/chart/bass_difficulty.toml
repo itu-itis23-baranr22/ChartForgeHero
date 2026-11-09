@@ -1,0 +1,89 @@
+# How bass is reduced to Hard, Medium and Easy, and what each level aims for. The same keys as
+# difficulty.toml, which is guitar's and stays as it is. Every value here is a preference: the rules that
+# must always hold live in chartgen/chart/difficulty.py, and loading refuses values that would break them.
+#
+# All of this comes from the human bass chart of Californication, the one song measured, so that bass
+# counts as train. The ranges are to be set again once test references exist.
+[importance]
+downbeat = 1.0
+strong_beat = 1.0
+beat = 0.6
+eighth = 0.4
+sixteenth = 0.05
+onset_strength = 0.3
+sustain = 0.15
+phrase_end = 0.2
+
+[lane_targets]
+tolerance = 0.10
+
+# Orange that is nearly always one pitch says little about the melody, so more than this share warns.
+[orange_pitches]
+max_single_pitch_share = 0.70
+
+[expert]
+lane_shares = [0.255, 0.268, 0.148, 0.182, 0.147]
+
+[expert.soft_targets]
+orange_share = [0.10, 0.25]
+busiest_lane_share = [0.0, 0.45]
+sustain_share = [0.10, 0.30]
+auto_hopo_share = [0.07, 0.17]
+
+[hard]
+lane_shares = [0.245, 0.263, 0.160, 0.177, 0.154]
+position_ratio = 0.72
+min_gap_s = 0.25
+top_lane = 4
+lane_map = [0, 1, 2, 3, 4]
+fidelity = 8.0
+min_sustain_beats = 0.75
+keep_auto_hopos = true
+
+[hard.soft_targets]
+position_ratio = [0.66, 0.78]
+orange_share = [0.10, 0.25]
+busiest_lane_share = [0.0, 0.45]
+min_gap_s = [0.25, inf]
+sustain_share = [0.19, 0.39]
+auto_hopo_share = [0.0, 0.03]
+
+# The human holds almost nothing on Medium and Easy, 1% against Hard's 29%. Only very long notes stay held.
+[medium]
+lane_shares = [0.324, 0.251, 0.248, 0.168, 0.009]
+position_ratio = 0.47
+min_gap_s = 0.40
+top_lane = 3
+lane_map = [0, 1, 1, 2, 3]
+fidelity = 0.5
+min_sustain_beats = 4.0
+keep_auto_hopos = false
+
+[medium.soft_targets]
+position_ratio = [0.41, 0.53]
+busiest_lane_share = [0.0, 0.45]
+min_gap_s = [0.40, inf]
+sustain_share = [0.0, 0.05]
+auto_hopo_share = [0.0, 0.01]
+
+[easy]
+lane_shares = [0.313, 0.333, 0.341, 0.004, 0.008]
+position_ratio = 0.27
+min_gap_s = 0.55
+top_lane = 2
+lane_map = [0, 1, 1, 2, 2]
+fidelity = 0.5
+min_sustain_beats = 4.0
+keep_auto_hopos = false
+
+# As on guitar: on the easiest level the pulse is the half note.
+[easy.importance]
+beat = 0.2
+
+[easy.soft_targets]
+position_ratio = [0.21, 0.33]
+busiest_lane_share = [0.0, 0.45]
+blue_share = [0.0, 0.05]
+min_gap_s = [0.55, inf]
+sustain_share = [0.0, 0.05]
+auto_hopo_share = [0.0, 0.01]
