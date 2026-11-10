@@ -396,6 +396,20 @@ def test_tuning_bass_leaves_guitars_settings_alone(name):
     assert hashlib.sha256(data).hexdigest() == GUITAR_CONFIG_SHA256[name]
 
 
+BASS_CONFIG_SHA256 = {
+    "chart/bass_fret_weights.toml": "575dee8311a239f3f5f0e8b838e1ae49aa53dc736e8d27965f8533044c918fb1",
+    "chart/bass_difficulty.toml": "5fd616e5ad2ec9849bb92df8de1a0acb36ef90054224a0e375436340965be716",
+    "audio/quiet_notes.toml": "38268df1c07d1cf80888a9bfc4b35f188497c45e234dee3675f091a22e99c642",
+}
+"""As at 2e91ece. Drums have their own files and must leave these alone."""
+
+
+@pytest.mark.parametrize("name", BASS_CONFIG_SHA256)
+def test_the_bass_settings_stay_as_they_are(name):
+    data = (Path(chartgen.__file__).parent / name).read_bytes().replace(b"\r\n", b"\n")
+    assert hashlib.sha256(data).hexdigest() == BASS_CONFIG_SHA256[name]
+
+
 def test_each_instrument_reads_its_own_files():
     guitar_config, guitar_weights = settings_for(Instrument.GUITAR)
     bass_config, bass_weights = settings_for(Instrument.BASS)
@@ -905,6 +919,32 @@ def test_the_guitar_the_owner_played_stays_byte_for_byte(path_from_music, sha256
     charted = build_tracks_for(
         Instrument.GUITAR, stem, tempo.tempo_map, stems.duration_s, vocals, tempo.lead_in_end_s
     )
+    chart = Chart(SongMetadata("T", "A"), tempo.tempo_map, [item.track for item in charted])
+    text = DotChartExporter().render(chart).decode("utf-8-sig")
+    assert hashlib.sha256(text[text.index("[SyncTrack]") :].encode("utf-8")).hexdigest() == sha256
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "path_from_music,sha256",
+    [
+        ("DanzaKuduro.mp3", "84a128a053dbf0ccd7cc8ad15b9619da933f796477714351669bf41ac6913388"),
+        ("TocaToca.mp3", "e6d75583a6845026fdef56ccf86ad37ae294e6b934639d48952bc05660fb1311"),
+        ("LastResort.wav", "d7a7fee514ebff4f4a8fbdd5611f15b5c7efae9925d107a96d4ab08a5643302f"),
+        ("../cloneH/audio.mp3", "f0d024f7bb9c8d2eca16b63060aea2e27ca922cba2c03f3d282746fb1ab61a32"),
+    ],
+)
+def test_the_bass_stays_byte_for_byte(path_from_music, sha256):
+    """The hash covers [SyncTrack] and all four bass levels as they were at 2e91ece, before drums."""
+    from chartgen.audio.io import analysis_mono
+
+    stems, tempo = real_song(music_folder() / path_from_music)
+    stem = analysis_mono(stems.stems["bass"], stems.samplerate)
+    vocals = analysis_mono(stems.stems["vocals"], stems.samplerate)
+    charted = build_tracks_for(
+        Instrument.BASS, stem, tempo.tempo_map, stems.duration_s, vocals, tempo.lead_in_end_s
+    )
+    assert [item.track.difficulty for item in charted] == list(Difficulty)
     chart = Chart(SongMetadata("T", "A"), tempo.tempo_map, [item.track for item in charted])
     text = DotChartExporter().render(chart).decode("utf-8-sig")
     assert hashlib.sha256(text[text.index("[SyncTrack]") :].encode("utf-8")).hexdigest() == sha256

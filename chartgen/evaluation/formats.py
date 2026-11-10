@@ -90,6 +90,8 @@ class MidiTrack:
     name: str = ""
     notes: list[tuple[int, int, int]] = field(default_factory=list)
     """Start tick, note number, length in ticks."""
+    texts: list[tuple[int, str]] = field(default_factory=list)
+    """Tick and text of each text event, such as a drum mix event."""
 
 
 @dataclass
@@ -144,6 +146,8 @@ def parse_midi(data: bytes) -> MidiChart:
                     payload = data[start : start + size]
                     if kind == 0x03:
                         track.name = payload.decode("latin-1")
+                    elif kind == 0x01:
+                        track.texts.append((tick, payload.decode("latin-1")))
                     elif kind == 0x51 and size == 3:
                         chart.tempos.append((tick, int.from_bytes(payload, "big")))
                     elif kind == 0x58 and size >= 2:

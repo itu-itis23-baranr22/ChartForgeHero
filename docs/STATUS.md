@@ -1,16 +1,132 @@
 # Proje durumu
 
-B3 devam ediyor, alt adımlara bölündü ve her birinin sonunda onay bekleniyor. Şartname ve alınan kararlar `docs/SPEC.md` dosyasında.
+Faz C (davul) devam ediyor, C.0, C.1 ve C.2 adımlarına bölündü ve her birinin sonunda onay bekleniyor. Şartname ve alınan kararlar `docs/SPEC.md` dosyasında.
 
 ## Şu anki adım
 
-**B3 bitti: bas ve keys chart'lanıyor, şarkının gitara ihtiyacı yok. Sırada Faz C (davul): kod yazmadan önce plan onaya sunulacak.**
+**C.0 bitti: davul formatı, yazıcı, validator ve referans okuyucu (ses yok). Onay bekliyor. Sırada C.1: Expert sınıflandırma.**
+
+B3 bitti (`2e91ece`): bas ve keys chart'lanıyor, şarkının gitara ihtiyacı yok.
 
 Proje sahibi Danza'nın güncel bas Hard'ını çaldı: ritim rahat, sekizlik notalar doğal geliyor, sıkışıklık yok.
 
 Proje sahibi Danza'nın bas Expert'ini çaldı: senkron iyi, 37-38 sn'deki hayalet notalar rahatsız etmiyor. Seviye kuralı kapalı kalıyor.
 
 Proje sahibi Toca'nın bas Easy ve Hard'ını çaldı: vuruşlar ve zamanlama iyi, tekdüzelik rahatsız etmiyor, turuncu doğal geliyor. "Turuncu = tek perde" uyarısı yumuşak kalıyor: reggaeton'da tekrarlı bas için bu doğal.
+
+## Faz C planı: davul (onaylandı, 2026-11-10)
+
+**Düzen: 4-lane Pro**, cymbal bayrakları ilk sürümde. İlk şartnamedeki "5-lane" bir yazım hatasıydı, kastedilen 4 pad + kick (`SPEC.md` 2. ve 32. karar). Her davul chart'ıyla `song.ini`'ye `pro_drums = True` yazılır, `five_lane_drums` hiç yazılmaz.
+
+| Parça | Gem | `.chart` |
+|---|---|---|
+| Kick | kick | `N 0` |
+| Snare | kırmızı | `N 1` |
+| Hi-hat | sarı cymbal | `N 2` + `N 66` |
+| Ride | mavi cymbal | `N 3` + `N 67` |
+| Crash | yeşil cymbal | `N 4` + `N 68` |
+| Yüksek / orta tom | sarı / mavi tom | `N 2` / `N 3` |
+| Yer tomu | yeşil tom | `N 4` |
+
+Kırmızı hiçbir zaman cymbal olmaz. Yazılmayanlar: `N 5` (5-lane yeşil), `N 32` (2x kick), accent, ghost, roll, fill, sustain.
+
+**Referans:** Californication'da insan davul chart'ı var (Harmonix, `pro_drums`, `PART DRUMS`). Expert 1426 konum, 1942 gem: snare %38, mavi cymbal %26, sarı cymbal %18, kick %15, yeşil cymbal %2, tom %1. Bu şarkı `train` sayılıyor. `references/test` boş. Yalnızca 16 tom gem'i var, yani tom ölçülemez.
+
+**Bellekte prototip** (eşikler bu şarkıda seçildi, iyimser):
+
+| Sınıf | En iyi yöntem | F1 | Diğer yöntem |
+|---|---|---|---|
+| Herhangi bir vuruş | `detect_onsets` | 0,907 | |
+| Kick | NMF | 0,885 | bant 0,753-0,795 |
+| Cymbal | 7-11 kHz bandı | 0,858 | NMF 0,618 |
+| Snare | 150-600 Hz bandı | 0,760 | NMF 0,749, çok bantlı 0,723 |
+
+Hi-hat ile ride sönme süresinden ayrılıyor: sarı cymbal ortanca 70 ms, mavi cymbal 453 ms, AUC 0,91.
+
+**İnsanın indirgemesi:** konum zinciri %100, gem zinciri %99-100. Yoğunluk %76 / 64 / 54. Her seviyede en fazla 2 pad. Easy'de kick asla pad'le birlikte değil. 16'lıklar Hard'da %33, Medium ve Easy'de %0. Kalan pay: kick %86 / 80 / 26, snare %55 / 32 / 32, sarı cymbal %97 / 97 / 17, mavi cymbal %97 / 97 / 97.
+
+**Sınıflandırma (C.1), karma yöntem:** vuruşlar `detect_onsets` ile, kick NMF ile, cymbal 7-11 kHz bandından, snare 150-600 Hz bandından. Bir vuruş aynı anda birden çok gem olabilir (kick + hi-hat). Hi-hat ile ride sönme süresinden ayrılır. Crash: güçlü vuruş + uzun sönme + kick. Tom: 80-400 Hz'te perdeli ve uzun sönen vuruş. Yeni paket yok, NMF birkaç satır numpy.
+
+**Kabul kriterleri:**
+- Expert, Californication: vuruş konumu F1 ≥ 0,85; kick / snare / cymbal F1 ≥ 0,80 / 0,70 / 0,80; hi-hat ile ride'da doğru şerit ≥ %75; en büyük gem payı sapması ≤ 0,12.
+- Alt seviyeler: "önce vuruşlar" ve "her N'inci" taban skorlarını geçer, gem payı sapması ≤ 0,10. Sayısal F1 alt sınırları C.2'de ölçülüp proje sahibine sunulur.
+- Eşikler stem'in kendi güçlü vuruşlarına göreli, yoğunluğu sabitleyen eşik yok. Aynı desen iki farklı ses seviyesinde aynı vuruşları verir (test edilir).
+- Yön, HOPO ve sustain davulda ölçülmez. Sınıf başına F1 asıl ölçü; konum F1 şeridi görmez.
+
+**Kesin kurallar** (kodda ve validator'da; `drum_*.toml` dosyaları gevşetemez):
+- Zincir: konum ve gem bazında Easy ⊂ Medium ⊂ Hard ⊂ Expert. Gem yer değiştirmez: kick kick, cymbal cymbal kalır.
+- El sınırı: her seviyede bir konumda en fazla 2 pad (+ kick).
+- Hard ve Medium: bir konumda en fazla 2 gem. Easy: kick pad'le aynı konumda olmaz.
+- Medium ve Easy: 16'lık yok.
+- Sustain yok, başlangıca nota yok, sonuç deterministik.
+
+**Yumuşak** (`drum_difficulty.toml`, yalnızca uyarır): yoğunluk, gem payları ±10, vuruş üstü oran, en kısa aralık. Hangi vuruşun kalacağını önem puanı seçer; 2. ve 4. vuruştaki snare korunur, hayalet snare'ler önce gider.
+
+**Proje sahibinin ekleri:**
+- Sınıflandırıcı `.sng`'deki gerçek davul kanallarına karşı da ölçülür (`drums_1` kick, `drums_2` snare, `drums_3` diğerleri). Teşhis için, kabul kriteri değil.
+- Göreli eşik kuralı kabul kriteri; iki seviyedeki aynı desenle test edilir.
+- NMF'nin build süresine eklediği süre C.1 raporunda verilir.
+- Tom ve crash "doğrulanmadı" diye işaretlenir (`analysis.json` ve terminal).
+- Gitar ve bas bayt bayt aynı kalır (`-Full`'da hash).
+- Davul ağırlıkları ve eşikleri ayrı `drum_*.toml` dosyalarında; config kesin kuralları gevşetemez.
+
+**Gerçeği olmayan şarkılar** (Danza, Toca, LastResort): validator, bot önizleme, sınıf başına click'li kulak testi dosyası. Proje sahibi en az bir şarkıda Easy ve Hard'ı çalar.
+
+**Riskler:** eşikler ve kalan paylar tek şarkıdan; reggaeton'un 808 kick'i farklı; vokal ünsüzleri cymbal bandına, bas kick bandına sızabilir; NMF cymbal kalıbında bozuldu, yalnızca kick için; kick ile hi-hat aynı anda maskelenebilir; bot için oyuncu adı (`Drums` mı `ProDrums` mı) oyunda denenecek.
+
+**Sıra** (her adımın sonunda onay):
+- **C.0:** format, yazıcı, validator, referans okuyucu (ses yok).
+- **C.1:** Expert sınıflandırma ve kulak testi dosyası.
+- **C.2:** Hard, Medium, Easy, bot önizleme ve proje sahibinin çalması.
+
+## C.0: davul formatı, yazıcı, validator, referans okuyucu
+
+Ses analizi yok. Build davulu henüz chart'lamıyor ("not implemented yet" uyarısı, sesi `drums.ogg`'da).
+
+**Model ve yazıcı:**
+- `core/drums.py`: `DrumGem` (kick, kırmızı, üç tom, üç cymbal), `DrumPiece` (kitin sekiz parçası) ve onaylanan eşleme `GEM_FOR_PIECE`. `ChartNote`'un yeni `cymbal` alanı yalnızca 2-4. şeritte olabilir.
+- `.chart` yazıcısı cymbal'e `N 66` / `67` / `68` ekliyor. Davulda force (`N 5` = 5-lane yeşil), tap, sustain ve open notayı reddediyor. Diğer enstrümanlarda cymbal'i reddediyor.
+- `song.ini`: davul chart'ı varsa `pro_drums = True`. Davulsuz şarkının `song.ini`'si değişmedi.
+
+**Validator** (yazıcıdan bağımsız, yalnızca dosyaya bakar):
+- Davulda yalnızca `N 0-4` ve `N 66-68`. `N 5` "5-lane yeşil" diye reddedilir; `N 32`, accent ve ghost da reddedilir. Sustain'li davul notası ve altında pad olmayan cymbal bayrağı hata.
+- Kesin kurallar: konum ve gem zinciri, her seviyede en fazla 2 pad, Hard ve Medium'da en fazla 2 gem, Easy'de kick + pad yok, Medium ve Easy'de 16'lık yok. Bunları üreten kod henüz yok, C.2'nin çıktısını bağımsız denetleyecek.
+- `song.ini`: davul varsa `pro_drums = True` şart, `five_lane_drums` her durumda hata.
+- Kırmızı cymbal `.chart`'ta yazılamaz (bayrağı yok). Model ve yazıcı reddediyor.
+
+**Referans okuyucu,** oyunun sırasıyla: önce `song.ini` etiketleri, sonra notalar.
+- `.mid`: sarı, mavi ve yeşil varsayılan olarak cymbal, 110-112 tom işaretleri tom yapar. Tom işaretleri tek başına chart'ı Pro yapar.
+- `.chart`: pad varsayılan olarak tom, 66-68 bayrağı cymbal yapar. Bayrak ya da `pro_drums` chart'ı Pro yapar.
+- Pro olmayan chart'ta cymbal yok, pad'ler tom okunur. 5-lane (`five_lane_drums`, `.mid`'de 101, `.chart`'ta `N 5` ya da sustain) ve disco flip (`[mix N drumsXd]`) okunmaz, nedeni yazılır. 2x kick (95, `N 32`) Expert'e katılmaz, ayrıca sayılır.
+- Kaynak: `GuitarGame_ChartFormats` @ `3d36405748`: `chart-format/Tracks/Drums.md`, `mid-format/Tracks/Drums.md`, `song-ini/Standard-Tags.md`.
+
+**Californication, okuyucuyla yeniden sayıldı.** Prototip ayrı bir betikti; sayılar birebir aynı.
+
+| | Expert | Hard | Medium | Easy |
+|---|---|---|---|---|
+| Konum | 1426 | 1081 (%76) | 910 (%64) | 766 (%54) |
+| Gem | 1942 | 1550 | 1361 | 914 |
+| Kick / kırmızı | %14,8 / 38,2 | %15,9 / 26,2 | %16,9 / 17,7 | %8,3 / 26,4 |
+| Sarı / mavi / yeşil cymbal | %18,1 / 25,9 / 2,1 | %22,8 / 31,5 / 3,0 | %25,9 / 35,8 / 3,4 | %6,8 / 53,3 / 5,0 |
+| Tom gem | 16 | 9 | 4 | 2 |
+| 16'lıktaki konum | 511 | 167 | 0 | 0 |
+
+- Expert'teki 16 tom'un hepsi sarı. Tom işaretleri: 7 sarı, 4 mavi, 1 yeşil aralık.
+- Disco flip yok (`[mix N drums3]`), 2x kick yok.
+- İnsan, kesin kurallarımızın hepsine uyuyor, tek bir fark var: Hard'ın gem'lerinin %1'i Expert'te aynı tick'te başka bir gem. Gem zinciri Hard→Expert %99,0, Medium→Hard %99,9, Easy→Medium %100; konum zinciri her yerde %100. Bizim kuralımız insandan sıkı.
+
+**Gitar ve bas:** `-Full`'a bas için de bayt bayt hash eklendi: Danza, Toca, LastResort ve Şarkı Testi'nin `[SyncTrack]` + dört bas seviyesi, `2e91ece`'deki hâliyle. Bas ayar dosyalarının (`bass_fret_weights.toml`, `bass_difficulty.toml`, `quiet_notes.toml`) hash'i hızlı testte. Gitarın iki hash testi zaten vardı. Bas hash'leri `HEAD`'in ayrı bir kopyasından alındı, yeni kod aynısını veriyor.
+
+**Kontroller:** `check.ps1 -Full` geçti: 801 test (719 + 82 yeni), 1031 sn, 7 klasör validator'dan geçti, gitar ve bas hash'leri dahil.
+
+**Değişen testler:**
+- `test_validator_accepts_drum_only_values_on_drums`: `N 32` (2x kick) artık reddediliyor, yerine `N 2` + `N 66`.
+- `test_drums_are_left_alone`: Easy'de kick + pad artık kesin kural hatası. Aynı amaç (yeşil pad turuncu sayılmaz, Easy'de iki pad olur) kırmızı + yeşil ile sınanıyor.
+
+**Sınırlar:**
+- Davul referansı yalnızca `PART GUITAR`'ı olan bir chart'tan okunabiliyor, çünkü yükleyici gitar istiyor. Bugünkü tek referans için sorun değil.
+- Disco flip'li bir chart'ın davulu okunmuyor. Format belgesi flip'in Pro notalarına etkisini net yazmıyor.
+- `.mid`'de uzun notanın 5-lane sayılması uygulanmadı: belge eşik vermiyor, MIDI'de her notanın uzunluğu var.
 
 ## İleride değerlendirilecek fikirler
 
@@ -240,7 +356,8 @@ Toca, LastResort, Şarkı Testi ve Californication'ın tempo haritaları, `final
 | B3.0 | Danza tempo haritası: beat fazı, uymayan başlangıç | `5b04df5` |
 | B3.1 | Gitarsız build, bas Expert, başlangıç kuralı, section'lar | `e5aff06` |
 | B3.2 | Bas Hard, Medium, Easy, ayrı bas ayarları, turuncu perde dağılımı | `e380ae5` |
-| B3.3 | Keys (gerçek veriyle doğrulanmadı), Hard'da tempoya göre aralık, validator bölüm adı koruması | bu commit |
+| B3.3 | Keys (gerçek veriyle doğrulanmadı), Hard'da tempoya göre aralık, validator bölüm adı koruması | `2e91ece` |
+| C.0 | Davul formatı (4-lane Pro), yazıcı, validator, referans okuyucu, bas hash'leri | bu commit |
 
 Proje sahibi LastResort ve Şarkı Testi'nin güncel Hard ve Medium sürümlerini de çaldı: akorlar rahat, fret dağılımı dengeli, senkron iyi.
 
@@ -258,7 +375,7 @@ Bu şarkı `train`, ayarlar onunla yapıldı, yani skorlar iyimser.
 | Akor oranı (ben / insan) | %50 / 59 | %42 / 58 | %42 / 57 | %0 / 0 |
 | Otomatik HOPO (ben / insan) | %3.0 / 0.9 | %0 / 0.2 | %0 / 0 | %0 / 0 |
 
-Pre-commit hook 39–62 sn sürüyor (hızlı testler + validator, makine yüküne göre değişiyor). `-Full` yaklaşık 8 dakika.
+Pre-commit hook 39–80 sn sürüyor (hızlı testler + validator, makine yüküne göre değişiyor). `-Full` B3.3'te 642 sn idi. 2026-11-10'da değişmemiş `2e91ece` 957 sn, C.0 koduyla 1031 sn sürdü: C.0'ın yeni testleri yaklaşık 75 sn ekliyor, gerisi büyük ihtimalle makine yükü (ölçülmedi).
 
 ## Bilinen sınırlar ve açık konular
 

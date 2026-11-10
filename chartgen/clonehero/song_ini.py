@@ -15,6 +15,9 @@ DIFFICULTY_KEYS: dict[Instrument, str] = {
 }
 NOT_CHARTED = -1
 """``diff_*`` value that tells Clone Hero an instrument has no chart."""
+PRO_DRUMS = "pro_drums"
+"""Every drum chart here is 4-lane Pro. The tag tells the game so instead of letting it guess from the
+notes; ``five_lane_drums`` is never written (SPEC decision 2)."""
 
 _TIER_NOTES_PER_SECOND = (1.0, 2.0, 3.0, 4.0, 5.5, 7.5)
 
@@ -41,7 +44,10 @@ def _value(value: object) -> str:
 
 
 def render_song_ini(ini: SongIni) -> str:
-    """Render the file. Instruments missing from ``difficulties`` get ``diff_* = -1``."""
+    """Render the file. Instruments missing from ``difficulties`` get ``diff_* = -1``.
+
+    A song with a drum chart also gets ``pro_drums = True``; a song without one is unchanged.
+    """
     meta = ini.metadata
     entries: list[tuple[str, object]] = [
         ("name", meta.name),
@@ -58,5 +64,7 @@ def render_song_ini(ini: SongIni) -> str:
         (key, ini.difficulties.get(instrument, NOT_CHARTED))
         for instrument, key in DIFFICULTY_KEYS.items()
     )
+    if ini.difficulties.get(Instrument.DRUMS, NOT_CHARTED) != NOT_CHARTED:
+        entries.append((PRO_DRUMS, "True"))
     body = "\n".join(f"{key} = {_value(value)}" for key, value in entries)
     return f"[song]\n{body}\n"

@@ -27,6 +27,8 @@ NOTE_FORCED = 5
 NOTE_TAP = 6
 NOTE_OPEN = 7
 STAR_POWER_PHRASE = 2
+CYMBAL_FLAGS: dict[int, int] = {2: 66, 3: 67, 4: 68}
+"""4-lane Pro drums: a flag on the same tick makes yellow, blue or green a cymbal. Without it, a tom."""
 
 
 def section_name(instrument: Instrument, difficulty: Difficulty) -> str:
@@ -72,10 +74,30 @@ def _sync_section(tempo_map: TempoMap) -> list[str]:
     return [f"  {tick} = {value}" for tick, _, value in sorted(events)]
 
 
-def _note_number(note: ChartNote, instrument: Instrument) -> int:
+def _check_drum_note(note: ChartNote) -> None:
+    """Refuse what a 4-lane Pro drum note cannot carry: the game would read each as something else."""
     if note.lane == OPEN_LANE:
-        if instrument is Instrument.DRUMS:
-            raise ValueError("drum tracks cannot contain open notes")
+        raise ValueError("drum tracks cannot contain open notes")
+    if note.forced:
+        raise ValueError(
+            f"tick {note.tick}: a drum note cannot be forced: N {NOTE_FORCED} is green on 5-lane drums"
+        )
+    if note.tap:
+        raise ValueError(f"tick {note.tick}: a drum note cannot be a tap")
+    if note.length:
+        raise ValueError(
+            f"tick {note.tick}: a drum note cannot have a sustain: the game reads sustained drums "
+            "as 5-lane or as a roll"
+        )
+
+
+def _note_number(note: ChartNote, instrument: Instrument) -> int:
+    if instrument is Instrument.DRUMS:
+        _check_drum_note(note)
+        return note.lane
+    if note.cymbal:
+        raise ValueError(f"tick {note.tick}: only drums have cymbals")
+    if note.lane == OPEN_LANE:
         return NOTE_OPEN
     return note.lane
 
@@ -86,6 +108,9 @@ def _track_section(track: Track) -> list[str]:
     for note in track.notes:
         number = _note_number(note, track.instrument)
         events.append((note.tick, 0, number, f"N {number} {note.length}"))
+        if note.cymbal:
+            flag = CYMBAL_FLAGS[note.lane]
+            events.append((note.tick, 1, flag, f"N {flag} 0"))
         if note.forced:
             events.append((note.tick, 1, NOTE_FORCED, f"N {NOTE_FORCED} 0"))
         if note.tap:

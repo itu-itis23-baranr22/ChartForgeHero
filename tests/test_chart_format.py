@@ -258,7 +258,7 @@ def test_validator_requires_song_and_sync_data(header, expected):
 
 
 def test_validator_accepts_drum_only_values_on_drums():
-    _, report = validate_chart_text(GOOD_HEADER + "[ExpertDrums]\n{\n  0 = N 32 0\n  0 = N 66 0\n}\n")
+    _, report = validate_chart_text(GOOD_HEADER + "[ExpertDrums]\n{\n  0 = N 2 0\n  0 = N 66 0\n}\n")
     assert report.ok, report.errors
     _, report = validate_chart_text(GOOD_HEADER + "[ExpertSingle]\n{\n  0 = N 32 0\n}\n")
     assert not report.ok

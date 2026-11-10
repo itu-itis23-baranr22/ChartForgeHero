@@ -1019,8 +1019,10 @@ def test_bass_and_keys_follow_the_same_structure():
 
 
 def test_drums_are_left_alone():
-    """On drums, lane 4 is a pad and two lanes together are normal."""
+    """On drums, lane 4 is a pad and two lanes together are normal, even on Easy."""
     _, report = validate_chart_text(
-        chart_text(ExpertDrums="  0 = N 0 0\n  0 = N 4 0", EasyDrums="  0 = N 0 0\n  0 = N 4 0")
+        chart_text(
+            ExpertDrums="  0 = N 0 0\n  0 = N 1 0\n  0 = N 4 0", EasyDrums="  0 = N 1 0\n  0 = N 4 0"
+        )
     )
     assert report.ok, report.errors

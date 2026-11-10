@@ -22,7 +22,19 @@ _EVENT_RE = re.compile(r"^(?P<tick>\d+)\s*=\s*(?P<type>[A-Za-z]+)\s*(?P<args>.*)
 _NUMERIC_ARGS_RE = re.compile(r"^\d+(\s+\d+)*$")
 
 _FRET_NOTES = frozenset(range(8))
-_DRUM_NOTES = frozenset({0, 1, 2, 3, 4, 5, 32, *range(34, 39), *range(40, 45), 66, 67, 68})
+_DRUM_LANES = {0: "kick", 1: "red", 2: "yellow", 3: "blue", 4: "green"}
+_KICK = 0
+_CYMBAL_FLAG_LANES = {66: 2, 67: 3, 68: 4}
+_DRUM_NOTES = frozenset({*_DRUM_LANES, *_CYMBAL_FLAG_LANES})
+"""What 4-lane Pro drums are written with here. The format has more, which this project never writes:
+2x kick (32), accents and ghosts (34-44), and ``N 5``, green on 5-lane drums."""
+_FIVE_LANE_GREEN = 5
+_MAX_PADS = 2
+"""Two hands, on every level."""
+_MAX_DRUM_GEMS = {"Hard": 2, "Medium": 2}
+_NO_KICK_WITH_A_PAD = frozenset({"Easy"})
+_NO_SIXTEENTHS = frozenset({"Medium", "Easy"})
+_TRUE_TAGS = frozenset({"true", "1"})
 _STAR_POWER = 2
 _HIGHEST_FRET = 4
 _ORANGE = 4
@@ -166,14 +178,19 @@ def _check_sync_track(events: list[ParsedEvent], report: ValidationReport) -> No
 
 
 def _check_track(name: str, events: list[ParsedEvent], report: ValidationReport) -> None:
-    allowed = _DRUM_NOTES if _PLAYABLE_SECTIONS[name] is Instrument.DRUMS else _FRET_NOTES
+    drums = _PLAYABLE_SECTIONS[name] is Instrument.DRUMS
+    allowed = _DRUM_NOTES if drums else _FRET_NOTES
     for event in events:
         where = f"[{name}] line {event.line_number}"
         parts = event.args.split()
         if event.type not in {"N", "S"} or len(parts) != 2 or not _NUMERIC_ARGS_RE.match(event.args):
             report.errors.append(f"{where}: malformed event {event.type} {event.args!r}")
+        elif event.type == "N" and drums and int(parts[0]) == _FIVE_LANE_GREEN:
+            report.errors.append(f"{where}: N 5 is green on 5-lane drums, and these drums are 4-lane Pro")
         elif event.type == "N" and int(parts[0]) not in allowed:
             report.errors.append(f"{where}: note value {parts[0]} out of range")
+        elif event.type == "N" and drums and int(parts[1]) != 0:
+            report.errors.append(f"{where}: a drum note with a sustain")
         elif event.type == "S" and int(parts[0]) != _STAR_POWER:
             report.warnings.append(f"{where}: unusual special phrase {parts[0]}")
     if not any(event.type == "N" for event in events):
@@ -221,6 +238,81 @@ def _check_difficulty_rules(parsed: ParsedChart, report: ValidationReport) -> No
                     report.errors.append(f"[{name}] tick {tick}: the sustain runs into the next note")
 
 
+def _gem_name(lane: int, cymbal: bool) -> str:
+    if lane in _CYMBAL_FLAG_LANES.values():
+        return f"{_DRUM_LANES[lane]} {'cymbal' if cymbal else 'tom'}"
+    return _DRUM_LANES[lane]
+
+
+def _drum_gems_by_tick(
+    name: str, events: list[ParsedEvent], report: ValidationReport
+) -> dict[int, set[tuple[int, bool]]]:
+    """Return each tick's ``(lane, cymbal)`` gems, reporting any cymbal flag with no pad to turn."""
+    lanes: dict[int, set[int]] = {}
+    flags: dict[int, set[int]] = {}
+    for event in events:
+        parts = event.args.split()
+        if event.type != "N" or len(parts) != 2 or not all(part.isdigit() for part in parts):
+            continue
+        value = int(parts[0])
+        if value in _DRUM_LANES:
+            lanes.setdefault(event.tick, set()).add(value)
+        elif value in _CYMBAL_FLAG_LANES:
+            flags.setdefault(event.tick, set()).add(_CYMBAL_FLAG_LANES[value])
+    for tick, flagged in sorted(flags.items()):
+        for lane in sorted(flagged - lanes.get(tick, set())):
+            colour = _DRUM_LANES[lane]
+            report.errors.append(f"[{name}] tick {tick}: a {colour} cymbal flag without a {colour} note")
+    return {
+        tick: {(lane, lane in flags.get(tick, set())) for lane in present}
+        for tick, present in lanes.items()
+    }
+
+
+def _on_a_sixteenth(tick: int, resolution: int) -> bool:
+    """Whether the nearest sixteenth to ``tick`` lies between two eighths, as the level measures count it."""
+    return round(tick / (resolution / 4)) % 2 == 1
+
+
+def _check_drum_rules(parsed: ParsedChart, report: ValidationReport) -> None:
+    """Check the structure of every drum chart from the written file alone.
+
+    On every level at most two pads at once, for two hands. Hard and Medium have at most two gems at
+    once, Easy never the kick together with a pad, Medium and Easy nothing on a sixteenth. Each lower
+    level is made of the gems of the level above at the same ticks: a kick stays a kick, a cymbal a cymbal.
+    """
+    resolution_field = parsed.fields.get("Resolution", "")
+    resolution = int(resolution_field) if resolution_field.isdigit() else 0
+    written: list[tuple[str, dict[int, set[tuple[int, bool]]]]] = []
+    for level in _LEVELS_FROM_THE_TOP:
+        name = f"{level}{_INSTRUMENT_SECTIONS[Instrument.DRUMS]}"
+        gems = _drum_gems_by_tick(name, parsed.sections.get(name, []), report)
+        if gems:
+            written.append((name, gems))
+    for name, gems in written:
+        level = name.removesuffix(_INSTRUMENT_SECTIONS[Instrument.DRUMS])
+        for tick in sorted(gems):
+            pads = sum(lane != _KICK for lane, _ in gems[tick])
+            if pads > _MAX_PADS:
+                report.errors.append(f"[{name}] tick {tick}: {pads} pads at once, more than two hands")
+            limit = _MAX_DRUM_GEMS.get(level)
+            if limit is not None and len(gems[tick]) > limit:
+                report.errors.append(f"[{name}] tick {tick}: {len(gems[tick])} gems at once, at most {limit} here")
+            if level in _NO_KICK_WITH_A_PAD and pads and len(gems[tick]) > pads:
+                report.errors.append(f"[{name}] tick {tick}: the kick with a pad")
+            if level in _NO_SIXTEENTHS and resolution > 0 and _on_a_sixteenth(tick, resolution):
+                report.errors.append(f"[{name}] tick {tick}: a sixteenth")
+    for (upper_name, upper), (lower_name, lower) in zip(written, written[1:]):
+        for tick in sorted(lower):
+            if tick not in upper:
+                report.errors.append(f"[{lower_name}] has tick {tick}, but [{upper_name}] does not")
+                continue
+            for lane, cymbal in sorted(lower[tick] - upper[tick]):
+                report.errors.append(
+                    f"[{lower_name}] tick {tick}: {_gem_name(lane, cymbal)} is not in [{upper_name}]"
+                )
+
+
 def validate_chart_text(text: str) -> tuple[ParsedChart, ValidationReport]:
     """Check tick order, section names, note ranges, mandatory fields and difficulty structure."""
     report = ValidationReport()
@@ -243,6 +335,7 @@ def validate_chart_text(text: str) -> tuple[ParsedChart, ValidationReport]:
     if not any(parsed.note_count(name) for name in _PLAYABLE_SECTIONS):
         report.errors.append("no playable section contains notes")
     _check_difficulty_rules(parsed, report)
+    _check_drum_rules(parsed, report)
     return parsed, report
 
 
@@ -361,6 +454,16 @@ def validate_song_folder(folder: Path) -> ValidationReport:
                 report.errors.append(f"{instrument.value} has notes but {key} = -1")
             if not charted and declared != NOT_CHARTED:
                 report.errors.append(f"{instrument.value} has no notes but {key} = {declared}")
+        drums_charted = any(
+            parsed.note_count(f"{level}{_INSTRUMENT_SECTIONS[Instrument.DRUMS]}")
+            for level in _LEVELS_FROM_THE_TOP
+        )
+        if drums_charted and ini.get("pro_drums", "").strip().lower() not in _TRUE_TAGS:
+            report.errors.append(
+                "drums are charted but song.ini has no pro_drums = True: the game would guess the layout"
+            )
+    if ini.get("five_lane_drums", "").strip().lower() in _TRUE_TAGS:
+        report.errors.append("song.ini sets five_lane_drums, but these drums are 4-lane Pro")
 
     _check_audio_lengths(folder, report)
     return report

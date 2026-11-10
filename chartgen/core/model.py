@@ -17,6 +17,9 @@ LANE_COUNT = 5
 OPEN_LANE = 5
 """Lane value of an open note, played without fretting."""
 
+CYMBAL_LANES = frozenset({2, 3, 4})
+"""On drums, the pads that can be a cymbal: yellow, blue and green. Red is always the snare."""
+
 
 class Instrument(str, Enum):
     GUITAR = "guitar"
@@ -34,13 +37,17 @@ class Difficulty(str, Enum):
 
 @dataclass(frozen=True, slots=True, order=True)
 class ChartNote:
-    """One gem. A chord is several notes that share a tick."""
+    """One gem. A chord is several notes that share a tick.
+
+    ``cymbal`` is for drums only: it makes yellow, blue or green a cymbal instead of a tom.
+    """
 
     tick: int
     lane: int
     length: int = 0
     forced: bool = False
     tap: bool = False
+    cymbal: bool = False
 
     def __post_init__(self) -> None:
         if self.tick < 0:
@@ -49,6 +56,8 @@ class ChartNote:
             raise ValueError(f"note length must be >= 0, got {self.length}")
         if not 0 <= self.lane <= OPEN_LANE:
             raise ValueError(f"note lane must be in 0..{OPEN_LANE}, got {self.lane}")
+        if self.cymbal and self.lane not in CYMBAL_LANES:
+            raise ValueError(f"only lanes 2-4 can be a cymbal, got lane {self.lane}")
 
 
 @dataclass(frozen=True, slots=True)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import configparser
+import re
 import tempfile
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
@@ -13,8 +14,9 @@ import soundfile as sf
 
 from chartgen.audio.io import AudioData
 from chartgen.chart.hopo import natural_hopo_ticks
-from chartgen.clonehero.validate import ParsedEvent, ValidationReport, parse_chart
-from chartgen.core.model import Difficulty
+from chartgen.clonehero.validate import ParsedChart, ParsedEvent, ValidationReport, parse_chart
+from chartgen.core.drums import DrumGem
+from chartgen.core.model import CYMBAL_LANES, Difficulty
 from chartgen.errors import ChartgenError
 from chartgen.evaluation.formats import MidiChart, SngFile, open_sng, parse_midi
 
@@ -57,6 +59,30 @@ _KEYS_CHART_SECTIONS = {
 _CHART_FORCE = 5
 _PEAK = 0.95
 
+_DRUM_TRACK = "PART DRUMS"
+_MIDI_DRUM_BASE = {
+    Difficulty.EXPERT: 96,
+    Difficulty.HARD: 84,
+    Difficulty.MEDIUM: 72,
+    Difficulty.EASY: 60,
+}
+"""Each level's kick. Red, yellow, blue and green follow it, and one above green is 5-lane green."""
+_MIDI_DOUBLE_KICK = 95
+_MIDI_TOM_MARKERS = {110: 2, 111: 3, 112: 4}
+_DISCO_FLIP = re.compile(r"\[mix\s+\d+\s+drums\d+d\]")
+"""A mix event whose flag is ``d`` alone. ``dnoflip`` leaves Pro notes as they are."""
+_DRUM_CHART_SECTIONS = {
+    Difficulty.EXPERT: "ExpertDrums",
+    Difficulty.HARD: "HardDrums",
+    Difficulty.MEDIUM: "MediumDrums",
+    Difficulty.EASY: "EasyDrums",
+}
+_CHART_DOUBLE_KICK = 32
+_CHART_FIVE_LANE_GREEN = 5
+_CHART_CYMBAL_FLAGS = {66: 2, 67: 3, 68: 4}
+_TRUE_TAGS = frozenset({"true", "1"})
+_FIVE_LANE = "5-lane drums, which this project does not chart"
+
 
 @dataclass(frozen=True)
 class ReferenceNote:
@@ -67,6 +93,29 @@ class ReferenceNote:
     length_ticks: int = 0
     hopo: bool = False
     """Whether the game plays this note as a HOPO, force markers included."""
+
+
+@dataclass(frozen=True)
+class ReferenceDrumHit:
+    """One position of a human drum chart: every gem hit at one tick."""
+
+    time_s: float
+    tick: int
+    gems: tuple[DrumGem, ...]
+    """Ordered by lane, the kick first."""
+
+
+@dataclass(frozen=True)
+class ReferenceDrums:
+    """The drums of a human chart, read the way the game reads them."""
+
+    levels: Mapping[Difficulty, tuple[ReferenceDrumHit, ...]] = field(default_factory=dict)
+    pro: bool = False
+    """Whether cymbals are told apart from toms. If not, every pad reads as a tom."""
+    double_kicks: int = 0
+    """Expert+ kicks. They are not part of Expert, so they are left out of it."""
+    skipped: str = ""
+    """Why there are no levels, when there are none."""
 
 
 @dataclass(frozen=True)
@@ -88,6 +137,8 @@ class ReferenceSong:
     """The same for bass. Empty if the chart has none."""
     keys_levels: Mapping[Difficulty, tuple[ReferenceNote, ...]] = field(default_factory=dict)
     """The same for keys. Empty if the chart has none."""
+    drums: ReferenceDrums = field(default_factory=ReferenceDrums)
+    """The drums, with no levels and a reason if the chart has none that can be read."""
 
 
 class _Clock:
@@ -194,8 +245,115 @@ def _mix(sources: list[tuple[np.ndarray, int]]) -> AudioData:
     return AudioData(mix, rate)
 
 
+def _is_true(tags: Mapping[str, str], key: str) -> bool:
+    return str(tags.get(key, "")).strip().lower() in _TRUE_TAGS
+
+
+def _drum_hits(gems: Iterable[tuple[int, DrumGem]], clock: _Clock) -> tuple[ReferenceDrumHit, ...]:
+    by_tick: dict[int, set[DrumGem]] = {}
+    for tick, gem in gems:
+        by_tick.setdefault(tick, set()).add(gem)
+    ticks = sorted(by_tick)
+    times = clock.seconds_at(np.array(ticks, dtype=np.float64))
+    return tuple(
+        ReferenceDrumHit(
+            float(time_s), tick, tuple(sorted(by_tick[tick], key=lambda gem: (gem.lane, gem.cymbal)))
+        )
+        for tick, time_s in zip(ticks, times)
+    )
+
+
+def _midi_drums(midi: MidiChart, clock: _Clock, tags: Mapping[str, str]) -> ReferenceDrums:
+    """Read ``PART DRUMS`` the way the game does: song.ini tags first, then the notes.
+
+    In ``.mid``, yellow, blue and green are cymbals unless a tom marker covers them, and red never is.
+    Tom markers alone make a chart Pro. A chart that is not Pro has no cymbals: its pads read as toms.
+    5-lane charts and disco flip are left out rather than read wrong; the format describes how a flip
+    changes Pro notes too loosely to follow. The format also calls sustained notes 5-lane without saying
+    how long, and every MIDI note has a length, so length decides nothing here.
+    """
+    track = midi.tracks.get(_DRUM_TRACK)
+    if track is None:
+        return ReferenceDrums(skipped=f"the chart has no {_DRUM_TRACK} track")
+    numbers = {number for _, number, _ in track.notes}
+    markers = {
+        lane: [(start, start + max(length, 1)) for start, number, length in track.notes if number == marker]
+        for marker, lane in _MIDI_TOM_MARKERS.items()
+    }
+    pro = _is_true(tags, "pro_drums") or any(markers.values())
+    five_lane_notes = any(base + 5 in numbers for base in _MIDI_DRUM_BASE.values())
+    if _is_true(tags, "five_lane_drums") or (five_lane_notes and not pro):
+        return ReferenceDrums(skipped=_FIVE_LANE)
+    if any(_DISCO_FLIP.fullmatch(text.strip()) for _, text in track.texts):
+        return ReferenceDrums(skipped="disco flip, which swaps red and yellow and is not read here")
+
+    def cymbal(lane: int, tick: int) -> bool:
+        if not pro or lane not in CYMBAL_LANES:
+            return False
+        return not any(start <= tick < end for start, end in markers[lane])
+
+    levels = {}
+    for level, base in _MIDI_DRUM_BASE.items():
+        gems = [
+            (tick, DrumGem.of(number - base, cymbal(number - base, tick)))
+            for tick, number, _ in track.notes
+            if base <= number <= base + 4
+        ]
+        if gems:
+            levels[level] = _drum_hits(gems, clock)
+    double_kicks = sum(number == _MIDI_DOUBLE_KICK for _, number, _ in track.notes)
+    return ReferenceDrums(levels, pro, double_kicks, "" if levels else "PART DRUMS has no notes")
+
+
+def _chart_drums(parsed: ParsedChart, clock: _Clock, tags: Mapping[str, str]) -> ReferenceDrums:
+    """Read the drum sections of a ``.chart`` the way the game does: song.ini tags first, then the notes.
+
+    In ``.chart`` a pad is a tom unless a cymbal flag on the same tick marks it. Cymbal flags or the
+    ``pro_drums`` tag make a chart Pro. Without either, ``N 5`` or a sustained note means 5-lane, which is
+    left out.
+    """
+    notes: list[tuple[Difficulty, int, int, int]] = []
+    for level, section in _DRUM_CHART_SECTIONS.items():
+        for event in parsed.sections.get(section, []):
+            parts = event.args.split()
+            if event.type == "N" and len(parts) == 2 and all(part.isdigit() for part in parts):
+                notes.append((level, event.tick, int(parts[0]), int(parts[1])))
+    if not notes:
+        return ReferenceDrums(skipped="the chart has no drum sections")
+    flagged = {
+        (level, tick, _CHART_CYMBAL_FLAGS[value])
+        for level, tick, value, _ in notes
+        if value in _CHART_CYMBAL_FLAGS
+    }
+    pro = _is_true(tags, "pro_drums") or bool(flagged)
+    five_lane_notes = any(
+        value == _CHART_FIVE_LANE_GREEN or (value <= _CHART_FIVE_LANE_GREEN and length > 0)
+        for _, _, value, length in notes
+    )
+    if _is_true(tags, "five_lane_drums") or (five_lane_notes and not pro):
+        return ReferenceDrums(skipped=_FIVE_LANE)
+    levels = {}
+    for level in _DRUM_CHART_SECTIONS:
+        gems = [
+            (tick, DrumGem.of(value, pro and (level, tick, value) in flagged))
+            for at, tick, value, _ in notes
+            if at is level and value in range(5)
+        ]
+        if gems:
+            levels[level] = _drum_hits(gems, clock)
+    double_kicks = sum(
+        value == _CHART_DOUBLE_KICK for level, _, value, _ in notes if level is Difficulty.EXPERT
+    )
+    return ReferenceDrums(levels, pro, double_kicks, "" if levels else "the drum sections have no notes")
+
+
 def _from_midi(
-    name: str, source: Path, audio: AudioData, midi: MidiChart, delay_s: float
+    name: str,
+    source: Path,
+    audio: AudioData,
+    midi: MidiChart,
+    delay_s: float,
+    tags: Mapping[str, str] | None = None,
 ) -> ReferenceSong:
     if _MAIN_TRACK not in midi.tracks:
         raise ChartgenError(f"{name}: the chart has no {_MAIN_TRACK} track")
@@ -233,6 +391,7 @@ def _from_midi(
         is_midi=True,
         bass_levels=bass_levels,
         keys_levels=keys_levels,
+        drums=_midi_drums(midi, clock, tags or {}),
     )
 
 
@@ -258,7 +417,12 @@ def _chart_level(
 
 
 def _from_chart(
-    name: str, source: Path, audio: AudioData, text: str, delay_s: float
+    name: str,
+    source: Path,
+    audio: AudioData,
+    text: str,
+    delay_s: float,
+    tags: Mapping[str, str] | None = None,
 ) -> ReferenceSong:
     report = ValidationReport()
     parsed = parse_chart(text, report)
@@ -306,6 +470,7 @@ def _from_chart(
         levels,
         bass_levels=bass_levels,
         keys_levels=keys_levels,
+        drums=_chart_drums(parsed, clock, tags or {}),
     )
 
 
@@ -326,13 +491,30 @@ def _load_sng(path: Path) -> ReferenceSong:
                 samples, rate = sf.read(str(target), dtype="float32", always_2d=True)
                 sources.append((samples, rate))
     audio = _mix(sources)
+    tags = container.metadata
     if "notes.mid" in container.entries:
         midi = parse_midi(container.read("notes.mid"))
-        return _from_midi(path.stem, path, audio, midi, delay_s)
+        return _from_midi(path.stem, path, audio, midi, delay_s, tags)
     if "notes.chart" in container.entries:
         text = container.read("notes.chart").decode("utf-8-sig")
-        return _from_chart(path.stem, path, audio, text, delay_s)
+        return _from_chart(path.stem, path, audio, text, delay_s, tags)
     raise ChartgenError(f"{path.name} holds no chart")
+
+
+def _song_ini_tags(folder: Path) -> dict[str, str]:
+    """Return the ``[song]`` entries of a folder's song.ini, or nothing if it has none that can be read."""
+    path = folder / "song.ini"
+    if not path.is_file():
+        return {}
+    parser = configparser.ConfigParser(
+        delimiters=("=",), comment_prefixes=(), interpolation=None, strict=False
+    )
+    try:
+        parser.read_string(path.read_text(encoding="utf-8-sig"))
+    except (configparser.Error, UnicodeDecodeError):
+        return {}
+    sections = {name.lower(): name for name in parser.sections()}
+    return dict(parser[sections["song"]]) if "song" in sections else {}
 
 
 def _song_ini_delay(folder: Path) -> float:
@@ -357,10 +539,13 @@ def _load_folder(folder: Path) -> ReferenceSong:
             sources.append((samples, rate))
     audio = _mix(sources)
     delay_s = _song_ini_delay(folder)
+    tags = _song_ini_tags(folder)
     identity = folder / "notes.mid" if (folder / "notes.mid").is_file() else folder / "notes.chart"
     if identity.name == "notes.mid":
-        return _from_midi(folder.name, identity, audio, parse_midi(identity.read_bytes()), delay_s)
-    return _from_chart(folder.name, identity, audio, identity.read_text(encoding="utf-8-sig"), delay_s)
+        midi = parse_midi(identity.read_bytes())
+        return _from_midi(folder.name, identity, audio, midi, delay_s, tags)
+    text = identity.read_text(encoding="utf-8-sig")
+    return _from_chart(folder.name, identity, audio, text, delay_s, tags)
 
 
 def find_references(root: Path) -> list[Path]:

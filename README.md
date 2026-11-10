@@ -15,7 +15,7 @@ It only processes files you give it. It does not download audio or touch streami
 | B1 | Time signature, chords, sustains, Viterbi fret mapping, vocal bleed removal (Expert) | Done |
 | B2 | Difficulty reduction to Hard, Medium and Easy | Done |
 | B3 | Bass and keys; a song no longer needs a guitar | Done; keys not verified on real data |
-| C | Drums: percussion classification, four difficulties | Planned |
+| C | Drums (4-lane Pro): percussion classification, four difficulties | In progress: C.0 (format, writer, validator, reference reader) done |
 | D | Vocal events, sections, star power | Planned |
 
 Guitar, bass and keys are charted at all four difficulties, so a song needs at least one of the three.

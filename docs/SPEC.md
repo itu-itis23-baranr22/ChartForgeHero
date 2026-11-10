@@ -9,10 +9,12 @@ Decisions made since it was written are listed first and take precedence.
    passing tests and an existing Viterbi fret mapper. None of them existed. The project was
    started from scratch, so the foundation was built first, and the Viterbi mapper and difficulty
    reduction must be written in Phase B rather than reused.
-2. **Drums are 4 pads plus kick, not 5-lane.** In `.chart`, `N 4` is orange on 5-lane but green on
-   4-lane, and 5-lane green is `N 5`. The original mapping (0-4) is therefore a 4-lane layout, and
-   the cymbal flags 66/67/68 planned for later only exist on 4-lane Pro. Do not set
-   `five_lane_drums`.
+2. **Drums are 4-lane Pro: a kick and four pads.** The owner's first request called this "5-lane"; on
+   2026-11-10 the owner confirmed that was a slip and that the layout meant is the one the original
+   mapping describes, 0 = kick to 4 = green. In `.chart`, `N 4` is green on 4-lane and orange on 5-lane,
+   and 5-lane green is `N 5`, so `N 5` is never written on drums. Cymbal flags 66/67/68 exist only on
+   4-lane Pro and are part of the first version (decision 32). Every drum chart comes with
+   `pro_drums = True`; `five_lane_drums` is never set.
 3. **No stem audio is ever dropped.** The original text produced no audio file for a stem that
    fails the presence check, which would silently remove, for example, a quiet piano. Such stems,
    and those of instruments that were not requested, are mixed into `song.ogg`.
@@ -132,6 +134,29 @@ Decisions made since it was written are listed first and take precedence.
 31. **Section names are guarded.** An instrument may only be written under its own name: guitar `*Single`,
    bass `*DoubleBass`, keys `*Keyboard`, drums `*Drums`. GHL and 6-fret sections are never generated. The
    validator keeps its own table of these names rather than reading the writer's.
+32. **Drum gems and how they are written.** The owner approved the Phase C plan on 2026-11-10, with cymbal
+   flags in the first version. Kick `N 0`, snare red `N 1`, hi-hat yellow cymbal `N 2` + `N 66`, ride blue
+   cymbal `N 3` + `N 67`, crash green cymbal `N 4` + `N 68`, high and mid tom yellow and blue `N 2` and
+   `N 3`, floor tom green `N 4`. Red is never a cymbal. Never written on drums: `N 5`, 2x kick `N 32`,
+   accents, ghosts, sustains, rolls and fills. The writer refuses the notes and has no way to write rolls
+   or fills; the validator rejects every one of these notes.
+   Reading a human chart follows the game: song.ini tags first, then the notes. In `.chart` a pad is a tom
+   unless a cymbal flag marks it; in `.mid` yellow, blue and green are cymbals unless a tom marker (110-112)
+   covers them. A chart that is not Pro has no cymbals. 5-lane charts and disco flip are left out rather
+   than read wrong.
+33. **Drum hard rules.** In code and in the validator, and drum settings, which live in their own
+   `drum_*.toml` files, cannot loosen them: every level is made of the gems of the level above, at the same
+   ticks, so a kick stays a kick and a cymbal a cymbal; at most two pads at once on every level, for two
+   hands; at most two gems at once on Hard and Medium; on Easy never the kick together with a pad; nothing
+   on a sixteenth on Medium and Easy; no sustain; no note in an opening that is not part of the song; the
+   result is deterministic. Density, gem shares, on-beat share and the shortest gap are soft targets.
+34. **Drum classification.** Thresholds are relative to the stem's own strong hits; no threshold may fix
+   the density. The same pattern at two levels must give the same hits, which is tested and part of the
+   acceptance criteria. Toms and crash cannot be measured on the one reference (16 tom gems, 41 green
+   cymbals), so builds mark them as not verified, in the terminal and in `analysis.json`. The classifier is
+   also measured against the reference's own drum channels (`drums_1` kick, `drums_2` snare, `drums_3`
+   the rest), for diagnosis only. Guitar and bass stay byte for byte as they are, pinned by hashes in
+   `check.ps1 -Full`.
 
 ## Phase B1 targets (one reference song so far)
 
@@ -221,7 +246,8 @@ Rules:
   salience, beat strength and phrases, NOT "delete every Nth note". No one-to-one pitch-to-fret mapping.
 - Drums: percussion classification instead of fret mapping (kick, snare, hi-hat, tom, cymbal). For
   the first version a simple classifier on spectral band energy is enough. Output: 0=kick, 1=red/snare,
-  2=yellow, 3=blue, 4=green. ProDrums cymbal flags (66/67/68) are a later phase.
+  2=yellow, 3=blue, 4=green. ProDrums cymbal flags (66/67/68) are a later phase. (Decisions 2 and 32:
+  this layout is 4-lane Pro, and the cymbal flags moved into the first version.)
 
 ## Output format
 
