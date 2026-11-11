@@ -157,6 +157,15 @@ Decisions made since it was written are listed first and take precedence.
    also measured against the reference's own drum channels (`drums_1` kick, `drums_2` snare, `drums_3`
    the rest), for diagnosis only. Guitar and bass stay byte for byte as they are, pinned by hashes in
    `check.ps1 -Full`.
+35. **How drums are heard (C.1).** Three detectors side by side: the kick at 30-130 Hz and the snare at
+   150-600 Hz on linear spectral flux, the cymbals at 7-11 kHz on decibel flux. Each calls a high percentile
+   of its own peaks a strong hit and keeps the peaks that reach a share of it. Leaks are judged by comparing
+   two bands at one moment from one spectrum: the snare band must rise at least as much as the kick band,
+   the kick band at least 0.3 times the snare band, and a cymbal's high band must come within 48 dB of the
+   stem's loud level. NMF is not used: under these thresholds a linear band found the kick better (F1
+   0.962 against 0.952) and costs no extra fit. Hi-hat, ride and crash are told apart by how long the
+   high band rings. The chart keeps one gem per lane (a cymbal wins it over a tom) and at most two pads per
+   tick (the snare first, then the louder cymbal). Drums are charted at Expert only until C.2.
 
 ## Phase B1 targets (one reference song so far)
 

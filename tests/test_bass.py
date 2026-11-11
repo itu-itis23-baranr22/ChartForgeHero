@@ -697,7 +697,8 @@ def test_a_song_without_a_guitar_builds_on_its_bass(song_file, tmp_path):
     assert not (result.folder / "guitar.ogg").exists()
     assert (result.folder / "bass.ogg").exists()
     assert "guitar" in result.analysis["audio_files"]["song.ogg"]["stems"], "its audio is not lost"
-    assert set(result.analysis["charts"]) == {"bass"}
+    # The synthetic song's drum stem is a click track, which charts as drums since C.1.
+    assert set(result.analysis["charts"]) == {"bass", "drums"}
     assert "chord_limit" not in result.analysis["charts"]["bass"]["expert"]
     assert "orange_pitches" in result.analysis["charts"]["bass"]["expert"]
     quiet = result.analysis["charts"]["bass"]["expert"]["quiet_notes"]
@@ -710,6 +711,7 @@ def test_no_instrument_to_play_stops_with_an_explanation_and_no_folder(song_file
     stems = song_stems()
     stems["guitar"] = stems["guitar"] * 0.0
     stems["bass"] = stems["bass"] * 0.0
+    stems["drums"] = stems["drums"] * 0.0
     with pytest.raises(NoPlayableInstrumentError, match="unplayable"):
         build_song(config(song_file, tmp_path), FakeSeparator(stems))
     out = tmp_path / "out"
@@ -841,7 +843,9 @@ def test_real_songs_without_a_guitar_build(tmp_path, file_name, lead_in):
         assert f"[{level}DoubleBass]" in text
     assert "guitar" in result.analysis["audio_files"]["song.ogg"]["stems"]
     assert "piano" in result.analysis["audio_files"]["song.ogg"]["stems"]
-    assert set(result.analysis["song_ini"]["difficulty"]) == {"bass"}
+    # Drums are charted since C.1; the bass sections themselves are pinned byte for byte below.
+    assert set(result.analysis["song_ini"]["difficulty"]) == {"bass", "drums"}
+    assert "[ExpertDrums]" in text
     for level in ("expert", "hard", "medium", "easy"):
         assert result.analysis["charts"]["bass"][level]["chord_positions"] == 0
         assert "orange_pitches" in result.analysis["charts"]["bass"][level]

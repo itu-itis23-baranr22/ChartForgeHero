@@ -96,6 +96,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also write debug/debug_click.wav: the mix with a metronome taken from the written chart",
     )
+    build.add_argument(
+        "--drum-ear-test",
+        action="store_true",
+        help="also write debug/drums_<part>.wav: the drum stem with a click on every hit of that part",
+    )
 
     validate = commands.add_parser("validate", help="check existing song folders")
     validate.add_argument("folders", type=Path, nargs="+", metavar="folder")
@@ -142,6 +147,7 @@ def _run_build(args: argparse.Namespace) -> int:
             force=args.force,
             bpm_override=args.bpm,
             click_overlay=args.click_overlay,
+            drum_ear_test=args.drum_ear_test,
             max_beat_drift_ms=args.max_beat_drift_ms,
         ),
         DemucsSeparator(device=args.device),

@@ -26,6 +26,7 @@ from chartgen.chart.instruments import STEM_FOR_INSTRUMENT, build_tracks_for
 from chartgen.core.model import Difficulty, Instrument
 from chartgen.core.timing import TempoMap
 from chartgen.errors import ChartgenError
+from chartgen.evaluation.drum_metrics import channel_metrics, drum_metrics
 from chartgen.evaluation.metrics import (
     average,
     chart_metrics,
@@ -41,6 +42,7 @@ from chartgen.evaluation.reference import (
     ReferenceNote,
     ReferenceSong,
     find_references,
+    load_drum_channels,
     load_reference,
     split_of,
 )
@@ -272,6 +274,26 @@ def evaluate_song(
             )
             if keys:
                 result["keys"] = compare_levels(keys, tempo.tempo_map, song, song.keys_levels)
+    human_drums = song.drums.levels.get(Difficulty.EXPERT)
+    if human_drums:
+        drums = build_tracks_for(
+            Instrument.DRUMS,
+            analysis_mono(stems.stems[STEM_FOR_INSTRUMENT[Instrument.DRUMS]], stems.samplerate),
+            tempo.tempo_map,
+            stems.duration_s,
+            not_before_s=tempo.lead_in_end_s,
+        )
+        if drums:
+            entry = drum_metrics(drums[0].track, tempo.tempo_map, human_drums)
+            entry["human_is_pro"] = song.drums.pro
+            channels = load_drum_channels(song.source)
+            if channels:
+                entry["channels"] = channel_metrics(
+                    drums[0].track, tempo.tempo_map, human_drums, channels
+                )
+            result["drums"] = entry
+    elif song.drums.skipped:
+        result["drums_skipped"] = song.drums.skipped
     return result
 
 
@@ -369,6 +391,50 @@ def _keys_lines(name: str, song: dict[str, object]) -> list[str]:
     return _level_table(f"Keys of {name}", song.get("keys", {}))  # type: ignore[arg-type]
 
 
+def _drum_lines(name: str, song: dict[str, object]) -> list[str]:
+    """Show a song's Expert drums against the human's, and the channels as diagnosis."""
+    drums = song.get("drums")
+    if not isinstance(drums, dict):
+        skipped = song.get("drums_skipped")
+        return [f"Drums of {name}: not compared: {skipped}", ""] if skipped else []
+    pro = "" if drums["human_is_pro"] else "; the human chart is not Pro, so cymbals mean nothing"
+    lines = [
+        f"Drums of {name}, Expert ({drums['positions_mine']} positions mine, "
+        f"{drums['positions_human']} human{pro})"
+    ]
+    for key, label in _DRUM_SHOWN:
+        score = drums[key]
+        lines.append(
+            f"{label:20s} F1 {score['f1']:.3f}  P {score['precision']:.3f}  R {score['recall']:.3f}"
+        )
+    lane = drums["hihat_ride_same_lane"]
+    lane_text = "-" if lane is None else f"{lane:.3f}"
+    lines.append(f"{'hi-hat / ride':20s} same lane {lane_text} of {drums['hihat_ride_compared']} compared")
+    lines.append(f"{'worst gem gap':20s} {drums['worst_gem_gap']:.3f}")
+    shares = ", ".join(
+        f"{gem} {value['mine']:.2f}/{value['human']:.2f}"
+        for gem, value in drums["gem_shares"].items()
+        if value["mine"] or value["human"]
+    )
+    lines.append(f"gem shares mine / human: {shares}")
+    for part, value in drums.get("channels", {}).items():
+        lines.append(
+            f"channel {part} (diagnosis only): {value['channel_onsets']} onsets; "
+            f"F1 mine {value['mine']['f1']:.3f}, human {value['human']['f1']:.3f}"
+        )
+    lines.append("")
+    return lines
+
+
+_DRUM_SHOWN = (
+    ("position", "position"),
+    ("kick", "kick"),
+    ("snare", "snare"),
+    ("cymbal", "cymbal"),
+    ("tom", "tom (not verified)"),
+)
+
+
 def format_report(report: EvaluationReport) -> str:
     """Render one table per split, test first: it is the score that counts."""
     lines: list[str] = []
@@ -390,6 +456,7 @@ def format_report(report: EvaluationReport) -> str:
             lines.extend(_level_table(f"Difficulties of {name}", report.songs[name].get("levels", {})))
             lines.extend(_level_table(f"Bass of {name}", report.songs[name].get("bass", {})))
             lines.extend(_keys_lines(name, report.songs[name]))
+            lines.extend(_drum_lines(name, report.songs[name]))
         if len(names) > 1:
             lines.extend(
                 _level_table("Difficulties, average", report.level_averages.get(split, {}))

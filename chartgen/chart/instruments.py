@@ -7,6 +7,7 @@ from dataclasses import replace
 
 import numpy as np
 
+from chartgen.audio.drum_hits import DrumHitConfig, detect_drum_hits
 from chartgen.audio.quiet_notes import QuietNoteLimits, load_limits
 from chartgen.chart.charter import ChartedTrack, build_expert_track
 from chartgen.chart.difficulty import (
@@ -21,6 +22,7 @@ from chartgen.chart.difficulty import (
     measure_track,
     reduce_track,
 )
+from chartgen.chart.drum_charter import build_drum_expert_track
 from chartgen.chart.fret_mapping import BASS_WEIGHTS_PATH, FretWeights, load_weights
 from chartgen.core.model import Instrument, Track
 from chartgen.core.timing import TempoMap
@@ -32,8 +34,10 @@ STEM_FOR_INSTRUMENT: Mapping[Instrument, str] = {
     Instrument.KEYS: "piano",
 }
 
-CHARTABLE_INSTRUMENTS = frozenset({Instrument.GUITAR, Instrument.BASS, Instrument.KEYS})
-"""Instruments with a chart generator so far. Later phases add the others."""
+CHARTABLE_INSTRUMENTS = frozenset(
+    {Instrument.GUITAR, Instrument.BASS, Instrument.KEYS, Instrument.DRUMS}
+)
+"""Instruments with a chart generator. Drums have Expert only until C.2 adds the lower levels."""
 UNVERIFIED_INSTRUMENTS = frozenset({Instrument.KEYS})
 """Charted, but only ever tested on synthetic audio: none of the songs measured so far has a piano
 stem that counts as present, and the one human keyboard chart has 17 positions."""
@@ -81,6 +85,7 @@ def build_tracks_for(
     vocals: np.ndarray | None = None,
     not_before_s: float = 0.0,
     quiet_limits: QuietNoteLimits | None = None,
+    drum_config: DrumHitConfig | None = None,
 ) -> list[ChartedTrack]:
     """Return the charted tracks of ``instrument``, Expert first, then Hard, Medium and Easy.
 
@@ -94,7 +99,13 @@ def build_tracks_for(
         vocals: The vocal stem, to find bleed in the instruments that are checked for it.
         not_before_s: Where an opening that is not part of the song ends. Nothing lands before it.
         quiet_limits: Replaces what ``quiet_notes.toml`` says, for the instruments it applies to.
+        drum_config: Replaces what ``drum_hits.toml`` says.
     """
+    if instrument is Instrument.DRUMS:
+        expert = build_drum_expert_track(
+            detect_drum_hits(mono, drum_config), tempo_map, duration_s, not_before_s
+        )
+        return [expert] if expert.track.notes else []
     config, weights = settings_for(instrument)
     expert = build_expert_track(
         instrument,

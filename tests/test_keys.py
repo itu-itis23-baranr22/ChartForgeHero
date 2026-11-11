@@ -152,9 +152,9 @@ def test_the_piano_presence_limit_stays_as_it_was():
 
 @pytest.mark.heavy
 def test_a_song_can_build_on_keys_alone(song_file, tmp_path):
-    result = build_song(
-        config(song_file, tmp_path), FakeSeparator(stems_with_piano(guitar=False, bass=False))
-    )
+    stems = stems_with_piano(guitar=False, bass=False)
+    stems["drums"] = stems["drums"] * 0.0
+    result = build_song(config(song_file, tmp_path), FakeSeparator(stems))
     assert validate_song_folder(result.folder).ok
     assert set(result.analysis["charts"]) == {"keys"}
     text = (result.folder / "notes.chart").read_text(encoding="utf-8-sig")
@@ -164,7 +164,7 @@ def test_a_song_can_build_on_keys_alone(song_file, tmp_path):
 @pytest.mark.heavy
 def test_with_nothing_to_play_the_build_still_stops(song_file, tmp_path):
     stems = song_stems()
-    for name in ("guitar", "bass", "piano"):
+    for name in ("guitar", "bass", "piano", "drums"):
         stems[name] = stems[name] * 0.0
     with pytest.raises(NoPlayableInstrumentError):
         build_song(config(song_file, tmp_path), FakeSeparator(stems))
@@ -232,12 +232,12 @@ def test_three_instruments_share_one_sync_track(song_file, tmp_path):
     assert validate_song_folder(result.folder).ok
     text = (result.folder / "notes.chart").read_text(encoding="utf-8-sig")
     assert text.count("[SyncTrack]") == 1
-    assert set(result.analysis["charts"]) == {"guitar", "bass", "keys"}
+    assert set(result.analysis["charts"]) == {"guitar", "bass", "keys", "drums"}
     events = result.analysis["tempo"]["tempo_events"]
     written = TempoMap([TempoEvent(event["tick"], event["bpm"]) for event in events])
     played = np.arange(START, SECONDS, SPACING)
-    # All three play on the half second from START. Read through the one tempo map, they must agree.
-    for section in ("ExpertSingle", "ExpertDoubleBass", "ExpertKeyboard"):
+    # All four play on the half second from START. Read through the one tempo map, they must agree.
+    for section in ("ExpertSingle", "ExpertDoubleBass", "ExpertKeyboard", "ExpertDrums"):
         body = re.search(rf"\[{section}\]\s*\{{(.*?)\}}", text, flags=re.S).group(1)
         ticks = np.array(sorted({int(tick) for tick in re.findall(r"(\d+) = N", body)}), dtype=float)
         assert ticks.size >= COUNT - 3, section

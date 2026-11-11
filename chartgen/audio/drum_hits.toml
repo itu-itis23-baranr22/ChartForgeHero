@@ -1,0 +1,85 @@
+# Drum hits from the drum stem. See chartgen/audio/drum_hits.py.
+#
+# Every threshold is relative to the stem's own strong hits, or compares two bands of the stem at one
+# moment: a detector calls the given percentile of its peaks' heights a strong hit and keeps the peaks
+# that reach `ratio` of it. Nothing here fixes how many hits there are, and nothing here can loosen a hard
+# rule: what a position may hold is checked in the code that writes the chart.
+#
+# Chosen on Californication, which is train. Latencies were measured on synthetic hits with known times:
+# the envelopes peak 5-16 ms before the attack rather than after it, so none is subtracted.
+
+# Frames this far below the stem's loud level are silence: what is found there is bleed.
+gate_db = -40.0
+# Hits of different parts this close together are one position.
+merge_window_s = 0.035
+# Two hits of one part closer than this are one hit.
+min_gap_s = 0.05
+# A kick's body leaks into the snare band. A snare-band hit counts only if that band rises at least
+# snare_over_kick times as much as the kick's band at that moment, both read from one spectrum. On
+# Californication, of the snare-band hits that come with a kick, 1.0 kept 18 of the 21 real snares and
+# 2 of the 258 false ones.
+snare_over_kick = 1.0
+# The other way round, a snare's noise reaches down into the kick's band, if less. A kick counts only if
+# its band rises at least kick_over_snare times as much as the snare's. On Californication the human's
+# kicks lie at 0.39 or more in 99% of them; 5 of the 9 false kicks lie lower.
+kick_over_snare = 0.3
+# On a log scale another drum's click, or a stem's noise floor, can look like a cymbal in a quiet high
+# band. A cymbal's high band must come within cymbal_min_db of the stem's loud level: a flat spectrum at
+# its loud RMS (95th percentile). The cymbals found on Californication, Danza, Toca and LastResort lie at
+# -45 dB or above in 99% of them (-36 to -45 by song); the noise floor under a synthetic 808 at -52 dB.
+cymbal_min_db = -48.0
+
+[kick]
+low_hz = 30.0
+high_hz = 130.0
+strong_percentile = 99.0
+ratio = 0.5
+latency_s = 0.0
+
+[snare]
+low_hz = 150.0
+high_hz = 600.0
+strong_percentile = 90.0
+ratio = 0.1
+latency_s = 0.0
+
+[cymbal]
+# On a log scale a ride rises less than a hi-hat: its wash is still ringing when the next hit comes. At
+# 0.3 a synthetic ride on quarter notes kept 4 of 24 hits; at 0.25 it keeps 18 and Californication's
+# cymbal F1 stays 0.87 (0.85 at 0.2, where precision falls to 0.76).
+low_hz = 7000.0
+high_hz = 11000.0
+strong_percentile = 95.0
+ratio = 0.25
+latency_s = 0.0
+
+[cymbal_kinds]
+# A cymbal whose high band falls below hihat_max_ring of its peak within ring_probe_s (or before the
+# next cymbal) is a hi-hat. Otherwise it is a ride, unless it is a crash: with a kick, at least
+# crash_min_strength of the cymbals' strong hits, and still at crash_min_ring after crash_probe_s.
+# The crash is not verified: the reference has 41 green cymbals.
+ring_probe_s = 0.09
+hihat_max_ring = 0.4
+crash_probe_s = 0.6
+crash_min_ring = 0.3
+crash_min_strength = 0.9
+
+[tom]
+# Not verified: the one reference has 16 tom gems. A snare-band hit whose noise band (the snare's wires)
+# stays below max_noise_ratio of its body band is a tom. On Californication the human's snares lie at
+# 1.2 or more (in 90% of them), and so do its toms (median 2.1): this song's toms cannot be told apart
+# this way, so the limit is set where no real snare is lost. A rise-based test there called 38 snares toms.
+body_low_hz = 80.0
+body_high_hz = 400.0
+noise_low_hz = 2000.0
+noise_high_hz = 5000.0
+max_noise_ratio = 0.3
+# A noiseless snare-band hit together with a kick, or with more than max_low_ratio times as much energy in
+# the kick's band as in the body band above it (from the kick's top to body_high_hz), is a kick's own body
+# (an 808, for example) and no drum of its own. Before this rule Danza had 215 toms, 200 of them on a kick;
+# the other 15 and LastResort's 11 lie 1.2-4 times lower, Toca's tonal hits 0.1-0.5. A real floor tom may
+# be lost to this too: the one reference has none to say.
+max_low_ratio = 1.0
+# The tom's pitch: at or above high_tom_min_hz the high tom, at or below floor_tom_max_hz the floor tom.
+high_tom_min_hz = 200.0
+floor_tom_max_hz = 120.0

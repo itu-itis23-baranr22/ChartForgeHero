@@ -15,10 +15,11 @@ It only processes files you give it. It does not download audio or touch streami
 | B1 | Time signature, chords, sustains, Viterbi fret mapping, vocal bleed removal (Expert) | Done |
 | B2 | Difficulty reduction to Hard, Medium and Easy | Done |
 | B3 | Bass and keys; a song no longer needs a guitar | Done; keys not verified on real data |
-| C | Drums (4-lane Pro): percussion classification, four difficulties | In progress: C.0 (format, writer, validator, reference reader) done |
+| C | Drums (4-lane Pro): percussion classification, four difficulties | In progress: C.0 format and C.1 Expert done; lower levels next |
 | D | Vocal events, sections, star power | Planned |
 
-Guitar, bass and keys are charted at all four difficulties, so a song needs at least one of the three.
+Guitar, bass and keys are charted at all four difficulties, drums at Expert so far, so a song needs at least one of the four.
+Drums are 4-lane Pro with cymbals; toms and the crash are not verified on real data, and a build says so.
 Keys have only been tested on synthetic audio, and a build says so. Telling chords from single notes on heavily distorted guitar is unverified. 3/4 and 6/8 have only
 been tested on synthetic audio.
 
@@ -87,6 +88,10 @@ python -m chartgen build song.mp3 --artist "Artist" --title "Title" --bpm 97 --c
 `notes.chart`, the first beat of each bar an octave higher. A wrong tempo audibly slides away from
 the drums. `--bpm` forces one exact tempo; the phase and the first downbeat are still detected.
 `--max-beat-drift-ms` sets how far a region's beats may stray from one tempo before it gets an event.
+
+`--drum-ear-test` adds `debug/drums_kick.wav`, `drums_snare.wav`, `drums_hihat.wav`, `drums_ride.wav`,
+`drums_crash.wav` and `drums_toms.wav`: the drum stem with a click on every hit of that part, read back
+from the written chart. Each click should fall on that part, and the part should not sound without one.
 
 ## Measuring against human charts
 

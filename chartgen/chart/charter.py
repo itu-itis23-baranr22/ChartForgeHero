@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -30,6 +31,9 @@ from chartgen.chart.difficulty import (
 from chartgen.chart.fret_mapping import FretWeights, NoteInput, map_notes, single_notes_only
 from chartgen.core.model import ChartNote, Difficulty, Instrument, Track
 from chartgen.core.timing import TempoMap
+
+if TYPE_CHECKING:
+    from chartgen.chart.drum_charter import DrumChart
 
 GRID_DIVISOR = 4
 """Snap to sixteenth notes: a quarter note divided by this."""
@@ -66,6 +70,8 @@ class ChartedTrack:
     """The notes under that limit, whether or not the rule is in force."""
     orange_pitches: OrangePitches | None = None
     """Which pitches this level's orange notes are, for instruments whose pitch can be read."""
+    drum_chart: DrumChart | None = None
+    """What became of a drum stem's hits. Drums only."""
 
 
 def _quantize(times: np.ndarray, tempo_map: TempoMap) -> np.ndarray:

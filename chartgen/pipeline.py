@@ -24,6 +24,7 @@ from chartgen.audio.separation import STEM_NAMES, Separator, StemSet, separate_w
 from chartgen.audio.tempo import DEFAULT_MAX_BEAT_DRIFT_S, TempoAnalysis, estimate_tempo_map
 from chartgen.chart.charter import ChartedTrack
 from chartgen.chart.difficulty import HARD_RULES, HardRuleViolation
+from chartgen.chart.drum_charter import DRUM_HARD_RULES, UNVERIFIED_PIECES
 from chartgen.chart.instruments import (
     CHARTABLE_INSTRUMENTS,
     STEM_FOR_INSTRUMENT,
@@ -31,6 +32,7 @@ from chartgen.chart.instruments import (
     build_tracks_for,
 )
 from chartgen.clonehero.chart_format import DotChartExporter
+from chartgen.clonehero.drum_ear_test import EAR_TEST_DIR, write_drum_ear_test
 from chartgen.clonehero.click_overlay import (
     CLICK_DIR,
     CLICK_FILE,
@@ -70,6 +72,8 @@ class BuildConfig:
     force: bool = False
     bpm_override: float | None = None
     click_overlay: bool = False
+    drum_ear_test: bool = False
+    """Write one listening file per part of the kit into ``debug``."""
     max_beat_drift_ms: float = DEFAULT_MAX_BEAT_DRIFT_S * 1000.0
 
 
@@ -143,6 +147,8 @@ def _build_tracks(
                 f"{instrument.value}: not verified on real data: this chart generator has only been "
                 f"tested on synthetic audio"
             )
+        elif instrument is Instrument.DRUMS:
+            warnings.append(_unverified_drums(built[0]))
         for item in built:
             _report_track(instrument, item, warnings)
         charted.extend(built)
@@ -213,6 +219,60 @@ def _report_track(instrument: Instrument, item: ChartedTrack, warnings: list[str
             f"limit). Chords and single notes may be mixed up here."
         )
     _report_level(instrument, item, warnings)
+    _report_drums(item)
+
+
+def _unverified_drums(item: ChartedTrack) -> str:
+    """Say that toms and crash are not verified, and how many of them this chart has."""
+    counts = item.drum_chart.unverified_counts(item.track) if item.drum_chart else {}
+    toms = sum(count for gem, count in counts.items() if gem.endswith("_tom"))
+    return (
+        "drums: toms and crash are not verified on real data, the one reference has too few of "
+        f"them (this chart: {toms} tom gems, {counts.get('green_cymbal', 0)} crashes)"
+    )
+
+
+def _report_drums(item: ChartedTrack) -> None:
+    """Say what the drum stem was heard to hold, and what had to give way."""
+    drum = item.drum_chart
+    if drum is None:
+        return
+    log.info(
+        "    drums/%s: %d positions from %d hits found in %.1f s (detectors: %s); %d hits shared a "
+        "tick, %d pads left out for two hands",
+        item.track.difficulty.value,
+        len({note.tick for note in item.track.notes}),
+        len(drum.analysis.hits),
+        drum.analysis.seconds,
+        ", ".join(f"{name} {count}" for name, count in drum.analysis.detector_hits.items()),
+        drum.merged_on_one_tick,
+        drum.pads_dropped,
+    )
+    log.info(
+        "    drums/%s gems: %s",
+        item.track.difficulty.value,
+        ", ".join(f"{name} {count}" for name, count in drum.gem_counts(item.track).items() if count),
+    )
+
+
+def _drum_analysis(item: ChartedTrack) -> dict[str, object]:
+    """What ``analysis.json`` says about a drum level beyond the common numbers."""
+    drum = item.drum_chart
+    if drum is None:
+        return {}
+    return {
+        "gems_by_kind": drum.gem_counts(item.track),
+        "not_verified": {
+            "parts": sorted(piece.value for piece in UNVERIFIED_PIECES),
+            "gems": drum.unverified_counts(item.track),
+        },
+        "hits_heard": len(drum.analysis.hits),
+        "detector_hits": dict(drum.analysis.detector_hits),
+        "strong_hit_levels": {key: round(value, 4) for key, value in drum.analysis.strong_levels.items()},
+        "hits_sharing_a_tick": drum.merged_on_one_tick,
+        "pads_left_out_for_two_hands": drum.pads_dropped,
+        "analysis_seconds": round(drum.analysis.seconds, 3),
+    }
 
 
 def _report_orange(instrument: Instrument, item: ChartedTrack, warnings: list[str]) -> None:
@@ -305,6 +365,7 @@ def _analysis(
     warnings: list[str],
     timings_s: dict[str, float],
     click_schedule: ClickSchedule | None,
+    ear_test: dict[str, int] | None = None,
 ) -> dict[str, object]:
     charts: dict[str, dict[str, dict[str, object]]] = {}
     for item in charted:
@@ -357,6 +418,8 @@ def _analysis(
                     for note in item.quiet
                 ],
             }
+        if item.drum_chart is not None:
+            entry["drums"] = _drum_analysis(item)
         charts.setdefault(track.instrument.value, {})[track.difficulty.value] = entry
     return {
         "schema_version": 2,
@@ -439,6 +502,7 @@ def _analysis(
             instrument.value for instrument in UNVERIFIED_INSTRUMENTS if instrument.value in charts
         ),
         "difficulty_hard_rules": list(HARD_RULES),
+        **({"drum_hard_rules": list(DRUM_HARD_RULES)} if "drums" in charts else {}),
         "song_ini": {
             "preview_start_time_ms": preview_start_ms,
             "difficulty": {inst.value: tier for inst, tier in difficulties.items()},
@@ -449,6 +513,8 @@ def _analysis(
             "clicks": int(click_schedule.times.size),
             "downbeats": int(click_schedule.is_downbeat.sum()),
         },
+        "drum_ear_test": ear_test
+        and {"folder": EAR_TEST_DIR, "clicks_per_file": ear_test},
         "timings_s": timings_s,
         "warnings": warnings,
     }
@@ -473,7 +539,7 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
     if destination.exists() and not config.force:
         raise PackagingError(f"{destination} already exists; use --force to replace it")
 
-    stages = _Stages(_BASE_STAGE_COUNT + int(config.click_overlay))
+    stages = _Stages(_BASE_STAGE_COUNT + int(config.click_overlay) + int(config.drum_ear_test))
     warnings: list[str] = []
 
     with stages.stage("Load audio"):
@@ -600,6 +666,18 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
                     temporary / CLICK_DIR / CLICK_FILE,
                 )
 
+        ear_test: dict[str, int] | None = None
+        if config.drum_ear_test:
+            with stages.stage("Write drum listening files"):
+                if any(track.instrument is Instrument.DRUMS for track in tracks):
+                    ear_test = write_drum_ear_test(
+                        temporary / DotChartExporter.file_name,
+                        analysis_mono(stems.stems["drums"], stems.samplerate),
+                        temporary / EAR_TEST_DIR,
+                    )
+                else:
+                    warnings.append("--drum-ear-test: there is no drum chart to listen to")
+
         analysis = _analysis(
             config,
             audio,
@@ -613,6 +691,7 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
             warnings,
             stages.timings_s,
             schedule,
+            ear_test,
         )
         (temporary / ANALYSIS_FILE).write_text(
             json.dumps(analysis, indent=2, ensure_ascii=False), encoding="utf-8"

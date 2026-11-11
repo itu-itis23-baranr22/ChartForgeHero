@@ -4,7 +4,9 @@ Faz C (davul) devam ediyor, C.0, C.1 ve C.2 adımlarına bölündü ve her birin
 
 ## Şu anki adım
 
-**C.0 bitti: davul formatı, yazıcı, validator ve referans okuyucu (ses yok). Onay bekliyor. Sırada C.1: Expert sınıflandırma.**
+**C.1 bitti: Expert davul chart'ı ve kulak testi dosyaları.** Proje sahibi 2026-11-11'de C.1'in commit'lenmesini ve ardından C.2'ye geçilmesini istedi; kulak testinin sonucu henüz gelmedi. Sırada: test hızlandırma (ayrı commit), sonra **C.2: Hard, Medium, Easy, bot önizleme, `Songs`'a kopyalama.**
+
+C.0 `1fd3d91`'de kapandı. Commit mesajlarına Claude imzası eklenmiyor: `.claude/settings.json` (`00681d2`).
 
 B3 bitti (`2e91ece`): bas ve keys chart'lanıyor, şarkının gitara ihtiyacı yok.
 
@@ -78,6 +80,88 @@ Hi-hat ile ride sönme süresinden ayrılıyor: sarı cymbal ortanca 70 ms, mavi
 - **C.0:** format, yazıcı, validator, referans okuyucu (ses yok).
 - **C.1:** Expert sınıflandırma ve kulak testi dosyası.
 - **C.2:** Hard, Medium, Easy, bot önizleme ve proje sahibinin çalması.
+
+## C.1: Expert davul, kulak testi
+
+**Nasıl duyuluyor** (`audio/drum_hits.py`, ayarlar `audio/drum_hits.toml`):
+- Üç dedektör yan yana: kick 30-130 Hz, snare 150-600 Hz (ikisi doğrusal spektral akış), cymbal 7-11 kHz (desibel akışı; kapalı hi-hat ile crash arasındaki ses farkı doğrusal ölçekte hi-hat'leri gizler). 35 ms içindeki vuruşlar bir konum olur, aynı konumda birden çok parça olabilir.
+- **Her eşik stem'in kendi güçlü vuruşlarına göreli:** dedektör, zirvelerinin yüksek bir yüzdelik dilimini (kick %99, snare %90, cymbal %95) "güçlü vuruş" sayar ve onun bir payına (0,5 / 0,1 / 0,25) ulaşan zirveleri alır. Vuruş sayısını sabitleyen eşik yok. Prototipin yüzdelik eşikleri kaldırıldı.
+- **Sızıntı kuralları,** aynı anda iki bandı aynı spektrumdan karşılaştırır: snare bandı kick bandının en az 1,0 katı yükselmeli (kick'in gövdesi snare bandına taşar), kick bandı snare bandının en az 0,3 katı (snare'in gürültüsü aşağı taşar), cymbal'in yüksek bandı stem'in yüksek düzeyine (%95 RMS) en çok 48 dB uzak olmalı (başka davulun tıkı ya da gürültü tabanı log ölçekte cymbal gibi görünür).
+- **Cymbal türü:** 90 ms içinde tepe seviyesinin %40'ının altına düşen hi-hat; kick'le gelen, cymbal'lerin güçlü vuruşunun en az 0,9'u kadar ve 0,6 sn sonra hâlâ %30 çınlayan crash; gerisi ride.
+- **Tom:** gürültü bandı (2-5 kHz) gövdenin 0,3'ünün altında kalan snare-bandı vuruşu, perdesine göre yüksek, orta ya da yer tomu. Kick'le birlikte gelen ya da enerjisi kick bandında toplanan böyle bir vuruş kick'in kendi gövdesidir (808 gibi) ve atılır.
+- Gecikmeler sentetik vuruşlarla ölçüldü: zarflar saldırıdan 1-7 ms önce tepe yapıyor, hiçbir şey çıkarılmıyor.
+
+**Chart** (`chart/drum_charter.py`): vuruşlar gitarla aynı 16'lık ızgaraya oturur. Aynı tick'e düşenler birleşir: şerit başına bir gem (cymbal tom'u yener), en fazla 2 pad (önce snare, sonra güçlü cymbal, tom en son). Kesin kurallar kodda (`check_drum_track`) ve validator'da; `drum_hits.toml` bir konumun ne tutabileceğine karar veremez, öyle bir anahtar reddedilir. Davul yalnızca Expert'te; alt seviyeler C.2'de.
+
+**NMF:** kullanılmadı. Göreli eşik kuralıyla doğrusal bant akışı kick'te NMF'yi geçti (Californication, ızgaradan önce: F1 0,962 / 0,952). NMF bu 324 sn'lik şarkıya yaklaşık 0,9 sn eklerdi (mel spektrogram + 60 yineleme; STFT ortak). Davul analizinin tamamı aynı şarkıda 1,4-1,8 sn; Danza, Toca ve LastResort build'lerinde 0,5-0,7 sn.
+
+**Kabul kriterleri** (Californication, `train`, Expert, chart'a yazıldıktan sonra; ayarlar bu şarkıda seçildi, yani iyimser):
+
+| Ölçüt | Hedef | Sonuç |
+|---|---|---|
+| Konum F1 | ≥ 0,85 | 0,919 (P 0,928, R 0,910) |
+| Kick F1 | ≥ 0,80 | 0,962 |
+| Snare F1 | ≥ 0,70 | 0,908 |
+| Cymbal F1 | ≥ 0,80 | 0,874 (P 0,825, R 0,929) |
+| Hi-hat ile ride'da doğru şerit | ≥ %75 | %78,9 (774 karşılaştırma) |
+| En büyük gem payı sapması | ≤ 0,12 | 0,054 (mavi cymbal %31,3 / 25,9) |
+| Aynı desen iki seviyede aynı vuruşlar | kesin | Sentetik kitte 1,0, 0,3 ve 0,05 seviyede birebir aynı |
+
+Gem payları (ben / insan): kick %14,2 / 14,8, kırmızı %35,8 / 38,2, sarı cymbal %17,6 / 18,1, mavi cymbal %31,3 / 25,9, yeşil cymbal %1,1 / 2,1, sarı tom %0 / 0,8.
+
+**`.sng` davul kanallarına karşı teşhis** (kabul kriteri değil): kanallar mikrofon kayıtları ve her biri diğer davulları da duyuyor; kick kanalında 661 onset var, insan 288 kick yazmış.
+
+| Kanal | Onset | Bizim F1 | İnsanın F1'i |
+|---|---|---|---|
+| `drums_1` (kick) | 661 | 0,601 | 0,607 |
+| `drums_2` (snare) | 1443 | 0,638 | 0,669 |
+| `drums_3` (diğer) | 1257 | 0,773 | 0,740 |
+
+Bizim chart kanallarla insanınki kadar örtüşüyor; kick ve snare'de kanalın yarısından azını ikimiz de yazıyoruz.
+
+**Gerçeği olmayan şarkılar** (`--drum-ear-test` ile, `outputs\<şarkı>\debug\drums_*.wav`):
+
+| | Konum | Kick | Kırmızı | Sarı / mavi / yeşil cymbal | Tom |
+|---|---|---|---|---|---|
+| Danza | 1073 | 463 | 598 | 614 / 215 / 9 | 6 yer tomu |
+| Toca | 527 | 232 | 305 | 359 / 85 / 3 | 14 orta tom |
+| LastResort | 765 | 344 | 310 | 199 / 305 / 8 | 0 |
+
+Danza ve Toca yeniden derlendi (`--click-overlay --drum-ear-test`): bas bölümleri ve `[SyncTrack]`, oyundaki (`Songs`) çalınmış kopyalarla birebir aynı. LastResort için tempo testi klasörlerine dokunulmadı, yeni klasör `outputs\Davul Testi - LastResort`. `Songs`'a kopyalanmadı.
+
+**Sentetik kit:** kick ve snare hiç karışmıyor; hi-hat %71, ride %75 (ikisi de kısmen kick, snare ya da çınlayan crash altında), yüksek ve orta tom tam, 808 kick'i tom değil kick. Dört kat yoğun kick deseninde de vuruşların hepsi bulunuyor.
+
+**Sınırlar:**
+- **Tom ve crash doğrulanmadı** (terminal ve `analysis.json`). Californication'da tom üretmiyoruz (insan 16 sarı tom yazmış, bu şarkıda gürültü ölçüsü ayıramıyor), crash'lerimizin çoğu insanın crash'iyle eşleşmiyor.
+- **Yer tomu kaybolur:** 100 Hz'i kick bandında, gürültüsüz alçak vuruşlar kick gövdesi sayılıyor (`test_known_limit_a_floor_tom_is_lost`).
+- **Hi-hat/ride eşiği dar bir tepe:** komşu ayarlar 0,74-0,78 veriyor, tek şarkıda seçildi.
+- **Ride log ölçekte zayıf:** çınlaması sürerken gelen vuruş az yükseliyor; sentetik ride'ın %75'i bulunuyor.
+- Kick'le birlikte vurulan snare'lerin bir kısmı kaybolabilir: Californication'daki 21'in 3'ü.
+
+**Kulak testi: neye bakmalı.** Her dosya davul stem'i ve yalnızca bir parçanın tıkları (2,5 kHz, kısa). Bir dosyayı baştan sona dinle:
+1. **Her tık o parçanın üstünde mi?** `drums_kick.wav`'da tık kick'le, `drums_snare.wav`'da snare'le aynı anda gelmeli. Başka bir şeyin üstüne düşen tık yanlış nota demek.
+2. **Tıksız kalan vuruş var mı?** O parçayı duyduğun hâlde tık yoksa nota eksik.
+3. **Hi-hat mı ride mı?** `drums_hihat.wav`'da tıklar kısa, kuru "çık"larda; `drums_ride.wav`'da uzun çınlayan "tiiing"lerde olmalı. Yer değiştirmiş olanları not et.
+4. **Crash ve tom** doğrulanmadı: `drums_crash.wav`'da tıklar büyük patlamalarda (genelde bölüm başında), `drums_toms.wav`'da tonlu "dum"larda mı?
+Not almak için dosya adı ve dakika:saniye yeterli; birkaç örnek yeter.
+
+**Kontroller:** `check.ps1 -Full` geçti: 839 test (801 + 38 yeni), 1229 sn, 8 klasör validator'dan geçti (yeni `Davul Testi - LastResort` dahil), gitar ve bas hash'leri dahil. İlk deneme bellek yetmediği için yarıda kalmıştı; bu deneme, proje sahibi bellek kullanan uygulamaları kapattıktan sonra yapıldı.
+
+| Bellek (`-Full`, 15,3 GB RAM) | Değer |
+|---|---|
+| pytest sürecinin tepe çalışma kümesi | 2,33 GB |
+| pytest sürecinin tepe özel belleği | 3,24 GB |
+| Makinenin en düşük boş RAM'i | 3,40 GB (başta 5,6 GB), `test_the_configured_limit_costs_the_human_bass_chart_at_most_0_005` sırasında |
+| En düşük boş commit (5 sn'de bir örneklendi) | 2,8 GB |
+
+Bellek sızmıyor: testler arasında pytest süreci 0,4-0,6 GB'a iniyor. Ölçüm, standart kütüphaneyle yazılmış geçici bir pytest eklentisiyle yapıldı (projede değil). Boş RAM 1,5 GB'ın altına düşse pytest'i kesip o anki testi yazacaktı; düşmedi.
+
+**Değişen testler** (tolerans gevşetilmedi):
+- `test_absent_stems_get_no_file_and_no_chart`: davul stem'i var ve artık chart'lanıyor, `diff_drums` -1 değil.
+- `test_present_but_not_yet_charted_stems_keep_their_audio` kaldırıldı: chart'lanmayan enstrüman kalmadı. Yerine `test_present_stems_keep_their_audio_and_drums_are_charted`.
+- `test_a_song_without_a_guitar_builds_on_its_bass`, `test_three_instruments_share_one_sync_track`: sentetik şarkının davulu (click) artık chart'lanıyor; ikincisi dört enstrümanın aynı `[SyncTrack]`'e oturduğunu da denetliyor.
+- `test_no_instrument_to_play_stops_with_an_explanation_and_no_folder`, `test_with_nothing_to_play_the_build_still_stops`, `test_a_song_can_build_on_keys_alone`: davul stem'i de susturuldu, yoksa çalınabilir enstrüman kalıyordu.
+- `test_real_songs_without_a_guitar_build` (`-Full`): Danza ve Toca'nın `diff_*`'ında artık davul da var.
 
 ## C.0: davul formatı, yazıcı, validator, referans okuyucu
 
@@ -357,7 +441,8 @@ Toca, LastResort, Şarkı Testi ve Californication'ın tempo haritaları, `final
 | B3.1 | Gitarsız build, bas Expert, başlangıç kuralı, section'lar | `e5aff06` |
 | B3.2 | Bas Hard, Medium, Easy, ayrı bas ayarları, turuncu perde dağılımı | `e380ae5` |
 | B3.3 | Keys (gerçek veriyle doğrulanmadı), Hard'da tempoya göre aralık, validator bölüm adı koruması | `2e91ece` |
-| C.0 | Davul formatı (4-lane Pro), yazıcı, validator, referans okuyucu, bas hash'leri | bu commit |
+| C.0 | Davul formatı (4-lane Pro), yazıcı, validator, referans okuyucu, bas hash'leri | `1fd3d91` |
+| C.1 | Expert davul: sınıflandırma, chart, `evaluate`, kanal teşhisi, `--drum-ear-test` | bu commit |
 
 Proje sahibi LastResort ve Şarkı Testi'nin güncel Hard ve Medium sürümlerini de çaldı: akorlar rahat, fret dağılımı dengeli, senkron iyi.
 
@@ -375,7 +460,7 @@ Bu şarkı `train`, ayarlar onunla yapıldı, yani skorlar iyimser.
 | Akor oranı (ben / insan) | %50 / 59 | %42 / 58 | %42 / 57 | %0 / 0 |
 | Otomatik HOPO (ben / insan) | %3.0 / 0.9 | %0 / 0.2 | %0 / 0 | %0 / 0 |
 
-Pre-commit hook 39–80 sn sürüyor (hızlı testler + validator, makine yüküne göre değişiyor). `-Full` B3.3'te 642 sn idi. 2026-11-10'da değişmemiş `2e91ece` 957 sn, C.0 koduyla 1031 sn sürdü: C.0'ın yeni testleri yaklaşık 75 sn ekliyor, gerisi büyük ihtimalle makine yükü (ölçülmedi).
+Pre-commit hook 39–80 sn sürüyor (hızlı testler + validator, makine yüküne göre değişiyor). `-Full` B3.3'te 642 sn idi. 2026-11-10'da değişmemiş `2e91ece` 957 sn, C.0 koduyla 1031 sn sürdü: C.0'ın yeni testleri yaklaşık 75 sn ekliyor, gerisi büyük ihtimalle makine yükü (ölçülmedi). C.1 koduyla 1229 sn (839 test, 2026-11-11). En uzun 8 testin hepsi gerçek şarkı ya da referans testi, toplam 535 sn.
 
 ## Bilinen sınırlar ve açık konular
 

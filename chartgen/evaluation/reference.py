@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from chartgen.audio.io import AudioData
+from chartgen.audio.io import AudioData, analysis_mono
 from chartgen.chart.hopo import natural_hopo_ticks
 from chartgen.clonehero.validate import ParsedChart, ParsedEvent, ValidationReport, parse_chart
 from chartgen.core.drums import DrumGem
@@ -546,6 +546,35 @@ def _load_folder(folder: Path) -> ReferenceSong:
         return _from_midi(folder.name, identity, audio, midi, delay_s, tags)
     text = identity.read_text(encoding="utf-8-sig")
     return _from_chart(folder.name, identity, audio, text, delay_s, tags)
+
+
+_DRUM_CHANNEL = re.compile(r"drums_\d")
+
+
+def load_drum_channels(source: Path) -> dict[str, np.ndarray]:
+    """Return the separately recorded drum channels of a reference, mono at the analysis rate.
+
+    A ``.sng`` or song folder may hold ``drums_1`` (kick), ``drums_2`` (snare), ``drums_3`` and
+    ``drums_4`` instead of one ``drums`` file. ``source`` is a :class:`ReferenceSong`'s ``source``: the
+    ``.sng``, or the chart file inside a folder. Returns nothing if there are none.
+    """
+    channels: dict[str, np.ndarray] = {}
+    if source.suffix.lower() == ".sng":
+        container = open_sng(source)
+        with tempfile.TemporaryDirectory(prefix="chartgen-channels-") as folder:
+            for name in container.entries:
+                path = Path(name)
+                if path.suffix.lower() in AUDIO_SUFFIXES and _DRUM_CHANNEL.fullmatch(path.stem.lower()):
+                    target = Path(folder) / path.name
+                    target.write_bytes(container.read(name))
+                    samples, rate = sf.read(str(target), dtype="float32", always_2d=True)
+                    channels[path.stem.lower()] = analysis_mono(samples, rate)
+        return channels
+    for path in sorted(source.parent.iterdir()):
+        if path.suffix.lower() in AUDIO_SUFFIXES and _DRUM_CHANNEL.fullmatch(path.stem.lower()):
+            samples, rate = sf.read(str(path), dtype="float32", always_2d=True)
+            channels[path.stem.lower()] = analysis_mono(samples, rate)
+    return channels
 
 
 def find_references(root: Path) -> list[Path]:

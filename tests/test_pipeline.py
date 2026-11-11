@@ -54,7 +54,8 @@ def test_absent_stems_get_no_file_and_no_chart(song_file, tmp_path):
 
     ini = read_ini(folder)
     assert int(ini["diff_guitar"]) >= 0
-    for key in ("diff_bass", "diff_drums", "diff_keys"):
+    assert int(ini["diff_drums"]) >= 0, "the drum stem is there, and drums are charted now"
+    for key in ("diff_bass", "diff_keys"):
         assert ini[key] == "-1"
     chart = (folder / "notes.chart").read_text(encoding="utf-8-sig")
     assert "[ExpertSingle]" in chart
@@ -62,11 +63,12 @@ def test_absent_stems_get_no_file_and_no_chart(song_file, tmp_path):
 
 
 @pytest.mark.heavy
-def test_present_but_not_yet_charted_stems_keep_their_audio(song_file, tmp_path):
+def test_present_stems_keep_their_audio_and_drums_are_charted(song_file, tmp_path):
     result = build_song(config(song_file, tmp_path), FakeSeparator(song_stems()))
     names = {path.name for path in result.folder.iterdir()}
     assert {"bass.ogg", "drums.ogg"} <= names
-    assert any("drums: chart generation is not implemented" in w for w in result.analysis["warnings"])
+    assert not any("not implemented" in w for w in result.analysis["warnings"])
+    assert "[ExpertDrums]" in (result.folder / "notes.chart").read_text(encoding="utf-8-sig")
 
 
 @pytest.mark.heavy
