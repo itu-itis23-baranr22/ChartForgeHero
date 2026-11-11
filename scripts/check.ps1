@@ -2,12 +2,15 @@
 # Exit code 0 means everything passed.
 #
 #   scripts\check.ps1         the quick tests and the validator, under a minute: the pre-commit hook
+#   scripts\check.ps1 -Mid    every test but the real songs and references: heavy synthetic tests and
+#                             real Demucs on synthetic audio, about half of -Full
 #   scripts\check.ps1 -Full   every test, with real Demucs and the reference songs: before a phase commit
 #
 # Enable the hook once per clone with:  git config core.hooksPath .githooks
 
 param(
-    [switch]$Full
+    [switch]$Full,
+    [switch]$Mid
 )
 
 $root = Split-Path -Parent $PSScriptRoot
@@ -34,11 +37,14 @@ if ($Full) {
     } else {
         Write-Output 'check: no music folder, so the real song tests will be skipped'
     }
-    # An empty -m overrides the "not slow" default from pyproject.toml.
+    # An empty -m overrides the "not slow and not real" default from pyproject.toml.
     & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m '""'
+} elseif ($Mid) {
+    Write-Output 'check: running every test but the real songs and references ...'
+    & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m 'not real'
 } else {
     Write-Output 'check: running the quick tests ...'
-    & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m 'not slow and not heavy'
+    & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m 'not slow and not heavy and not real'
 }
 if ($LASTEXITCODE -ne 0) {
     Write-Output 'check: FAILED, the tests did not pass'

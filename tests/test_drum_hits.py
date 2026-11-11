@@ -6,15 +6,13 @@ pitched toms. Its pattern is known, so every part can be scored on its own.
 """
 
 import json
-import os
 from dataclasses import replace
-from pathlib import Path
 
 import numpy as np
 import pytest
 import soundfile as sf
 from conftest import SR as STEM_SR
-from conftest import FakeSeparator, song_stems, stereo
+from conftest import CALIFORNICATION, FakeSeparator, song_stems, stereo
 
 from chartgen.audio.drum_hits import DrumAnalysis, DrumHit, detect_drum_hits, load_config
 from chartgen.audio.io import ANALYSIS_SAMPLERATE, resample
@@ -501,37 +499,22 @@ def test_a_chart_equal_to_the_human_scores_perfectly():
 # ---------------------------------------------------------------- the real reference
 
 
-@pytest.mark.slow
-def test_californication_drums_meet_the_acceptance_targets():
+@pytest.mark.real
+@pytest.mark.parametrize("real_song", [CALIFORNICATION], indirect=True)
+def test_californication_drums_meet_the_acceptance_targets(real_song):
     """Expert against the human chart. Californication is train: the settings were chosen on it."""
-    from chartgen.audio.io import analysis_mono
-    from chartgen.audio.separation import DemucsSeparator, separate_with_cache
-    from chartgen.audio.tempo import estimate_tempo_map
     from chartgen.evaluation.drum_metrics import channel_metrics
-    from chartgen.evaluation.reference import find_references, load_drum_channels, load_reference
+    from chartgen.evaluation.reference import load_drum_channels
 
-    folder = os.environ.get("CHARTGEN_REFERENCE_DIR")
-    if not folder:
-        pytest.skip("CHARTGEN_REFERENCE_DIR is not set")
-    found = [path for path in find_references(Path(folder) / "train") if "Californication" in path.name]
-    if not found:
-        pytest.skip("Californication is not among the references")
-    song = load_reference(found[0])
-    stems = separate_with_cache(song.source, song.audio, DemucsSeparator(), Path(".cache/stems"))
-    pitched = np.sum([stems.stems[name] for name in ("bass", "guitar", "piano", "other")], axis=0)
-    tempo = estimate_tempo_map(
-        analysis_mono(song.audio.samples, song.audio.samplerate),
-        drums=analysis_mono(stems.stems["drums"], stems.samplerate),
-        harmonic=analysis_mono(pitched, stems.samplerate),
-        bass=analysis_mono(stems.stems["bass"], stems.samplerate),
-    )
+    tempo = real_song.tempo
     charted = build_tracks_for(
         Instrument.DRUMS,
-        analysis_mono(stems.stems["drums"], stems.samplerate),
+        real_song.mono("drums"),
         tempo.tempo_map,
-        stems.duration_s,
+        real_song.stems.duration_s,
         not_before_s=tempo.lead_in_end_s,
     )
+    song = real_song.reference
     human = song.drums.levels[Difficulty.EXPERT]
     result = drum_metrics(charted[0].track, tempo.tempo_map, human)
     channels = channel_metrics(charted[0].track, tempo.tempo_map, human, load_drum_channels(song.source))

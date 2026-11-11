@@ -4,9 +4,9 @@ Faz C (davul) devam ediyor, C.0, C.1 ve C.2 adımlarına bölündü ve her birin
 
 ## Şu anki adım
 
-**C.1 bitti: Expert davul chart'ı ve kulak testi dosyaları.** Proje sahibi 2026-11-11'de C.1'in commit'lenmesini ve ardından C.2'ye geçilmesini istedi; kulak testinin sonucu henüz gelmedi. Sırada: test hızlandırma (ayrı commit), sonra **C.2: Hard, Medium, Easy, bot önizleme, `Songs`'a kopyalama.**
+**Test hızlandırma bitti. Sırada C.2: Hard, Medium, Easy, bot önizleme, `Songs`'a kopyalama.** Proje sahibi davulu klavyeyle çalacak; C.2 raporu klavyede davul tuş eşlemesini ve profil ayarını adım adım yazacak.
 
-C.0 `1fd3d91`'de kapandı. Commit mesajlarına Claude imzası eklenmiyor: `.claude/settings.json` (`00681d2`).
+C.1 `3029bc8`'de kapandı (Expert davul chart'ı ve kulak testi dosyaları). Proje sahibi 2026-11-11'de C.2'ye geçilmesini istedi; kulak testinin sonucu henüz gelmedi. C.0 `1fd3d91`'de kapandı. Commit mesajlarına Claude imzası eklenmiyor: `.claude/settings.json` (`00681d2`).
 
 B3 bitti (`2e91ece`): bas ve keys chart'lanıyor, şarkının gitara ihtiyacı yok.
 
@@ -15,6 +15,33 @@ Proje sahibi Danza'nın güncel bas Hard'ını çaldı: ritim rahat, sekizlik no
 Proje sahibi Danza'nın bas Expert'ini çaldı: senkron iyi, 37-38 sn'deki hayalet notalar rahatsız etmiyor. Seviye kuralı kapalı kalıyor.
 
 Proje sahibi Toca'nın bas Easy ve Hard'ını çaldı: vuruşlar ve zamanlama iyi, tekdüzelik rahatsız etmiyor, turuncu doğal geliyor. "Turuncu = tek perde" uyarısı yumuşak kalıyor: reggaeton'da tekrarlı bas için bu doğal.
+
+## Test hızlandırma (C.1'den sonra, ayrı commit)
+
+İstenen: aynı gerçek şarkının stem'leri ve tempo haritası oturumda bir kez hesaplansın ve paylaşılsın; Demucs modeli oturumda bir kez yüklensin, iş bitince bırakılsın; gerçek şarkı testleri ayrı bir işarete alınsın; `check.ps1`'e ara kademe eklensin, `-Full` yine hepsini çalıştırsın; pytest-xdist eklenmesin.
+
+**Ne değişti:**
+- **Yeni işaret `real`:** proje sahibinin şarkıları (`CHARTGEN_MUSIC_DIR`) ve referanslar (`CHARTGEN_REFERENCE_DIR`), 17 test. Önceden `slow` idiler. `slow` artık yalnızca sentetik seste gerçek Demucs çalıştıran 2 test. Varsayılan `pytest` ikisini de atlıyor.
+- **`real_song` fixture'ı** (`tests/conftest.py`): şarkının sesi, stem'leri, mono analiz sinyalleri ve tempo haritası oturumda bir kez hesaplanıyor ve o şarkının testleri bunu paylaşıyor. Her şey testlerin kendi yaptığı gibi hesaplanıyor, diziler salt okunur. Aynı şarkının testleri art arda çalışıyor ve bir şarkı bırakılmadan sonraki yüklenmiyor; bellekte en fazla bir şarkı duruyor. Oturum sonunda terminal yükleme sayısını yazıyor (`real songs: 5 loaded, 5 loads, each once`). Pytest bunu kendisi yapamıyor, çünkü parametreleri değere göre değil listedeki sıraya göre grupluyor; sıralamayı conftest yapıyor.
+- **Paylaşılmayanlar:** Danza ve Toca'nın uçtan uca build testleri ve `evaluate` testi kendi hesaplarını yapıyor, çünkü denedikleri şey tam boru hattı.
+- **Demucs modeli** (`demucs_loaded_once`): üç ayrıştırma, bir yükleme (testte sınanıyor). Model, testlerin modülü bitince bırakılıyor. Yükleme 0,7-1,3 sn sürdüğü için kazanç yaklaşık 3 sn.
+- **Sıra:** önce diğer testler, sonra şarkı şarkı gerçek şarkılar, en son gerçek Demucs. Torch bir model çalıştırdıktan sonra model bırakılsa da süreçte yaklaşık 1,4 GB tutuyor. Demucs testleri şarkılardan önce çalışınca pytest'in tepe özel belleği 4,42 GB'a çıktı, en sona alınınca 3,42 GB oldu.
+- **`check.ps1 -Mid`:** gerçek şarkılar ve referanslar dışında her şey (822 test, yaklaşık 4,5 dk). Hızlı kademe `not slow and not heavy and not real` oldu, `-Full` yine hepsini çalıştırıyor.
+
+**Önce ve sonra** (bu makine, 15,3 GB RAM, 2026-11-11):
+
+| | Önce (`3029bc8`) | Sonra |
+|---|---|---|
+| `check.ps1 -Full` | 1229 sn | 564 sn |
+| Aynı 19 test, art arda | 523 sn | 338 sn (sonraki çalışmada 307) |
+| pytest tepe özel bellek | 3,24 GB | 3,42 GB |
+| pytest tepe çalışma kümesi | 2,33 GB | 2,33 GB |
+| Makinenin en düşük boş RAM'i | 3,40 GB (başta 5,6) | 5,02 GB (başta 7,4) |
+| `check.ps1 -Mid` | – | 275 sn, tepe özel bellek 2,87 GB (Demucs testleri sona alınmadan önce ölçüldü) |
+
+**Toplam süredeki düşüşün çoğu makine yükünden.** Değişmeyen 820 test aynı gün 547, 365 ve 253 sn sürdü. Değişikliğin kendi payı "art arda" satırında: eski testler `HEAD`'den çıkarılıp aynı kodla çalıştırıldı, hemen ardından yenileri. 19 testte −185 sn (%35). Tepe bellek 0,18 GB arttı: paylaşılan şarkı mono sinyallerini ve sesi testleri boyunca tutuyor.
+
+**Kalan süre nerede:** gerçek şarkı testlerinde zamanın çoğu basın `librosa.pyin`'inde (Toca'da bas chart'ının 13,3 sn'sinin %98'i). Aynı şarkının bası oturumda birden çok kez chart'lanıyor: Toca ve Californication 3, Danza 2 (build ve `evaluate` testleri, hash testi, sınır testi). Bunu paylaşmak üretim koduna dokunmayı gerektirir; öneri olarak duruyor, uygulanmadı.
 
 ## Faz C planı: davul (onaylandı, 2026-11-10)
 
@@ -442,7 +469,8 @@ Toca, LastResort, Şarkı Testi ve Californication'ın tempo haritaları, `final
 | B3.2 | Bas Hard, Medium, Easy, ayrı bas ayarları, turuncu perde dağılımı | `e380ae5` |
 | B3.3 | Keys (gerçek veriyle doğrulanmadı), Hard'da tempoya göre aralık, validator bölüm adı koruması | `2e91ece` |
 | C.0 | Davul formatı (4-lane Pro), yazıcı, validator, referans okuyucu, bas hash'leri | `1fd3d91` |
-| C.1 | Expert davul: sınıflandırma, chart, `evaluate`, kanal teşhisi, `--drum-ear-test` | bu commit |
+| C.1 | Expert davul: sınıflandırma, chart, `evaluate`, kanal teşhisi, `--drum-ear-test` | `3029bc8` |
+| Test hızlandırma | Gerçek şarkı oturumda bir kez, Demucs modeli bir kez, `real` işareti, `check.ps1 -Mid` | bu commit |
 
 Proje sahibi LastResort ve Şarkı Testi'nin güncel Hard ve Medium sürümlerini de çaldı: akorlar rahat, fret dağılımı dengeli, senkron iyi.
 
@@ -460,7 +488,7 @@ Bu şarkı `train`, ayarlar onunla yapıldı, yani skorlar iyimser.
 | Akor oranı (ben / insan) | %50 / 59 | %42 / 58 | %42 / 57 | %0 / 0 |
 | Otomatik HOPO (ben / insan) | %3.0 / 0.9 | %0 / 0.2 | %0 / 0 | %0 / 0 |
 
-Pre-commit hook 39–80 sn sürüyor (hızlı testler + validator, makine yüküne göre değişiyor). `-Full` B3.3'te 642 sn idi. 2026-11-10'da değişmemiş `2e91ece` 957 sn, C.0 koduyla 1031 sn sürdü: C.0'ın yeni testleri yaklaşık 75 sn ekliyor, gerisi büyük ihtimalle makine yükü (ölçülmedi). C.1 koduyla 1229 sn (839 test, 2026-11-11). En uzun 8 testin hepsi gerçek şarkı ya da referans testi, toplam 535 sn.
+Pre-commit hook 39–80 sn sürüyor (hızlı testler + validator, makine yüküne göre değişiyor). `-Full` B3.3'te 642 sn idi. 2026-11-10'da değişmemiş `2e91ece` 957 sn, C.0 koduyla 1031 sn sürdü: C.0'ın yeni testleri yaklaşık 75 sn ekliyor, gerisi büyük ihtimalle makine yükü (ölçülmedi). C.1 koduyla 1229 sn (839 test, 2026-11-11). En uzun 8 testin hepsi gerçek şarkı ya da referans testi, toplam 535 sn. Test hızlandırmadan sonra 564 sn, `-Mid` 275 sn ("Test hızlandırma" bölümüne bak).
 
 ## Bilinen sınırlar ve açık konular
 

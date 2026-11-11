@@ -3,13 +3,13 @@
 No audio is analysed here: every chart is written by hand or by the writer.
 """
 
-import os
 import struct
 from pathlib import Path
 
 import numpy as np
 import pytest
 import soundfile as sf
+from conftest import CALIFORNICATION
 from test_evaluation import BPM, DIVISION, make_chart_folder, midi_track, sng_bytes, wav_bytes
 
 from chartgen.clonehero.chart_format import DotChartExporter
@@ -31,7 +31,7 @@ from chartgen.core import (
     Track,
 )
 from chartgen.evaluation.formats import parse_midi
-from chartgen.evaluation.reference import find_references, load_reference
+from chartgen.evaluation.reference import load_reference
 
 LEVELS = ("Expert", "Hard", "Medium", "Easy")
 GOOD_HEADER = "[Song]\n{\n  Resolution = 192\n}\n[SyncTrack]\n{\n  0 = TS 4\n  0 = B 120000\n}\n"
@@ -606,16 +606,11 @@ def test_our_own_chart_reads_back_as_written(tmp_path):
 # ---------------------------------------------------------------- the real reference
 
 
-@pytest.mark.slow
-def test_the_human_drum_chart_is_read_as_the_prototype_counted():
+@pytest.mark.real
+@pytest.mark.parametrize("real_song", [CALIFORNICATION], indirect=True)
+def test_the_human_drum_chart_is_read_as_the_prototype_counted(real_song):
     """Californication's drums, counted again by this reader. The prototype was a separate script."""
-    folder = os.environ.get("CHARTGEN_REFERENCE_DIR")
-    if not folder:
-        pytest.skip("CHARTGEN_REFERENCE_DIR is not set")
-    found = [path for path in find_references(Path(folder) / "train") if "Californication" in path.name]
-    if not found:
-        pytest.skip("Californication is not among the references")
-    song = load_reference(found[0])
+    song = real_song.reference
     drums_of = song.drums
     assert drums_of.pro and drums_of.skipped == ""
     assert drums_of.double_kicks == 0

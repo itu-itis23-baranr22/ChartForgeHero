@@ -107,7 +107,7 @@ average, with each split on its own.
 
 Weights and thresholds may only be tuned on `train`, whose scores are flattered by that tuning. A new
 reference goes to `test`, and is measured before anything else happens.
-`CHARTGEN_REFERENCE_DIR=references pytest -m slow` runs this as a test.
+`CHARTGEN_REFERENCE_DIR=references pytest -m real` runs this as a test.
 
 The report shows each difficulty next to the human's, along with what two naive reductions of the same
 Expert chart would score: deleting every Nth note, and keeping beats first. It also says how far each
@@ -160,8 +160,10 @@ one pitch. The rules that always hold are in
 
 ```
 pytest                 # no model download: separation is mocked
-pytest -m slow         # runs real Demucs
+pytest -m slow         # runs real Demucs on synthetic audio
+pytest -m real         # your songs and the references; set CHARTGEN_MUSIC_DIR and CHARTGEN_REFERENCE_DIR
 scripts\check.ps1      # quick tests and the validator, under a minute: runs on every commit
+scripts\check.ps1 -Mid    # every test but the real songs and references
 scripts\check.ps1 -Full   # every test, with real Demucs and the references: before a phase commit
 git config core.hooksPath .githooks     # makes every commit run the quick check
 ```

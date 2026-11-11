@@ -225,7 +225,7 @@ def test_load_audio_rejects_an_empty_file(tmp_path):
 
 
 @pytest.mark.slow
-def test_real_demucs_returns_six_aligned_stems():
+def test_real_demucs_returns_six_aligned_stems(demucs_loaded_once):
     audio = AudioData(stereo(sine(220, 6) + sine(880, 6)), SR)
     samplerate, stems = DemucsSeparator(device="cpu").separate(audio)
     assert samplerate == 44100
@@ -234,7 +234,7 @@ def test_real_demucs_returns_six_aligned_stems():
 
 
 @pytest.mark.slow
-def test_real_demucs_gives_identical_stems_for_the_same_seed():
+def test_real_demucs_gives_identical_stems_for_the_same_seed(demucs_loaded_once):
     """With shifts on, Demucs moves the audio by a random amount, so stems used to differ."""
     audio = AudioData(stereo(sine(220, 12) + sine(880, 12) + click_track(120, 12)), SR)
     _, first = DemucsSeparator(device="cpu", seed=42).separate(audio)
@@ -243,3 +243,4 @@ def test_real_demucs_gives_identical_stems_for_the_same_seed():
     for name in STEM_NAMES:
         assert np.array_equal(first[name], second[name]), name
     assert not all(np.array_equal(first[name], other[name]) for name in STEM_NAMES)
+    assert demucs_loaded_once == ["htdemucs_6s"], "three separations, one model load"

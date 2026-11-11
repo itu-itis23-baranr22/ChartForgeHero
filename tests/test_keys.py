@@ -5,7 +5,6 @@ keys do on real music. Builds and reports say so too.
 """
 
 import json
-import os
 import re
 from pathlib import Path
 
@@ -312,19 +311,10 @@ def test_a_reference_without_keys_keeps_its_report(tmp_path):
 # ---------------------------------------------------------------- real songs
 
 
-@pytest.mark.slow
-def test_the_piano_of_toca_stays_absent():
-    folder = os.environ.get("CHARTGEN_MUSIC_DIR")
-    if not folder:
-        pytest.skip("CHARTGEN_MUSIC_DIR is not set")
-    from chartgen.audio.io import load_audio
-    from chartgen.audio.separation import DemucsSeparator, separate_with_cache
-
-    path = Path(folder) / "TocaToca.mp3"
-    if not path.is_file():
-        pytest.skip(f"{path} is not here")
-    audio = load_audio(path)
-    stems = separate_with_cache(path, audio, DemucsSeparator(), Path(".cache/stems"))
+@pytest.mark.real
+@pytest.mark.parametrize("real_song", ["TocaToca.mp3"], indirect=True)
+def test_the_piano_of_toca_stays_absent(real_song):
+    stems = real_song.stems
     mix = np.sum([stems.stems[name] for name in STEM_NAMES], axis=0)
     presence = analyze_presence("piano", stems.stems["piano"], mix, stems.samplerate)
     assert not presence.present

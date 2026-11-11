@@ -50,7 +50,8 @@ Decisions made since it was written are listed first and take precedence.
 14. **No commit unless the checks pass.** The hook in `.githooks` runs `scripts/check.ps1` on every
    commit (`git config core.hooksPath .githooks`): the quick tests and the validator, under a minute.
    Before each phase commit, `scripts/check.ps1 -Full` runs every test, with real Demucs and the
-   reference songs, and the report says so.
+   reference songs, and the report says so. `scripts/check.ps1 -Mid` runs everything but the real
+   songs and references, for a check in between.
 15. **Separation is reproducible.** Demucs draws a random time shift for each pass, which made two
    caches of one song differ by up to 0.01 note F1. The shift is now seeded, and the cache key names
    the model, device kind, seed and shifts. A first build reads its stems back from the cache, so it
@@ -287,8 +288,10 @@ detection; star power placement.
 
 - Unit tests and synthetic input tests: a 120 BPM 4/4 click; a synthetic kick/snare pattern; a mix of
   two sine stems.
-- Tests needing Demucs are marked `@pytest.mark.slow`; the default run passes without downloading
-  the model (separation is mocked).
+- Tests running Demucs on synthetic audio are marked `@pytest.mark.slow`, tests on the owner's songs
+  and the references `@pytest.mark.real`; the default run skips both and passes without downloading
+  the model (separation is mocked). A real song is loaded once per test session and shared by its
+  tests; `scripts/check.ps1 -Mid` runs everything but the real songs.
 - Each stage has its own terminal output and duration; each build writes `analysis.json` (BPM, stem
   presence scores, note counts per instrument, difficulty distribution).
 - A `.chart` validator parses the generated file again and checks tick order, section names and fret

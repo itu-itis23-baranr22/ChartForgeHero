@@ -30,10 +30,11 @@ include = ["chartgen*"]
 "chartgen.audio" = ["*.toml"]
 
 [tool.pytest.ini_options]
-addopts = '-m "not slow"'
+addopts = '-m "not slow and not real"'
 markers = [
-    "slow: runs real Demucs and may download model weights",
+    "slow: runs real Demucs on synthetic audio and may download model weights",
     "heavy: analyses long synthetic audio or builds a whole song; takes seconds, skipped by the pre-commit hook",
+    "real: uses the owner's songs (CHARTGEN_MUSIC_DIR) or human charts (CHARTGEN_REFERENCE_DIR); runs Demucs when their stems are not cached yet",
 ]
 testpaths = ["tests"]
 pythonpath = ["."]

@@ -6,8 +6,6 @@ the first problem. The second makes a tracker wander, which looks like a tempo d
 
 import dataclasses
 import json
-import os
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -290,33 +288,10 @@ def test_opening_and_moved_grid_reach_the_analysis_and_the_warnings(song_file, t
 # ---------------------------------------------------------------- real songs
 
 
-def music_folder() -> Path:
-    folder = os.environ.get("CHARTGEN_MUSIC_DIR")
-    if not folder:
-        pytest.skip("CHARTGEN_MUSIC_DIR is not set")
-    return Path(folder)
-
-
-def analyse_real(path: Path):
-    from chartgen.audio.io import analysis_mono, load_audio
-    from chartgen.audio.separation import DemucsSeparator, separate_with_cache
-
-    if not path.is_file():
-        pytest.skip(f"{path} is not here")
-    audio = load_audio(path)
-    stems = separate_with_cache(path, audio, DemucsSeparator(), Path(".cache/stems"))
-    pitched = np.sum([stems.stems[name] for name in ("bass", "guitar", "piano", "other")], axis=0)
-    return estimate_tempo_map(
-        analysis_mono(audio.samples, audio.samplerate),
-        drums=analysis_mono(stems.stems["drums"], stems.samplerate),
-        harmonic=analysis_mono(pitched, stems.samplerate),
-        bass=analysis_mono(stems.stems["bass"], stems.samplerate),
-    )
-
-
-@pytest.mark.slow
-def test_danza_real_grid():
-    analysis = analyse_real(music_folder() / "DanzaKuduro.mp3")
+@pytest.mark.real
+@pytest.mark.parametrize("real_song", ["DanzaKuduro.mp3"], indirect=True)
+def test_danza_real_grid(real_song):
+    analysis = real_song.tempo
     assert analysis.method == "constant"
     assert analysis.bpm == pytest.approx(129.975, abs=0.01)
     assert analysis.beat_phase.half_beat_off
@@ -328,18 +303,20 @@ def test_danza_real_grid():
     assert analysis.song_start_s == pytest.approx(37.1, abs=0.05)
 
 
-@pytest.mark.slow
-def test_toca_real_grid_did_not_move():
-    analysis = analyse_real(music_folder() / "TocaToca.mp3")
+@pytest.mark.real
+@pytest.mark.parametrize("real_song", ["TocaToca.mp3"], indirect=True)
+def test_toca_real_grid_did_not_move(real_song):
+    analysis = real_song.tempo
     assert not analysis.beat_phase.half_beat_off
     assert analysis.lead_in_end_s == 0.0
     assert analysis.method == "constant"
     assert analysis.final.max_ms <= 25
 
 
-@pytest.mark.slow
-def test_last_resort_real_grid_did_not_move():
-    analysis = analyse_real(music_folder() / "LastResort.wav")
+@pytest.mark.real
+@pytest.mark.parametrize("real_song", ["LastResort.wav"], indirect=True)
+def test_last_resort_real_grid_did_not_move(real_song):
+    analysis = real_song.tempo
     assert not analysis.beat_phase.half_beat_off
     assert [(e.tick, e.bpm) for e in analysis.tempo_map.tempos] == [
         (0, 81.812),

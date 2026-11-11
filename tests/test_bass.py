@@ -11,7 +11,7 @@ import librosa
 import numpy as np
 import pytest
 from conftest import SR as STEM_SR
-from conftest import FakeSeparator, click_times, clicks_at, song_stems, stereo
+from conftest import CALIFORNICATION, FakeSeparator, click_times, clicks_at, song_stems, stereo
 
 import chartgen
 import chartgen.pipeline
@@ -49,7 +49,7 @@ from chartgen.core.model import Chart, ChartNote, Difficulty, Instrument, SongMe
 from chartgen.core.timing import TempoEvent, TempoMap
 from chartgen.errors import NoPlayableInstrumentError
 from chartgen.evaluation.metrics import chart_metrics
-from chartgen.evaluation.reference import find_references, load_reference
+from chartgen.evaluation.reference import load_reference
 from chartgen.evaluation.run import _level_table, evaluate_folder, format_report, write_report
 from chartgen.pipeline import _check_opening_is_empty, _report_track, build_song, BuildConfig
 
@@ -794,26 +794,7 @@ def music_folder() -> Path:
     return Path(folder)
 
 
-def real_song(path: Path):
-    from chartgen.audio.io import analysis_mono, load_audio
-    from chartgen.audio.separation import DemucsSeparator, separate_with_cache
-    from chartgen.audio.tempo import estimate_tempo_map
-
-    if not path.is_file():
-        pytest.skip(f"{path} is not here")
-    audio = load_audio(path)
-    stems = separate_with_cache(path, audio, DemucsSeparator(), Path(".cache/stems"))
-    pitched = np.sum([stems.stems[name] for name in ("bass", "guitar", "piano", "other")], axis=0)
-    tempo = estimate_tempo_map(
-        analysis_mono(audio.samples, audio.samplerate),
-        drums=analysis_mono(stems.stems["drums"], stems.samplerate),
-        harmonic=analysis_mono(pitched, stems.samplerate),
-        bass=analysis_mono(stems.stems["bass"], stems.samplerate),
-    )
-    return stems, tempo
-
-
-@pytest.mark.slow
+@pytest.mark.real
 @pytest.mark.parametrize(
     "file_name,lead_in",
     [("DanzaKuduro.mp3", 36.93), ("TocaToca.mp3", 0.0)],
@@ -861,18 +842,16 @@ TOCA_NOTES_THE_OWNER_HEARD = (36.02, 47.45, 54.12, 56.02, 58.88, 61.74, 63.64, 6
 """Checked by ear: real bass notes, which no rule may remove."""
 
 
-@pytest.mark.slow
-def test_the_configured_limit_keeps_every_toca_note_the_owner_heard():
+@pytest.mark.real
+@pytest.mark.parametrize("real_song", ["TocaToca.mp3"], indirect=True)
+def test_the_configured_limit_keeps_every_toca_note_the_owner_heard(real_song):
     """One of the owner's two conditions for turning the rule on. The other is the test below."""
-    from chartgen.audio.io import analysis_mono
-
-    stems, tempo = real_song(music_folder() / "TocaToca.mp3")
     limits = replace(load_limits(), enabled=True)
     charted = build_tracks_for(
         Instrument.BASS,
-        analysis_mono(stems.stems["bass"], stems.samplerate),
-        tempo.tempo_map,
-        stems.duration_s,
+        real_song.mono("bass"),
+        real_song.tempo.tempo_map,
+        real_song.stems.duration_s,
         quiet_limits=limits,
     )[0]
     removed = np.array([note.time_s for note in charted.quiet])
@@ -880,73 +859,71 @@ def test_the_configured_limit_keeps_every_toca_note_the_owner_heard():
     assert min(abs(removed - heard).min() for heard in TOCA_NOTES_THE_OWNER_HEARD) > 0.03
 
 
-@pytest.mark.slow
-def test_the_configured_limit_costs_the_human_bass_chart_at_most_0_005():
-    from chartgen.audio.io import analysis_mono
-    from chartgen.audio.separation import DemucsSeparator, separate_with_cache
-    from chartgen.audio.tempo import estimate_tempo_map
-
-    folder = os.environ.get("CHARTGEN_REFERENCE_DIR")
-    if not folder:
-        pytest.skip("CHARTGEN_REFERENCE_DIR is not set")
-    path = find_references(Path(folder) / "train")[0]
-    song = load_reference(path)
-    stems = separate_with_cache(song.source, song.audio, DemucsSeparator(), Path(".cache/stems"))
-    tempo = estimate_tempo_map(analysis_mono(song.audio.samples, song.audio.samplerate))
-    bass = analysis_mono(stems.stems["bass"], stems.samplerate)
+@pytest.mark.real
+@pytest.mark.parametrize("real_song", [CALIFORNICATION], indirect=True)
+def test_the_configured_limit_costs_the_human_bass_chart_at_most_0_005(real_song):
+    tempo = real_song.tempo_from_mix_only
+    bass = real_song.mono("bass")
+    human = real_song.reference.bass_levels[Difficulty.EXPERT]
 
     def note_f1(enabled: bool) -> float:
         limits = replace(load_limits(), enabled=enabled)
         track = build_tracks_for(
-            Instrument.BASS, bass, tempo.tempo_map, stems.duration_s, quiet_limits=limits
+            Instrument.BASS, bass, tempo.tempo_map, real_song.stems.duration_s, quiet_limits=limits
         )[0].track
-        return chart_metrics(track, tempo.tempo_map, song.bass_levels[Difficulty.EXPERT])["note_f1"]
+        return chart_metrics(track, tempo.tempo_map, human)["note_f1"]
 
     assert note_f1(True) >= note_f1(False) - 0.005
 
 
-@pytest.mark.slow
+@pytest.mark.real
 @pytest.mark.parametrize(
-    "path_from_music,sha256",
+    "real_song,sha256",
     [
         ("LastResort.wav", "f0c93106e922560ef6b1db3a7ec04bfdb1db17968f6dac409898314e94a3d84f"),
         ("../cloneH/audio.mp3", "fa099c6ccb0a29634dacba71a6556ef99785b821ea118f7fdc70946b8b9f6deb"),
     ],
+    indirect=["real_song"],
+    scope="session",
 )
-def test_the_guitar_the_owner_played_stays_byte_for_byte(path_from_music, sha256):
+def test_the_guitar_the_owner_played_stays_byte_for_byte(real_song, sha256):
     """The hash covers [SyncTrack] and all four guitar levels, as they were when played."""
-    from chartgen.audio.io import analysis_mono
-
-    stems, tempo = real_song(music_folder() / path_from_music)
-    stem = analysis_mono(stems.stems["guitar"], stems.samplerate)
-    vocals = analysis_mono(stems.stems["vocals"], stems.samplerate)
+    tempo = real_song.tempo
     charted = build_tracks_for(
-        Instrument.GUITAR, stem, tempo.tempo_map, stems.duration_s, vocals, tempo.lead_in_end_s
+        Instrument.GUITAR,
+        real_song.mono("guitar"),
+        tempo.tempo_map,
+        real_song.stems.duration_s,
+        real_song.mono("vocals"),
+        tempo.lead_in_end_s,
     )
     chart = Chart(SongMetadata("T", "A"), tempo.tempo_map, [item.track for item in charted])
     text = DotChartExporter().render(chart).decode("utf-8-sig")
     assert hashlib.sha256(text[text.index("[SyncTrack]") :].encode("utf-8")).hexdigest() == sha256
 
 
-@pytest.mark.slow
+@pytest.mark.real
 @pytest.mark.parametrize(
-    "path_from_music,sha256",
+    "real_song,sha256",
     [
         ("DanzaKuduro.mp3", "84a128a053dbf0ccd7cc8ad15b9619da933f796477714351669bf41ac6913388"),
         ("TocaToca.mp3", "e6d75583a6845026fdef56ccf86ad37ae294e6b934639d48952bc05660fb1311"),
         ("LastResort.wav", "d7a7fee514ebff4f4a8fbdd5611f15b5c7efae9925d107a96d4ab08a5643302f"),
         ("../cloneH/audio.mp3", "f0d024f7bb9c8d2eca16b63060aea2e27ca922cba2c03f3d282746fb1ab61a32"),
     ],
+    indirect=["real_song"],
+    scope="session",
 )
-def test_the_bass_stays_byte_for_byte(path_from_music, sha256):
+def test_the_bass_stays_byte_for_byte(real_song, sha256):
     """The hash covers [SyncTrack] and all four bass levels as they were at 2e91ece, before drums."""
-    from chartgen.audio.io import analysis_mono
-
-    stems, tempo = real_song(music_folder() / path_from_music)
-    stem = analysis_mono(stems.stems["bass"], stems.samplerate)
-    vocals = analysis_mono(stems.stems["vocals"], stems.samplerate)
+    tempo = real_song.tempo
     charted = build_tracks_for(
-        Instrument.BASS, stem, tempo.tempo_map, stems.duration_s, vocals, tempo.lead_in_end_s
+        Instrument.BASS,
+        real_song.mono("bass"),
+        tempo.tempo_map,
+        real_song.stems.duration_s,
+        real_song.mono("vocals"),
+        tempo.lead_in_end_s,
     )
     assert [item.track.difficulty for item in charted] == list(Difficulty)
     chart = Chart(SongMetadata("T", "A"), tempo.tempo_map, [item.track for item in charted])

@@ -592,7 +592,7 @@ def test_generated_charts_are_playable_on_a_reference(tmp_path):
     assert is_playable([tuple(sorted(by_tick[t])) for t in ticks], [tempo_map.seconds_at(float(t)) for t in ticks])
 
 
-@pytest.mark.slow
+@pytest.mark.real
 def test_real_references_when_available():
     """Set CHARTGEN_REFERENCE_DIR to a folder of .sng files or chart folders to run this."""
     folder = os.environ.get("CHARTGEN_REFERENCE_DIR")
