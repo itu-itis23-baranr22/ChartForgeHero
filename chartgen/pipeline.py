@@ -24,7 +24,9 @@ from chartgen.audio.separation import STEM_NAMES, Separator, StemSet, separate_w
 from chartgen.audio.tempo import DEFAULT_MAX_BEAT_DRIFT_S, TempoAnalysis, estimate_tempo_map
 from chartgen.chart.charter import ChartedTrack
 from chartgen.chart.difficulty import HARD_RULES, HardRuleViolation
-from chartgen.chart.drum_charter import DRUM_HARD_RULES, UNVERIFIED_PIECES
+from chartgen.chart.drum_charter import DRUM_HARD_RULES, UNVERIFIED_GEMS, UNVERIFIED_PIECES, DrumChart
+from chartgen.chart.drum_difficulty import LEVEL_HARD_RULES
+from chartgen.core.drums import DrumGem
 from chartgen.chart.instruments import (
     CHARTABLE_INSTRUMENTS,
     STEM_FOR_INSTRUMENT,
@@ -220,6 +222,7 @@ def _report_track(instrument: Instrument, item: ChartedTrack, warnings: list[str
         )
     _report_level(instrument, item, warnings)
     _report_drums(item)
+    _report_drum_level(item, warnings)
 
 
 def _unverified_drums(item: ChartedTrack) -> str:
@@ -255,17 +258,50 @@ def _report_drums(item: ChartedTrack) -> None:
     )
 
 
+def _report_drum_level(item: ChartedTrack, warnings: list[str]) -> None:
+    """Say what a drum level came to, and warn about every soft target it misses."""
+    measures = item.drum_measures
+    if measures is None:
+        return
+    level = item.track.difficulty.value
+    log.info(
+        "    drums/%s: %d positions (%.0f%% of Expert), %.2f gems each, on the beat %.0f%%, "
+        "sixteenths %.0f%%, shortest gap %.2f beats; gems %s",
+        level,
+        measures.positions,
+        measures.position_ratio * 100,
+        measures.gems_per_position,
+        measures.on_beat_share * 100,
+        measures.sixteenth_share * 100,
+        measures.min_gap_beats,
+        ", ".join(f"{gem} {share:.0%}" for gem, share in measures.gem_shares.items() if share),
+    )
+    missed = [target for target in item.soft_targets if not target.in_range]
+    if missed:
+        warnings.append(
+            f"drums/{level} is outside its soft targets: "
+            + ", ".join(
+                f"{target.name} {target.value:.2f} (wanted {target.low:g} to {target.high:g})"
+                for target in missed
+            )
+        )
+
+
 def _drum_analysis(item: ChartedTrack) -> dict[str, object]:
     """What ``analysis.json`` says about a drum level beyond the common numbers."""
-    drum = item.drum_chart
-    if drum is None:
-        return {}
-    return {
-        "gems_by_kind": drum.gem_counts(item.track),
+    counts = DrumChart.gem_counts(item.track)
+    common: dict[str, object] = {
+        "gems_by_kind": counts,
         "not_verified": {
             "parts": sorted(piece.value for piece in UNVERIFIED_PIECES),
-            "gems": drum.unverified_counts(item.track),
+            "gems": {gem.value: counts[gem.value] for gem in DrumGem if gem in UNVERIFIED_GEMS},
         },
+    }
+    drum = item.drum_chart
+    if drum is None:
+        return common
+    return {
+        **common,
         "hits_heard": len(drum.analysis.hits),
         "detector_hits": dict(drum.analysis.detector_hits),
         "strong_hit_levels": {key: round(value, 4) for key, value in drum.analysis.strong_levels.items()},
@@ -334,9 +370,13 @@ def _finite_or_none(value: float) -> float | None:
 
 def _level_analysis(item: ChartedTrack) -> dict[str, object]:
     """What ``analysis.json`` says about a difficulty: its numbers and its soft targets."""
-    if item.measures is None:
+    if item.measures is not None:
+        measures = asdict(item.measures)
+    elif item.drum_measures is not None:
+        measures = asdict(item.drum_measures)
+        measures["min_gap_beats"] = _finite_or_none(measures["min_gap_beats"])
+    else:
         return {}
-    measures = asdict(item.measures)
     measures["min_gap_s"] = _finite_or_none(measures["min_gap_s"])
     return {
         "measures": measures,
@@ -418,7 +458,7 @@ def _analysis(
                     for note in item.quiet
                 ],
             }
-        if item.drum_chart is not None:
+        if track.instrument is Instrument.DRUMS:
             entry["drums"] = _drum_analysis(item)
         charts.setdefault(track.instrument.value, {})[track.difficulty.value] = entry
     return {
@@ -502,7 +542,7 @@ def _analysis(
             instrument.value for instrument in UNVERIFIED_INSTRUMENTS if instrument.value in charts
         ),
         "difficulty_hard_rules": list(HARD_RULES),
-        **({"drum_hard_rules": list(DRUM_HARD_RULES)} if "drums" in charts else {}),
+        **({"drum_hard_rules": [*DRUM_HARD_RULES, *LEVEL_HARD_RULES]} if "drums" in charts else {}),
         "song_ini": {
             "preview_start_time_ms": preview_start_ms,
             "difficulty": {inst.value: tier for inst, tier in difficulties.items()},

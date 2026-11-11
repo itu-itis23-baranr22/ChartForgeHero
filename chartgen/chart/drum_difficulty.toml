@@ -1,0 +1,116 @@
+# How Expert drums are reduced to Hard, Medium and Easy. Every value here is a preference.
+#
+# The rules that must always hold live in chartgen/chart/drum_difficulty.py and cannot be loosened
+# from this file: each level is made of the positions and gems of the level above (a kick stays a
+# kick, a cymbal a cymbal), no position holds more than two pads, Hard and Medium hold at most two
+# gems at once, Easy never the kick together with a pad, Medium and Easy have nothing on a sixteenth,
+# and no drum note has a sustain. Loading refuses any key it does not know.
+#
+# The values come from the one human drum chart (Californication, train). The human keeps every
+# position on the eighth-note grid in Hard, about two thirds of the sixteenths and none of the
+# notes off the grid; Medium is Hard without its sixteenths; Easy drops most hi-hat notes and,
+# where the kick meets a pad, keeps the pad, unless that pad is the hi-hat.
+
+# Which gem gives way when a position holds more than a level allows, the first staying longest.
+# Hard and Medium keep the first two gems of a position. Easy keeps the first, and a second one
+# only if it is listed in that level's second_gem_from.
+gem_order = [
+    "red",
+    "green_cymbal",
+    "blue_cymbal",
+    "kick",
+    "yellow_cymbal",
+    "yellow_tom",
+    "blue_tom",
+    "green_tom",
+]
+
+# The snare on beats 2 and 4 stays on every level, whatever the target says.
+protect_backbeat_snare = true
+
+# How far a level's share of each gem may stray from the human's, in [*.gem_shares], before it warns.
+gem_tolerance = 0.10
+
+# What makes a position worth keeping. The score of a position is the sum of what applies to it.
+[importance]
+# Where the position falls in the bar. "strong_beat" is the middle of an even bar, beat 3 in 4/4.
+downbeat = 1.0
+strong_beat = 1.0
+beat = 0.8
+eighth = 0.6
+sixteenth = 0.1
+# How hard the position is struck, compared with the rest of the song, from 0 to this.
+hit_strength = 0.2
+
+# position_ratio: the share of Expert's positions this level aims for. A level never has more
+# positions than the level above, so it can end up below its target, which then warns.
+# min_gap_beats: positions at least this far apart; a protected snare stays anyway.
+# [*.gem_weights]: added to a position's score by the gem that stays longest there. May be negative.
+#
+# [*.soft_targets] are [low, high] ranges, and gem_shares are the human's share of each gem, which
+# may stray by gem_tolerance. Outside one, a build warns in the terminal and in analysis.json, but
+# does not fail, and neither do the tests. They come from one rock song.
+
+[hard]
+position_ratio = 0.76
+min_gap_beats = 0.25
+
+[hard.gem_shares]
+kick = 0.159
+red = 0.262
+yellow_cymbal = 0.228
+blue_cymbal = 0.315
+green_cymbal = 0.030
+yellow_tom = 0.006
+blue_tom = 0.0
+green_tom = 0.0
+
+[hard.soft_targets]
+position_ratio = [0.66, 0.86]
+on_beat_share = [0.33, 1.0]
+sixteenth_share = [0.0, 0.25]
+min_gap_beats = [0.25, inf]
+
+[medium]
+position_ratio = 0.64
+min_gap_beats = 0.5
+
+[medium.gem_shares]
+kick = 0.169
+red = 0.177
+yellow_cymbal = 0.259
+blue_cymbal = 0.358
+green_cymbal = 0.034
+yellow_tom = 0.003
+blue_tom = 0.0
+green_tom = 0.0
+
+[medium.soft_targets]
+position_ratio = [0.54, 0.74]
+on_beat_share = [0.40, 1.0]
+min_gap_beats = [0.5, inf]
+
+[easy]
+position_ratio = 0.54
+min_gap_beats = 0.5
+# The human keeps the hi-hat with the snare in one Easy position out of six, the ride always.
+second_gem_from = ["red", "green_cymbal", "blue_cymbal"]
+
+# The human keeps one hi-hat note out of six that stand alone in Medium.
+[easy.gem_weights]
+yellow_cymbal = -0.3
+
+[easy.gem_shares]
+kick = 0.083
+red = 0.264
+yellow_cymbal = 0.068
+blue_cymbal = 0.533
+green_cymbal = 0.050
+yellow_tom = 0.002
+blue_tom = 0.0
+green_tom = 0.0
+
+[easy.soft_targets]
+position_ratio = [0.44, 0.64]
+on_beat_share = [0.46, 1.0]
+min_gap_beats = [0.5, inf]

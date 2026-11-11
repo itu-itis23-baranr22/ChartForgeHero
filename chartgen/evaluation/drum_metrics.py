@@ -18,9 +18,9 @@ import numpy as np
 from chartgen.audio.io import ANALYSIS_SAMPLERATE
 from chartgen.audio.onsets import detect_onsets
 from chartgen.core.drums import DrumGem
-from chartgen.core.model import Track
+from chartgen.core.model import Difficulty, Track
 from chartgen.core.timing import TempoMap
-from chartgen.evaluation.metrics import NOTE_TOLERANCE_S, match_notes
+from chartgen.evaluation.metrics import NOTE_TOLERANCE_S, match_notes, naive_reductions, position_f1
 from chartgen.evaluation.reference import ReferenceDrumHit
 
 _PARTS: Mapping[str, Callable[[DrumGem], bool]] = {
@@ -95,6 +95,37 @@ def drum_metrics(
     }
     result["worst_gem_gap"] = round(max(abs(shares_mine[gem] - shares_human[gem]) for gem in shares_mine), 3)
     return result
+
+
+def drum_level_metrics(
+    tracks: Sequence[Track],
+    tempo_map: TempoMap,
+    human_levels: Mapping[Difficulty, Sequence[ReferenceDrumHit]],
+    tolerance_s: float = NOTE_TOLERANCE_S,
+) -> dict[str, dict[str, object]]:
+    """Compare each level below Expert with the human's, next to two naive reductions of our Expert.
+
+    ``every_nth`` and ``beats_first`` keep as many of our Expert positions as the human kept of theirs,
+    the one evenly, the other beats first. A reduction that knows about drums has to beat both.
+    """
+    expert = next((track for track in tracks if track.difficulty is Difficulty.EXPERT), None)
+    human_expert = human_levels.get(Difficulty.EXPERT, ())
+    if expert is None or not human_expert:
+        return {}
+    my_expert = np.array(sorted({note.tick for note in expert.notes}), dtype=np.int64)
+    results: dict[str, dict[str, object]] = {}
+    for track in tracks:
+        human = human_levels.get(track.difficulty, ())
+        if track.difficulty is Difficulty.EXPERT or not human:
+            continue
+        result = drum_metrics(track, tempo_map, human, tolerance_s)
+        target = round(my_expert.size * len(human) / len(human_expert))
+        human_times = np.array([hit.time_s for hit in human])
+        for name, ticks in naive_reductions(my_expert, tempo_map.resolution, target).items():
+            times = tempo_map.seconds_at(ticks.astype(np.float64))
+            result[f"{name}_f1"] = position_f1(times, human_times, tolerance_s)
+        results[track.difficulty.value] = result
+    return results
 
 
 def channel_metrics(

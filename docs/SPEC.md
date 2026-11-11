@@ -166,7 +166,15 @@ Decisions made since it was written are listed first and take precedence.
    stem's loud level. NMF is not used: under these thresholds a linear band found the kick better (F1
    0.962 against 0.952) and costs no extra fit. Hi-hat, ride and crash are told apart by how long the
    high band rings. The chart keeps one gem per lane (a cymbal wins it over a tom) and at most two pads per
-   tick (the snare first, then the louder cymbal). Drums are charted at Expert only until C.2.
+   tick (the snare first, then the louder cymbal).
+36. **How drums are reduced (C.2).** Hard comes from Expert, Medium from Hard, Easy from Medium. Where a
+   position holds more than a level allows, gems give way in the order of `drum_difficulty.toml`: the snare
+   stays longest, then the crash, the ride, the kick, the hi-hat and the toms. Hard and Medium keep two
+   gems; Easy keeps one, and a second only if it is the snare, the crash or the ride. Positions are then
+   chosen best score first (place in the bar, how hard the hit was, a weight per gem) up to 76 / 64 / 54%
+   of Expert, at least a sixteenth apart on Hard and an eighth on Medium and Easy; the snare on beats 2
+   and 4 always stays. These values come from the one human drum chart (Californication, train). The hard
+   rules of decision 33 are in code and in the validator; the file cannot decide any of them.
 
 ## Phase B1 targets (one reference song so far)
 

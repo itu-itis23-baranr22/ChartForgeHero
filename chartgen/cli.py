@@ -20,6 +20,9 @@ log = logging.getLogger("chartgen")
 _INSTRUMENT_NAMES = ", ".join(instrument.value for instrument in Instrument)
 _DEFAULT_INSTRUMENTS = "guitar,bass,drums,keys"
 _BPM_RANGE = (20.0, 400.0)
+_PREVIEW_PLAYERS = {"drums": "ProDrums"}
+"""The game's name for a player, where it is not the instrument's: our drums are 4-lane Pro, and with
+"Drums" the game would show every cymbal as a pad (checked in the game, 2026-11-11)."""
 
 
 def _parse_instruments(value: str) -> frozenset[Instrument]:
@@ -156,7 +159,7 @@ def _run_build(args: argparse.Namespace) -> int:
     log.info("Song folder: %s", result.folder.resolve())
     charts: dict[str, dict[str, object]] = result.analysis.get("charts", {})  # type: ignore[assignment]
     for instrument, levels in charts.items():
-        players = " ".join(f"--player {instrument.title()},{level.title()}" for level in levels)
+        players = " ".join(f"--player {_PREVIEW_PLAYERS.get(instrument, instrument.title())},{level.title()}" for level in levels)
         log.info('Preview with: "%s" --song "%s" %s -i', executable, result.folder.resolve(), players)
     return 0
 

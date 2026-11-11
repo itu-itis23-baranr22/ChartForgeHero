@@ -34,6 +34,7 @@ from chartgen.core.timing import TempoMap
 
 if TYPE_CHECKING:
     from chartgen.chart.drum_charter import DrumChart
+    from chartgen.chart.drum_difficulty import DrumLevelMeasures
 
 GRID_DIVISOR = 4
 """Snap to sixteenth notes: a quarter note divided by this."""
@@ -71,7 +72,9 @@ class ChartedTrack:
     orange_pitches: OrangePitches | None = None
     """Which pitches this level's orange notes are, for instruments whose pitch can be read."""
     drum_chart: DrumChart | None = None
-    """What became of a drum stem's hits. Drums only."""
+    """What became of a drum stem's hits. Drums, Expert only."""
+    drum_measures: DrumLevelMeasures | None = None
+    """Plain numbers about a drum level, every level. ``soft_targets`` holds what they are compared with."""
 
 
 def _quantize(times: np.ndarray, tempo_map: TempoMap) -> np.ndarray:

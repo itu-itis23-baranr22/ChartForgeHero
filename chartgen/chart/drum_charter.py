@@ -1,13 +1,14 @@
 """Turns the hits of a drum stem into an Expert drum track, and holds drums to their hard rules.
 
 The hard rules live here, in code. ``drum_hits.toml`` decides what is heard, never what a position may
-hold, so no setting can loosen them. Lower levels come in C.2 and keep to the same rules.
+hold, so no setting can loosen them. Hard, Medium and Easy are made from Expert in ``drum_difficulty``,
+under the same rules and their own.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -51,6 +52,8 @@ class DrumChart:
     """Hits that snapped to a tick another hit had already taken."""
     pads_dropped: int
     """Pads left out to keep to two hands."""
+    strengths: Mapping[int, float] = field(default_factory=dict)
+    """How hard each tick was struck: its strongest hit. The lower levels use only their order."""
 
     @staticmethod
     def gem_counts(track: Track) -> dict[str, int]:
@@ -139,4 +142,7 @@ def build_drum_expert_track(
     track = Track(Instrument.DRUMS, Difficulty.EXPERT, notes)
     check_drum_track(track)
     merged = sum(len(group) - 1 for group in by_tick.values())
-    return ChartedTrack(track, len(analysis.hits), drum_chart=DrumChart(analysis, merged, dropped))
+    strengths = {tick: max(hit.strength for hit in group) for tick, group in by_tick.items()}
+    return ChartedTrack(
+        track, len(analysis.hits), drum_chart=DrumChart(analysis, merged, dropped, strengths)
+    )

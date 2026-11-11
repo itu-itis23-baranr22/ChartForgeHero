@@ -26,7 +26,7 @@ from chartgen.chart.instruments import STEM_FOR_INSTRUMENT, build_tracks_for
 from chartgen.core.model import Difficulty, Instrument
 from chartgen.core.timing import TempoMap
 from chartgen.errors import ChartgenError
-from chartgen.evaluation.drum_metrics import channel_metrics, drum_metrics
+from chartgen.evaluation.drum_metrics import channel_metrics, drum_level_metrics, drum_metrics
 from chartgen.evaluation.metrics import (
     average,
     chart_metrics,
@@ -292,6 +292,11 @@ def evaluate_song(
                     drums[0].track, tempo.tempo_map, human_drums, channels
                 )
             result["drums"] = entry
+            levels = drum_level_metrics(
+                [item.track for item in drums], tempo.tempo_map, song.drums.levels
+            )
+            if levels:
+                result["drum_levels"] = levels
     elif song.drums.skipped:
         result["drums_skipped"] = song.drums.skipped
     return result
@@ -421,6 +426,17 @@ def _drum_lines(name: str, song: dict[str, object]) -> list[str]:
         lines.append(
             f"channel {part} (diagnosis only): {value['channel_onsets']} onsets; "
             f"F1 mine {value['mine']['f1']:.3f}, human {value['human']['f1']:.3f}"
+        )
+    levels = song.get("drum_levels", {})
+    if isinstance(levels, dict) and levels:
+        lines.append("Lower levels: position F1 against the human, next to every Nth and beats first")
+    for level, value in levels.items() if isinstance(levels, dict) else ():
+        lines.append(
+            f"{level:8s} {value['positions_mine']:5d} mine / {value['positions_human']:5d} human  "
+            f"position {value['position']['f1']:.3f} (every Nth {value['every_nth_f1']:.3f}, "
+            f"beats first {value['beats_first_f1']:.3f})  kick {value['kick']['f1']:.3f}  "
+            f"snare {value['snare']['f1']:.3f}  cymbal {value['cymbal']['f1']:.3f}  "
+            f"worst gem gap {value['worst_gem_gap']:.3f}"
         )
     lines.append("")
     return lines

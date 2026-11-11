@@ -378,9 +378,11 @@ def test_drums_are_charted_now():
 def test_a_drum_stem_becomes_an_expert_drum_track(kit):
     events, _ = kit
     charted = build_tracks_for(Instrument.DRUMS, render(events), TEMPO, 36.0)
-    assert [item.track.difficulty for item in charted] == [Difficulty.EXPERT], "lower levels come in C.2"
+    assert [item.track.difficulty for item in charted] == list(Difficulty), "Expert, then the levels of C.2"
     check_drum_track(charted[0].track)
     assert charted[0].drum_chart is not None
+    assert all(item.drum_chart is None for item in charted[1:]), "what was heard belongs to Expert"
+    assert all(item.drum_measures is not None for item in charted)
     assert build_tracks_for(Instrument.DRUMS, np.zeros(SR * 5, dtype=np.float32), TEMPO, 5.0) == []
 
 
@@ -448,9 +450,17 @@ def test_a_build_charts_drums_says_what_is_not_verified_and_writes_listening_fil
     ini = (result.folder / "song.ini").read_text(encoding="utf-8")
     assert "pro_drums = True" in ini.splitlines()
     text = (result.folder / "notes.chart").read_text(encoding="utf-8-sig")
-    assert "[ExpertDrums]" in text and "[HardDrums]" not in text
+    for level in ("Expert", "Hard", "Medium", "Easy"):
+        assert f"[{level}Drums]" in text
     assert "N 66 0" in text and "N 67 0" in text, "hi-hats and rides are written as cymbals"
     analysis = json.loads((result.folder / "analysis.json").read_text(encoding="utf-8"))
+    assert set(analysis["charts"]["drums"]) == {"expert", "hard", "medium", "easy"}
+    for level in ("hard", "medium", "easy"):
+        entry = analysis["charts"]["drums"][level]
+        assert 0 < entry["measures"]["position_ratio"] <= 1
+        assert "kick_share" in entry["soft_targets"] and "position_ratio" in entry["soft_targets"]
+        assert set(entry["drums"]["not_verified"]["gems"]) == {"yellow_tom", "blue_tom", "green_tom", "green_cymbal"}
+    assert len(analysis["drum_hard_rules"]) == 6, "three for every level, three between levels"
     drums = analysis["charts"]["drums"]["expert"]["drums"]
     assert drums["not_verified"]["parts"] == sorted(piece.value for piece in UNVERIFIED_PIECES)
     assert set(drums["not_verified"]["gems"]) == {"yellow_tom", "blue_tom", "green_tom", "green_cymbal"}

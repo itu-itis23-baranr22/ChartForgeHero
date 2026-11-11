@@ -1,12 +1,14 @@
 # Proje durumu
 
-Faz C (davul) devam ediyor, C.0, C.1 ve C.2 adımlarına bölündü ve her birinin sonunda onay bekleniyor. Şartname ve alınan kararlar `docs/SPEC.md` dosyasında.
+Faz C (davul) kapandı. Sırada Faz D: bölüm tespiti, star power, vokal paketleme, preview noktası. Şartname ve alınan kararlar `docs/SPEC.md` dosyasında.
 
 ## Şu anki adım
 
-**Test hızlandırma bitti. Sırada C.2: Hard, Medium, Easy, bot önizleme, `Songs`'a kopyalama.** Proje sahibi davulu klavyeyle çalacak; C.2 raporu klavyede davul tuş eşlemesini ve profil ayarını adım adım yazacak.
+**Faz C kapandı: C.2 (davul Hard, Medium ve Easy) bu commit'te. Sırada Faz D planı: proje sahibine sunuldu, onay bekliyor; onaydan önce kod yazılmıyor.**
 
-C.1 `3029bc8`'de kapandı (Expert davul chart'ı ve kulak testi dosyaları). Proje sahibi 2026-11-11'de C.2'ye geçilmesini istedi; kulak testinin sonucu henüz gelmedi. C.0 `1fd3d91`'de kapandı. Commit mesajlarına Claude imzası eklenmiyor: `.claude/settings.json` (`00681d2`).
+Proje sahibi 2026-11-11'de C.2'yi onayladı ve LastResort, Danza ve Toca'nın Pro Drums'ını Easy ve Hard'da çaldı: hepsi çalınabilir, hi-hat ve ride şeritleri doğal, Toca Easy tekdüze gelmedi, sorun yok. F1 alt sınırlarını onayladı (testte). `pyin` paylaşımı "ileride" listesinde.
+
+Test hızlandırma `dd05eb0`'da kapandı. C.1 `3029bc8`'de kapandı (Expert davul chart'ı ve kulak testi dosyaları). Proje sahibi 2026-11-11'de C.2'ye geçilmesini istedi; kulak testinin sonucu henüz gelmedi. C.0 `1fd3d91`'de kapandı. Commit mesajlarına Claude imzası eklenmiyor: `.claude/settings.json` (`00681d2`).
 
 B3 bitti (`2e91ece`): bas ve keys chart'lanıyor, şarkının gitara ihtiyacı yok.
 
@@ -15,6 +17,83 @@ Proje sahibi Danza'nın güncel bas Hard'ını çaldı: ritim rahat, sekizlik no
 Proje sahibi Danza'nın bas Expert'ini çaldı: senkron iyi, 37-38 sn'deki hayalet notalar rahatsız etmiyor. Seviye kuralı kapalı kalıyor.
 
 Proje sahibi Toca'nın bas Easy ve Hard'ını çaldı: vuruşlar ve zamanlama iyi, tekdüzelik rahatsız etmiyor, turuncu doğal geliyor. "Turuncu = tek perde" uyarısı yumuşak kalıyor: reggaeton'da tekrarlı bas için bu doğal.
+
+## C.2: davul Hard, Medium ve Easy
+
+**Nasıl indirgeniyor** (`chart/drum_difficulty.py`, ayarlar `chart/drum_difficulty.toml`, SPEC 36. karar). Her seviye bir üsttekinden yapılıyor: Hard Expert'ten, Medium Hard'dan, Easy Medium'dan.
+- **Kalabalık konum:** bir konumda seviyenin izin verdiğinden fazla gem varsa, gem'ler `gem_order` sırasıyla yer veriyor: snare en son gidiyor, sonra crash, ride, kick, hi-hat, tom'lar. Hard ve Medium iki gem tutuyor. Easy birini tutuyor; ikincisini yalnızca snare, crash ya da ride ise tutuyor. Sonuç: Hard'da K+S+Hh → K+S, K+S+Rd → S+Rd; Easy'de K+Hh → K, K+Rd → Rd, K+Cr → Cr, S+Hh → S, S+Rd kalıyor.
+- **Hangi konum kalıyor:** en yüksek puanlı önce (ölçüdeki yer, vuruşun gücü, gem ağırlığı), hedef Expert'in %76 / 64 / 54'ü. Bir seviye üsttekini aşamıyor. Konumlar arası en az aralık Hard'da 1/4, Medium ve Easy'de 1/2 vuruş. 2. ve 4. vuruştaki snare her zaman kalıyor; bir flam bir vuruşa iki snare koyarsa yalnızca iyisi korunuyor.
+- **Kesin kurallar kodda** (`check_drum_levels`) ve validator'da: zincir (konum ve gem), her seviyede en fazla 2 pad, Hard ve Medium'da en fazla 2 gem, Easy'de kick + pad yok, Medium ve Easy'de 16'lık yok, sustain yok. Toml dosyası bunlardan birine karar veren bir anahtar taşıyamıyor (`max_gems`, `allow_sixteenths`, Easy'de `second_gem_from`'a `kick` reddediliyor). 60 rastgele Expert ve rastgele ayarla denendi; kod ve validator hiç kural ihlali bulmadı.
+- **Neden bu değerler:** insanın Californication indirgemesi (`train`). İnsan Hard'da 8'lik ızgaradaki her konumu, 16'lıkların %64'ünü tutmuş, ızgara dışı süslemelerin hiçbirini tutmamış. Medium neredeyse Hard eksi 16'lıklar. Easy'de tek başına hi-hat'lerin %17'si kalmış, ride'ın %100'ü; kick pad'le birlikteyse pad kalmış, pad hi-hat değilse. Ayarlar F1'e göre değil, bu oranlardan seçildi; ölçü ağırlıklarını değiştirmek Californication'da sonucu değiştirmedi (seçimi kurallar ve aralık belirliyor).
+- Dört seviyenin hepsi 0,5-1,0 sn sürüyor.
+
+**Californication** (`train`, ayarlar bu şarkının insan chart'ından, yani iyimser):
+
+| | Konum (ben / insan) | Konum F1 | "Her N'inci" | "Önce vuruşlar" | Kick / snare / cymbal F1 | En büyük gem payı sapması |
+|---|---|---|---|---|---|---|
+| Expert | 1398 / 1426 | 0,919 | – | – | 0,962 / 0,908 / 0,874 | 0,054 |
+| Hard | 1062 / 1081 | 0,880 | 0,725 | 0,801 | 0,957 / 0,775 / 0,916 | 0,033 |
+| Medium | 745 / 910 | 0,886 | 0,616 | 0,817 | 0,881 / 0,975 / 0,874 | 0,055 |
+| Easy | 745 / 766 | 0,833 | 0,515 | 0,802 | 0,549 / 0,975 / 0,691 | 0,076 |
+
+Kabul kriterleri (plan): üç seviye de iki taban skorunu geçiyor, gem payı sapması ≤ 0,10. İkisi de `-Full`'da test ediliyor.
+
+**F1 alt sınırları** (proje sahibi onayladı, 2026-11-11; `test_californication_lower_levels_beat_both_naive_reductions`): Hard ≥ 0,85, Medium ≥ 0,85, Easy ≥ 0,80. Ölçülenin yaklaşık 0,03 altı; ayarlar bu şarkıdan geldiği için daha sıkı bir sınır anlamsız olurdu.
+
+**Californication'da Easy = Medium (745 konum).** Bizim Expert'in %34'ü 16'lıkta (insanınki %18, artı %18 ızgara dışı), bu yüzden Medium kural gereği Expert'in %53'üne iniyor (yumuşak hedef %54-74, uyarıyor). Easy'nin hedefi de %54 olduğu için Easy hiç konum düşürmüyor, yalnızca gem'leri sadeleştiriyor. Konum sayısı insanın Easy'siyle aynı (745 / 766). Hedefi bir üst seviyeye göre koymak denendi (aralık düzeltmesinden önce): Easy 627 konuma iniyor ve F1 0,752'ye düşüyor, "önce vuruşlar"ın altında.
+
+**Gerçeği olmayan şarkılar** (konum, Expert'e oranı, en kısa aralık):
+
+| | Expert | Hard | Medium | Easy |
+|---|---|---|---|---|
+| Danza | 1073 | 815 (%76), 1/4 vuruş | 687 (%64), 1/2 | 579 (%54), 1/2 |
+| Toca | 527 | 401 (%76), 0,41 | 337 (%64), 1/2 | 285 (%54), 1/2 |
+| LastResort | 765 | 581 (%76), 1/4 | 446 (%58), 1/2 | 413 (%54), 1/2 |
+
+- **Yumuşak uyarılar:** Danza ve Toca'da gem payları rock şarkısının paylarından uzak (reggaeton'da kick ve snare çok, ride az). Uyarı veriyor, build'i durdurmuyor.
+- **Risk, Toca Easy:** %84 snare, %2 kick. Toca'da bulunan neredeyse her kick'in yanında snare var (K+S+Hh 163 konum) ve Easy'de pad kick'i yeniyor. Easy her vuruşta tek snare'e dönüyor. Dembow ve dans davulunda doğrusu bilinmiyor, insan chart'ı yok. Proje sahibi çaldı: tekdüze gelmedi.
+- Expert'te 37-40 ms arayla iki konum (flam) kalabiliyor: Danza'da en kısa aralık 0,08 vuruş. Bu C.1'den; alt seviyelerde aralık kuralı bunları ayırıyor.
+
+**Gitar ve bas değişmedi.** Danza, Toca ve LastResort yeniden derlendi: `[SyncTrack]`, `[Events]`, bütün bas ve gitar bölümleri ve `[ExpertDrums]` C.1 sürümüyle bayt bayt aynı, yalnızca `[HardDrums]`, `[MediumDrums]`, `[EasyDrums]` eklendi. `song.ini` değişmedi. Üçü de validator'dan geçti.
+
+**`evaluate`:** davulun alt seviyeleri insanla ve iki taban skoruyla ayrı satırlarda raporlanıyor (`drum_levels`). Expert'in satırları değişmedi.
+
+**`analysis.json` ve terminal:** her davul seviyesinin ölçüleri (konum oranı, konum başına gem, vuruş üstü, 16'lık payı, en kısa aralık vuruş ve saniye olarak, gem payları), yumuşak hedefleri ve doğrulanmamış tom/crash sayıları. `drum_hard_rules` altı kural listeliyor.
+
+**Oyun** (Clone Hero v1.0.0.4080-final):
+- Danza, Toca ve `Davul Testi - LastResort` `Songs`'a kopyalandı (`notes.chart`, `song.ini`, `.ogg`'ler, `analysis.json`; `debug` yok). Önceki Danza ve Toca kopyaları scratchpad'e yedeklendi; yeni kopyalarda bas bölümleri ve `[SyncTrack]` onlarla aynı.
+- Bot önizleme: üç şarkı da `--player ProDrums,<seviye>` ile dört seviyede açıldı, botlar çalıyor (ekrandaki seri sayacı artıyor; sayaç tek oyuncunun), log'da hata yok. `--player Drums` ile oyun cymbal'leri yuvarlak pad olarak gösteriyor, bu yüzden CLI artık önizleme komutunda `ProDrums` yazıyor.
+- Bot isabet oranı ölçülmedi, insan henüz çalmadı.
+
+**Klavyede davul: adım adım.** Ekranlar oyunda görüldü; atama yapılmadı, ayarların değişmedi.
+1. **Tuş eşleme:** ana menüde **Space** → "Controller Remap". "Players" altında **Player1** seçili kalsın.
+2. Davul tuşlarını **Keyboard'un ikinci (boş) sütununa** ata. Birinci sütundaki A S D F G gitarın; onlara dokunmazsan gitar aynen çalışır. Önerilen düzen (sağ el orta sıra, tom'lar üst sıra, kick sol işaret parmağı):
+
+   | Satır ("Actions") | 2. sütun | Davulda |
+   |---|---|---|
+   | Orange | B | Kick |
+   | Red | H | Kırmızı pad (snare) |
+   | Yellow Cymbal | J | Sarı cymbal (hi-hat) |
+   | Blue Cymbal | K | Mavi cymbal (ride) |
+   | Green Cymbal | L | Yeşil cymbal (crash) |
+   | Yellow | U | Sarı tom |
+   | Blue | I | Mavi tom |
+   | Green | O | Yeşil tom |
+
+   Kullanma: **Space** (Open Button'a atanmış; kick'e de atanırsa gitarda open notalar bozulur), **;** (Keyboard Whammy), oklar, Right Shift (Start), Return (Select / Star Power). Kick'i Space'e almak istersen önce Space'i Open Button'dan kaldır. 2X Kick, Drum Pad Modifier, Drum Cymbal Modifier ve (auto)CymExt satırları boş kalabilir. Kutuya tıklayınca açılan atama penceresini açmadım; wiki'ye göre "Replace"e basıp tuşa basılıyor.
+3. **Done** ile kapat.
+4. **Profil:** ana menüde **Start** (sende Right Shift) → "Choose a Profile" → **Guest**'i A ile seç → **Start**'a yeniden bas → **Controller** → **Drums** ("5 Lane Compatibility" değil). Gitara dönerken aynı yerden "5 Fret Guitar". Lefty Flip kapalı kalsın.
+5. **Şarkı:** Quickplay → şarkı → enstrüman **Pro Drums** → zorluk. Bu ekranı görmedim: wiki'ye göre Drums profilinde varsayılan Pro Drums; bot önizlemede şeridin adı "Pro Drums".
+6. Önerilen sıra: önce `Davul Testi - LastResort` (gerçek davul seti, rock), sonra Danza ya da Toca; her birinde Easy ve Hard.
+
+**Çalarken neye bakmalı:** kick ve snare zamanlaması, hi-hat'in sarı ve ride'ın mavi şeritte doğal gelip gelmediği, Easy'nin tekdüze olup olmadığı (özellikle Toca), Hard'daki 16'lıkların çalınabilirliği. Not için şarkı, seviye ve dakika:saniye yeterli.
+
+**Değişen testler** (tolerans gevşetilmedi):
+- `test_a_drum_stem_becomes_an_expert_drum_track`: artık dört seviye bekliyor (önce "alt seviyeler C.2'de" diye yalnızca Expert'i bekliyordu); alt seviyelerde `drum_chart` yok, hepsinde `drum_measures` var.
+- `test_a_build_charts_drums_says_what_is_not_verified_and_writes_listening_files`: önce `[HardDrums]`'ın olmamasını istiyordu, artık dört bölümü istiyor; alt seviyelerin ölçü ve yumuşak hedeflerini ve altı davul kuralını da denetliyor.
+- Yeni: `tests/test_drum_difficulty.py`.
+
+**Kontroller:** `check.ps1 -Full` geçti: 927 test (839 + 88 yeni), 5 gerçek şarkının her biri bir kez yüklendi, 8 klasör validator'dan geçti (yeniden derlenen Danza, Toca ve `Davul Testi - LastResort` dahil), gitar ve bas hash'leri ve onaylanan F1 alt sınırları dahil. Süre 900 sn: aynı anda Faz D için bir ölçüm betiği çalıştı; alt sınırlar eklenmeden önceki çalışma 555 sn sürmüştü. pytest'in tepe özel belleği 3,42 GB, çalışma kümesi 2,33 GB; makinenin en düşük boş RAM'i 4,3 GB (başta 6,2). Boş commit 1,1 GB'a kadar indi (hızlandırma ölçümlerinde en az 2,8 GB); pytest'in kendi belleği aynı kaldığı için büyük ihtimalle başka uygulamalardan.
 
 ## Test hızlandırma (C.1'den sonra, ayrı commit)
 
@@ -242,6 +321,7 @@ Ses analizi yok. Build davulu henüz chart'lamıyor ("not implemented yet" uyar�
 ## İleride değerlendirilecek fikirler
 
 - **Basta open note (`N 7`):** tekrar eden en alçak notalar için. Proje sahibinin önerisi, uygulanmadı.
+- **Testlerde `pyin` paylaşımı:** gerçek şarkı testlerinde zamanın çoğu basın `librosa.pyin`'inde, aynı şarkının bası oturumda 2-3 kez chart'lanıyor (Toca ve Californication 3, Danza 2). Paylaşmak üretim koduna dokunmayı gerektirir. Proje sahibi 2026-11-11'de "şimdilik uygulama" dedi.
 
 ```powershell
 scripts\check.ps1 -Full
@@ -470,7 +550,8 @@ Toca, LastResort, Şarkı Testi ve Californication'ın tempo haritaları, `final
 | B3.3 | Keys (gerçek veriyle doğrulanmadı), Hard'da tempoya göre aralık, validator bölüm adı koruması | `2e91ece` |
 | C.0 | Davul formatı (4-lane Pro), yazıcı, validator, referans okuyucu, bas hash'leri | `1fd3d91` |
 | C.1 | Expert davul: sınıflandırma, chart, `evaluate`, kanal teşhisi, `--drum-ear-test` | `3029bc8` |
-| Test hızlandırma | Gerçek şarkı oturumda bir kez, Demucs modeli bir kez, `real` işareti, `check.ps1 -Mid` | bu commit |
+| Test hızlandırma | Gerçek şarkı oturumda bir kez, Demucs modeli bir kez, `real` işareti, `check.ps1 -Mid` | `dd05eb0` |
+| C.2 | Davul Hard, Medium, Easy, `evaluate` seviyeleri, `ProDrums` önizleme; Faz C kapandı | bu commit |
 
 Proje sahibi LastResort ve Şarkı Testi'nin güncel Hard ve Medium sürümlerini de çaldı: akorlar rahat, fret dağılımı dengeli, senkron iyi.
 
@@ -501,6 +582,8 @@ Pre-commit hook 39–80 sn sürüyor (hızlı testler + validator, makine yükü
 - **Yön hedefi:** gitar Expert'te insan şerit değiştirince %62. %65 hedefi test referanslarına ertelendi.
 - **Otomatik HOPO:** LastResort Expert %15.9 ve Hard %3.6, Şarkı Testi Expert %10.6, hedefler aşıldığı için uyarıyor. Davranış değiştirilmedi. `N 5` düzeltmesi gerçek şarkılarda hiç gerekmedi, yalnızca sentetik testte çalıştı.
 - **Şerit hedefi başka şarkılarda sert olabilir:** build, Californication'ın paylarıyla karşılaştırıyor. LastResort Easy'de kırmızı %73, ama oynarken tek düzelik hissedilmedi. Test referanslarıyla yeniden ayarlanmalı.
+- **Davul tek referanstan:** sınıflandırıcının eşikleri ve alt seviyelerin oranları Californication'dan (rock). Tom ve crash doğrulanmadı (build bunu yazıyor). Danza ve Toca'da gem payı uyarıları, hedef paylar rock şarkısından geldiği için; oynarken sorun görülmedi.
+- **Davul Expert'te flam:** 37-40 ms arayla iki konum kalabiliyor (C.1'in 35 ms birleştirme sınırının hemen üstü). Alt seviyelerde aralık kuralı bunları ayırıyor.
 
 ## Bekleyen kararlar ve ön tercihler
 

@@ -15,10 +15,10 @@ It only processes files you give it. It does not download audio or touch streami
 | B1 | Time signature, chords, sustains, Viterbi fret mapping, vocal bleed removal (Expert) | Done |
 | B2 | Difficulty reduction to Hard, Medium and Easy | Done |
 | B3 | Bass and keys; a song no longer needs a guitar | Done; keys not verified on real data |
-| C | Drums (4-lane Pro): percussion classification, four difficulties | In progress: C.0 format and C.1 Expert done; lower levels next |
+| C | Drums (4-lane Pro): percussion classification, four difficulties | In progress: C.0 format, C.1 Expert and C.2 lower levels done; waiting for play-testing |
 | D | Vocal events, sections, star power | Planned |
 
-Guitar, bass and keys are charted at all four difficulties, drums at Expert so far, so a song needs at least one of the four.
+Guitar, bass, keys and drums are charted at all four difficulties, so a song needs at least one of the four.
 Drums are 4-lane Pro with cymbals; toms and the crash are not verified on real data, and a build says so.
 Keys have only been tested on synthetic audio, and a build says so. Telling chords from single notes on heavily distorted guitar is unverified. 3/4 and 6/8 have only
 been tested on synthetic audio.
@@ -72,7 +72,8 @@ Preview it with bot players, without scanning your library:
 "<path to Clone Hero.exe>" --song "<song folder>" --player Guitar,Expert --player Guitar,Hard --player Guitar,Medium --player Guitar,Easy -i
 ```
 
-A build prints this command for each instrument it charted, for example `--player Bass,Expert`.
+A build prints this command for each instrument it charted, for example `--player Bass,Expert`. Drums
+are 4-lane Pro and play as `ProDrums`: with `Drums` the game shows every cymbal as a pad.
 
 To add it to your library, copy the folder into Clone Hero's `Songs` folder and press
 *Settings > General > Scan Songs*. Songs the game rejects are listed in `badsongs.txt`.

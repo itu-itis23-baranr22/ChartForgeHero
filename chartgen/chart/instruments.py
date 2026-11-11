@@ -23,6 +23,12 @@ from chartgen.chart.difficulty import (
     reduce_track,
 )
 from chartgen.chart.drum_charter import build_drum_expert_track
+from chartgen.chart.drum_difficulty import (
+    DrumDifficultyConfig,
+    gems_by_tick,
+    measure_positions,
+    reduce_drums,
+)
 from chartgen.chart.fret_mapping import BASS_WEIGHTS_PATH, FretWeights, load_weights
 from chartgen.core.model import Instrument, Track
 from chartgen.core.timing import TempoMap
@@ -37,7 +43,7 @@ STEM_FOR_INSTRUMENT: Mapping[Instrument, str] = {
 CHARTABLE_INSTRUMENTS = frozenset(
     {Instrument.GUITAR, Instrument.BASS, Instrument.KEYS, Instrument.DRUMS}
 )
-"""Instruments with a chart generator. Drums have Expert only until C.2 adds the lower levels."""
+"""Instruments with a chart generator, each at all four difficulties."""
 UNVERIFIED_INSTRUMENTS = frozenset({Instrument.KEYS})
 """Charted, but only ever tested on synthetic audio: none of the songs measured so far has a piano
 stem that counts as present, and the one human keyboard chart has 17 positions."""
@@ -77,6 +83,27 @@ def _orange_of(
     return count_orange_pitches(track, positions, config.max_orange_pitch_share)
 
 
+def drum_levels_for(
+    expert: ChartedTrack, tempo_map: TempoMap, config: DrumDifficultyConfig | None = None
+) -> list[ChartedTrack]:
+    """Expert drums with their measures, then Hard, Medium and Easy made from them."""
+    count = len({note.tick for note in expert.track.notes})
+    strengths = expert.drum_chart.strengths if expert.drum_chart is not None else {}
+    charted = [
+        replace(expert, drum_measures=measure_positions(gems_by_tick(expert.track), tempo_map, count))
+    ]
+    for level in reduce_drums(expert.track, tempo_map, strengths, config).values():
+        charted.append(
+            ChartedTrack(
+                level.track,
+                expert.onset_count,
+                soft_targets=level.soft_targets,
+                drum_measures=level.measures,
+            )
+        )
+    return charted
+
+
 def build_tracks_for(
     instrument: Instrument,
     mono: np.ndarray,
@@ -86,6 +113,7 @@ def build_tracks_for(
     not_before_s: float = 0.0,
     quiet_limits: QuietNoteLimits | None = None,
     drum_config: DrumHitConfig | None = None,
+    drum_levels: DrumDifficultyConfig | None = None,
 ) -> list[ChartedTrack]:
     """Return the charted tracks of ``instrument``, Expert first, then Hard, Medium and Easy.
 
@@ -100,12 +128,13 @@ def build_tracks_for(
         not_before_s: Where an opening that is not part of the song ends. Nothing lands before it.
         quiet_limits: Replaces what ``quiet_notes.toml`` says, for the instruments it applies to.
         drum_config: Replaces what ``drum_hits.toml`` says.
+        drum_levels: Replaces what ``drum_difficulty.toml`` says.
     """
     if instrument is Instrument.DRUMS:
         expert = build_drum_expert_track(
             detect_drum_hits(mono, drum_config), tempo_map, duration_s, not_before_s
         )
-        return [expert] if expert.track.notes else []
+        return drum_levels_for(expert, tempo_map, drum_levels) if expert.track.notes else []
     config, weights = settings_for(instrument)
     expert = build_expert_track(
         instrument,
