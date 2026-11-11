@@ -1,12 +1,12 @@
 # Proje durumu
 
-Faz C (davul) kapandı. Sırada Faz D: bölüm tespiti, star power, vokal paketleme, preview noktası. Şartname ve alınan kararlar `docs/SPEC.md` dosyasında.
+Faz D (bölümler, preview, star power, vokal) devam ediyor; D.0, D.1, D.2 ve D.3 adımlarına bölündü ve her birinin sonunda onay bekleniyor. Şartname ve alınan kararlar `docs/SPEC.md` dosyasında.
 
 ## Şu anki adım
 
-**Faz C kapandı: C.2 (davul Hard, Medium ve Easy) bu commit'te. Sırada Faz D planı: proje sahibine sunuldu, onay bekliyor; onaydan önce kod yazılmıyor.**
+**D.0 bu commit'te: ölçüm altyapısı (ses analizi yok, build çıktıları aynı). Proje sahibi 2026-11-11'de onayladı. Sırada D.1: bölüm tespiti.**
 
-Proje sahibi 2026-11-11'de C.2'yi onayladı ve LastResort, Danza ve Toca'nın Pro Drums'ını Easy ve Hard'da çaldı: hepsi çalınabilir, hi-hat ve ride şeritleri doğal, Toca Easy tekdüze gelmedi, sorun yok. F1 alt sınırlarını onayladı (testte). `pyin` paylaşımı "ileride" listesinde.
+Faz C `1ec287d`'de kapandı (C.2: davul Hard, Medium ve Easy). Proje sahibi 2026-11-11'de C.2'yi onayladı ve LastResort, Danza ve Toca'nın Pro Drums'ını Easy ve Hard'da çaldı: hepsi çalınabilir, hi-hat ve ride şeritleri doğal, Toca Easy tekdüze gelmedi, sorun yok. F1 alt sınırlarını onayladı (testte). `pyin` paylaşımı "ileride" listesinde.
 
 Test hızlandırma `dd05eb0`'da kapandı. C.1 `3029bc8`'de kapandı (Expert davul chart'ı ve kulak testi dosyaları). Proje sahibi 2026-11-11'de C.2'ye geçilmesini istedi; kulak testinin sonucu henüz gelmedi. C.0 `1fd3d91`'de kapandı. Commit mesajlarına Claude imzası eklenmiyor: `.claude/settings.json` (`00681d2`).
 
@@ -17,6 +17,65 @@ Proje sahibi Danza'nın güncel bas Hard'ını çaldı: ritim rahat, sekizlik no
 Proje sahibi Danza'nın bas Expert'ini çaldı: senkron iyi, 37-38 sn'deki hayalet notalar rahatsız etmiyor. Seviye kuralı kapalı kalıyor.
 
 Proje sahibi Toca'nın bas Easy ve Hard'ını çaldı: vuruşlar ve zamanlama iyi, tekdüzelik rahatsız etmiyor, turuncu doğal geliyor. "Turuncu = tek perde" uyarısı yumuşak kalıyor: reggaeton'da tekrarlı bas için bu doğal.
+
+## Faz D planı (onaylandı, 2026-11-11)
+
+**Bugün var olanlar:** `vocals.ogg` Faz A'dan beri ayrı dosya (vokal stem'i "yok" ise sesi `song.ogg`'da). Bölüm olarak yalnızca şarkıya ait olmayan giriş için `Intro` ve `Song`. Star power yok. Preview karışımın en gürültülü 30 sn'si, ölçüye oturmuyor.
+
+**İnsan chart'ı (Californication, `train`):**
+- 15 bölüm (`prc_intro`, `verse_N`, `prechorus_N`, `chorus_N`, `gtr_solo`), biri dışında hepsi ölçü başında, aralarında 6-12 ölçü.
+- Star power: gitar 13, bas 12, davul 11, keys 1 ifade. Her biri yaklaşık 1 ölçü, 36 / 36'sı ölçü başında, aralarında ortanca 22-29 sn. Bir ifade enstrümanın dört seviyesinde aynı yerde (MIDI nota 116).
+- `preview_start_time` 174,4 sn: ikinci nakarattan 4 ölçü (10 sn) önce. Bizim kuralımız 285,1 sn seçiyor.
+
+**Prototip (yalnızca scratchpad):** ölçü başına öznitelik, kendine benzerlik ve novelty ile bölüm sınırları. ±1 ölçüde F1 0,47-0,63 (ayarsız). "Her N ölçü" saf sınırları ±1 ölçüde en fazla 0,38, ±2 ölçüde 0,62'ye çıkıyor: ±2 ölçü fazla gevşek.
+
+**Sıra** (her adımın sonunda onay):
+- **D.0:** referans okuyucu ve `evaluate` bölümleri, star power'ı ve preview'u da okuyup ölçer. Ses analizi yok, build çıktıları aynı kalır.
+- **D.1:** bölüm tespiti (`audio/sections.py`), sınırlar ölçü başında, giriş kuralı korunur.
+- **D.2:** preview noktası bölümlerden.
+- **D.3:** star power (`chart/star_power.py`), dört enstrüman, validator kuralları, oyunda bot ve proje sahibi.
+
+**Proje sahibinin kararları:**
+1. Bölüm adları yapısal harfler: tekrar eden bölüm aynı harf (`section A1`, `section B1`, `section A2`...), event metinleri ASCII. Giriş `Intro` kalır.
+2. Star power dört enstrümanda, ifade başına 1 ölçü, yaklaşık her 20-30 sn. Davul star power'ının oyunda nasıl açıldığı (fill gerekip gerekmediği) D.3'te mutlaka doğrulanır; fill gerekiyorsa seçenekler sunulur.
+3. Şarkı sözü yazılmaz ("İleride" listesinde).
+4. Preview: tekrar eden en enerjik bölümün ikinci kez başlamasından 4 ölçü önce. Bölüm bulunamazsa bugünkü "en gürültülü pencere" kuralı, ölçüye oturtularak.
+5. Sınır F1 eşiği D.1'de ölçülüp önerilir; 0,55 taban. "Her N ölçü" taban skoru her durumda geçilmeli.
+6. Dokusu az değişen şarkılarda (Danza, Toca gibi) yalnızca `Intro` / `Song` yazılıyorsa bu uyarı olarak raporlanır; zorla bölüm üretilmez.
+
+**Kabul kriterleri (plan):**
+- Kesin: nota satırları (`N`) bayt bayt aynı, yalnızca `E` ve `S 2` satırları eklenir; bölüm ve star power ölçü başında; girişte hiçbir şey yok; star power ifadeleri çakışmaz, içinde nota olmayan ifade yazılmaz; preview girişte değil, 30 sn şarkıya sığar.
+- Ölçüm (Californication, `train`): sınır F1 ±1 ölçüde ≥ 0,55 ve her "her N ölçü" taban skorunu geçer; en kısa bölüm ≥ 4 ölçü.
+- Yumuşak: dakikada 2-5 bölüm; star power dakikada 1,5-3 ifade, ifade başına nota.
+- Oyun: bot dört enstrümanda star power toplar; proje sahibi en az bir şarkıda star power'ı toplayıp açar.
+
+## D.0: ölçüm altyapısı
+
+**Referans okuyucu** (`evaluation/reference.py`): insanın bölümleri (`.mid`'de EVENTS'teki `[section …]` ve `[prc_…]`, `.chart`'ta `E "section …"`; lyric ve diğer olaylar bölüm sayılmaz), enstrüman başına star power ifadeleri (`.mid`'de nota 116, `.chart`'ta Expert bölümündeki `S 2`; davul fill'i `S 64` sayılmaz) ve `preview_start_time` (yok, -1 ya da okunamıyorsa yok sayılır).
+
+**Ölçüler** (`evaluation/structure_metrics.py`):
+- Sınır F1: her insan sınırı, bizim tempo haritamızda kendi ölçüsünün uzunluğu kadar toleransla, en yakın önce ve bire bir eşleşir. Tam bir ölçü kaymış sınır da sayılır.
+- "Her N ölçü" taban skorları: şarkının başladığı ölçüden her 4, 8 ve 16 ölçüde bir sınır (adil olanlar, kriter bunlar). Ayrıca en iyi saf skor: 4, 6, 8, 12 ve 16 ölçülük periyotlar her başlangıçla denenir ve en iyisi insana bakarak seçilir (iyimser, bilgi için).
+- Star power özeti: ifade sayısı, dakikada ifade, ortanca uzunluk (ölçü), ölçü başında olanların payı, ifadeler arası ortanca süre, ifade içindeki Expert nota sayısı (ortanca ve en az).
+- Preview: bizim ve insanın başlangıcı, aralarındaki fark, her birinin düştüğü insan bölümü.
+
+**`evaluate`** her şarkı için `structure` sonucunu ve "Structure of …" satırlarını yazıyor. Californication'da bugün:
+
+| | Değer |
+|---|---|
+| Bölüm | insan 15, bizim 0 (girişi olmayan şarkıda bugün bölüm yok), sınır F1 0 |
+| "Her N ölçü", şarkı başından | her 4: 0,250, her 8: 0,250, her 16: 0,083 |
+| En iyi saf (insana bakarak) | 0,385 (her 12 ölçüde, 1. ölçüden) |
+| Star power, insan | gitar 13 (2,41/dk, 1 ölçü, %100 ölçü başı, ortanca aralık 22,4 sn, içinde ortanca 8 nota), bas 12 (2,22/dk, 26,8 sn, 8 nota), keys 1, davul 11 (2,04/dk, 28,6 sn, 13 vuruş) |
+| Preview | bizim 285,1 sn (`prechorus_3`), insan 174,4 sn (`prechorus_2`), 110,7 sn fark |
+
+**Bayt bayt aynı:** pipeline'daki `Intro`/`Song` kuralı `chart/sections.py`'ye, preview hesabı tek bir fonksiyona (`preview_start_ms_of`) taşındı; davranış değişmedi. Danza (girişli) ve LastResort ayrı bir klasöre yeniden derlendi: `notes.chart` ve `song.ini` bayt bayt aynı, bütün `.ogg`'lerin çözülmüş örnekleri birebir aynı. `.ogg` dosyalarının baytları her derlemede farklı (Ogg Vorbis her kodlamada rastgele bir akış numarası yazıyor; D.0'dan önce de böyleydi). `analysis.json`'da farklı olan yalnızca davul analizinin süresi (`analysis_seconds`).
+
+**Vokal, oyunda:** Settings → Audio'da ayrı bir **Vocals** ses kaydırıcısı var (Master, Guitar, Bass, Rhythm, Drums'ın yanında). Proje sahibi denedi: kaydırıcıyı kısınca vokal kayboluyor, paketleme doğru.
+
+**Değişen testler:** yok. Yeni: `tests/test_structure.py` (15 test; biri gerçek, Californication'ın okunan bölüm, star power ve preview değerlerini ve saf taban skorlarını sabitliyor).
+
+**Kontroller:** `check.ps1 -Full` geçti: 942 test (927 + 15 yeni), 1051 sn, 5 gerçek şarkının her biri bir kez yüklendi, 8 klasör validator'dan geçti, gitar ve bas hash'leri ve davul F1 alt sınırları dahil. Tepe özel bellek 3,42 GB, en düşük boş RAM 3,8 GB. Süre C.2'nin 555 sn'sinin iki katı, ama değişmeyen 927 testin hepsi eşit oranda (1,9 kat) yavaşladı, D.0'la ilgisi olmayan sentetik tempo testi dahil (13,0 → 23,5 sn); yeni testler toplam 3,5 sn. Yani makine yükü.
 
 ## C.2: davul Hard, Medium ve Easy
 
@@ -321,6 +380,7 @@ Ses analizi yok. Build davulu henüz chart'lamıyor ("not implemented yet" uyar�
 ## İleride değerlendirilecek fikirler
 
 - **Basta open note (`N 7`):** tekrar eden en alçak notalar için. Proje sahibinin önerisi, uygulanmadı.
+- **Şarkı sözü (lyric olayları):** konuşma tanıma (Whisper gibi) ve sözlerin vokal notalarına hizalanması gerekir; yeni ve ağır bir bağımlılık. Proje sahibi 2026-11-11'de "yazma, ileride" dedi.
 - **Testlerde `pyin` paylaşımı:** gerçek şarkı testlerinde zamanın çoğu basın `librosa.pyin`'inde, aynı şarkının bası oturumda 2-3 kez chart'lanıyor (Toca ve Californication 3, Danza 2). Paylaşmak üretim koduna dokunmayı gerektirir. Proje sahibi 2026-11-11'de "şimdilik uygulama" dedi.
 
 ```powershell
@@ -551,7 +611,8 @@ Toca, LastResort, Şarkı Testi ve Californication'ın tempo haritaları, `final
 | C.0 | Davul formatı (4-lane Pro), yazıcı, validator, referans okuyucu, bas hash'leri | `1fd3d91` |
 | C.1 | Expert davul: sınıflandırma, chart, `evaluate`, kanal teşhisi, `--drum-ear-test` | `3029bc8` |
 | Test hızlandırma | Gerçek şarkı oturumda bir kez, Demucs modeli bir kez, `real` işareti, `check.ps1 -Mid` | `dd05eb0` |
-| C.2 | Davul Hard, Medium, Easy, `evaluate` seviyeleri, `ProDrums` önizleme; Faz C kapandı | bu commit |
+| C.2 | Davul Hard, Medium, Easy, `evaluate` seviyeleri, `ProDrums` önizleme; Faz C kapandı | `1ec287d` |
+| D.0 | Bölüm, star power ve preview ölçümü (insan chart'ından), `evaluate` yapı satırları | bu commit |
 
 Proje sahibi LastResort ve Şarkı Testi'nin güncel Hard ve Medium sürümlerini de çaldı: akorlar rahat, fret dağılımı dengeli, senkron iyi.
 

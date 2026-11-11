@@ -175,6 +175,19 @@ Decisions made since it was written are listed first and take precedence.
    of Expert, at least a sixteenth apart on Hard and an eighth on Medium and Easy; the snare on beats 2
    and 4 always stays. These values come from the one human drum chart (Californication, train). The hard
    rules of decision 33 are in code and in the validator; the file cannot decide any of them.
+37. **Phase D, approved 2026-11-11.** Steps D.0 (measuring, no audio analysis, outputs unchanged), D.1
+   sections, D.2 preview, D.3 star power, with approval after each.
+   - Sections are named by structure: a repeated part gets the same letter (`section A1`, `section B1`,
+     `section A2`...), ASCII only. An opening that is not part of the song keeps `Intro` and `Song`. A song
+     whose texture hardly changes gets no forced sections: it keeps only those, and the build warns.
+   - Boundaries are scored within one bar against the human's, and must beat naive boundaries every N
+     bars in every case; F1 0.55 is the floor, the final threshold is proposed after D.1 is measured.
+   - The preview starts four bars before the second start of the most energetic repeated section. With
+     no sections it falls back to the loudest window, moved onto a bar line.
+   - Star power on guitar, bass, keys and drums: phrases of one bar, about every 20 to 30 seconds. How the
+     game activates drum star power, and whether it needs fills, is checked in the game in D.3.
+   - No lyrics: they would need speech recognition and alignment (noted for later in STATUS.md).
+   `vocals.ogg` has been written since Phase A.
 
 ## Phase B1 targets (one reference song so far)
 

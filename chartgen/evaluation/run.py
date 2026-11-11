@@ -18,15 +18,24 @@ import numpy as np
 
 from chartgen.audio.io import ANALYSIS_SAMPLERATE, analysis_mono
 from chartgen.audio.presence import analyze_presence
-from chartgen.audio.separation import STEM_NAMES, Separator, separate_with_cache
-from chartgen.audio.tempo import estimate_tempo_map
+from chartgen.audio.separation import STEM_NAMES, Separator, StemSet, separate_with_cache
+from chartgen.audio.tempo import TempoAnalysis, estimate_tempo_map
 from chartgen.chart.charter import ChartedTrack
 from chartgen.chart.difficulty import LANE_NAMES, LevelMeasures, load_config
 from chartgen.chart.instruments import STEM_FOR_INSTRUMENT, build_tracks_for
+from chartgen.chart.sections import opening_sections, song_start_s
 from chartgen.core.model import Difficulty, Instrument
 from chartgen.core.timing import TempoMap
 from chartgen.errors import ChartgenError
 from chartgen.evaluation.drum_metrics import channel_metrics, drum_level_metrics, drum_metrics
+from chartgen.evaluation.structure_metrics import (
+    NAIVE_EVERY_BARS,
+    bar_lines_s,
+    boundary_scores,
+    naive_section_baselines,
+    preview_comparison,
+    star_power_summary,
+)
 from chartgen.evaluation.metrics import (
     average,
     chart_metrics,
@@ -208,6 +217,44 @@ def _average_levels(
     return averages
 
 
+def compare_structure(song: ReferenceSong, tempo: TempoAnalysis, stems: StemSet) -> dict[str, object]:
+    """Sections, star power and the preview against the human chart's, where it has them."""
+    from chartgen.pipeline import preview_start_ms_of
+
+    tempo_map = tempo.tempo_map
+    bars = bar_lines_s(tempo_map, stems.duration_s)
+    mine = [(float(tempo_map.seconds_at(float(section.tick))), section.name) for section in opening_sections(tempo)]
+    human = [(section.time_s, section.name) for section in song.sections]
+    sections: dict[str, object] = {
+        "human": [{"time_s": round(time, 3), "name": name} for time, name in human],
+        "mine": [{"time_s": round(time, 3), "name": name} for time, name in mine],
+    }
+    if human:
+        human_times = [time for time, _ in human]
+        sections["match"] = boundary_scores([time for time, _ in mine], human_times, bars)
+        sections["naive"] = naive_section_baselines(human_times, bars, song_start_s(tempo))
+    notes = {
+        Instrument.GUITAR: [note.time_s for note in song.levels.get(Difficulty.EXPERT, ())],
+        Instrument.BASS: [note.time_s for note in song.bass_levels.get(Difficulty.EXPERT, ())],
+        Instrument.KEYS: [note.time_s for note in song.keys_levels.get(Difficulty.EXPERT, ())],
+        Instrument.DRUMS: [hit.time_s for hit in song.drums.levels.get(Difficulty.EXPERT, ())],
+    }
+    star_power = {
+        "human": {
+            instrument.value: star_power_summary(
+                [(phrase.start_s, phrase.end_s) for phrase in phrases],
+                song.bars,
+                song.audio.duration_s,
+                np.array(notes[instrument]),
+            )
+            for instrument, phrases in song.star_power.items()
+        },
+        "mine": {},
+    }
+    preview = preview_comparison(preview_start_ms_of(stems) / 1000.0, song.preview_start_s, human)
+    return {"sections": sections, "star_power": star_power, "preview": preview}
+
+
 def evaluate_song(
     song: ReferenceSong, separator: Separator, cache_dir: Path
 ) -> dict[str, object]:
@@ -299,6 +346,7 @@ def evaluate_song(
                 result["drum_levels"] = levels
     elif song.drums.skipped:
         result["drums_skipped"] = song.drums.skipped
+    result["structure"] = compare_structure(song, tempo, stems)
     return result
 
 
@@ -442,6 +490,54 @@ def _drum_lines(name: str, song: dict[str, object]) -> list[str]:
     return lines
 
 
+def _structure_lines(name: str, song: dict[str, object]) -> list[str]:
+    """Show a song's sections, star power and preview against the human chart's."""
+    structure = song.get("structure")
+    if not isinstance(structure, dict):
+        return []
+    sections = structure["sections"]
+    lines = [f"Structure of {name}"]
+    mine_names = ", ".join(section["name"] for section in sections["mine"]) or "none"
+    if "match" in sections:
+        match, naive = sections["match"], sections["naive"]
+        best = naive["best_naive"]
+        lines.append(
+            f"sections: human {match['human']}, mine {match['mine']} ({mine_names}); boundary F1 within a bar "
+            f"{match['f1']:.3f} (P {match['precision']:.3f}, R {match['recall']:.3f})"
+        )
+        lines.append(
+            "naive from the song start: "
+            + ", ".join(f"every {period} bars {naive[f'every_{period}_bars']:.3f}" for period in NAIVE_EVERY_BARS)
+            + f"; best naive {best['f1']:.3f} (every {best['every_bars']} bars from bar {best['offset_bars']}, "
+            "chosen by the human chart)"
+        )
+    else:
+        lines.append(f"sections: the human chart has none; mine {len(sections['mine'])} ({mine_names})")
+    for source in ("human", "mine"):
+        summaries = structure["star_power"][source]
+        parts = [
+            f"{instrument} {value['phrases']} ({value['per_minute']}/min, {value['median_length_bars']} bar, "
+            f"{value['on_a_bar_line']:.0%} on a bar line, gap "
+            + (f"{value['median_gap_s']} s" if value["median_gap_s"] is not None else "-")
+            + (f", notes inside {value['median_notes_inside']:g} median, {value['fewest_notes_inside']} fewest" if "median_notes_inside" in value else "")
+            + ")"
+            for instrument, value in summaries.items()
+            if value["phrases"]
+        ]
+        lines.append(f"star power, {source}: " + ("; ".join(parts) if parts else "none"))
+    preview = structure["preview"]
+    mine_text = f"mine {preview['mine_s']:.1f} s ({preview['mine_section'] or '-'})"
+    if "human_s" in preview:
+        lines.append(
+            f"preview: {mine_text}, human {preview['human_s']:.1f} s ({preview['human_section'] or '-'}): "
+            f"{preview['apart_s']:.1f} s apart"
+        )
+    else:
+        lines.append(f"preview: {mine_text}; the human chart sets none")
+    lines.append("")
+    return lines
+
+
 _DRUM_SHOWN = (
     ("position", "position"),
     ("kick", "kick"),
@@ -473,6 +569,7 @@ def format_report(report: EvaluationReport) -> str:
             lines.extend(_level_table(f"Bass of {name}", report.songs[name].get("bass", {})))
             lines.extend(_keys_lines(name, report.songs[name]))
             lines.extend(_drum_lines(name, report.songs[name]))
+            lines.extend(_structure_lines(name, report.songs[name]))
         if len(names) > 1:
             lines.extend(
                 _level_table("Difficulties, average", report.level_averages.get(split, {}))

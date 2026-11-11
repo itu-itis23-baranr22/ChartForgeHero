@@ -16,7 +16,7 @@ from chartgen.audio.io import AudioData, analysis_mono
 from chartgen.chart.hopo import natural_hopo_ticks
 from chartgen.clonehero.validate import ParsedChart, ParsedEvent, ValidationReport, parse_chart
 from chartgen.core.drums import DrumGem
-from chartgen.core.model import CYMBAL_LANES, Difficulty
+from chartgen.core.model import CYMBAL_LANES, Difficulty, Instrument
 from chartgen.errors import ChartgenError
 from chartgen.evaluation.formats import MidiChart, SngFile, open_sng, parse_midi
 
@@ -83,6 +83,28 @@ _CHART_CYMBAL_FLAGS = {66: 2, 67: 3, 68: 4}
 _TRUE_TAGS = frozenset({"true", "1"})
 _FIVE_LANE = "5-lane drums, which this project does not chart"
 
+_EVENTS_TRACK = "EVENTS"
+_MIDI_SECTION = re.compile(r"^\[(?:section[ _]+|prc_)(.+?)\]$")
+"""``[section verse 1]`` in older charts, ``[prc_verse_1]`` in Rock Band 3's."""
+_CHART_SECTION = re.compile(r'^"?section (.+?)"?$')
+_STAR_POWER_NOTE = 116
+"""In a MIDI track, a star power phrase spans every difficulty at once."""
+_CHART_STAR_POWER = "2"
+"""``tick = S 2 length`` in one difficulty of a ``.chart``."""
+_STAR_POWER_TRACKS = {
+    Instrument.GUITAR: _MAIN_TRACK,
+    Instrument.BASS: _BASS_TRACK,
+    Instrument.KEYS: _KEYS_TRACK,
+    Instrument.DRUMS: _DRUM_TRACK,
+}
+_STAR_POWER_CHART_SECTIONS = {
+    Instrument.GUITAR: _CHART_SECTIONS[Difficulty.EXPERT],
+    Instrument.BASS: _BASS_CHART_SECTIONS[Difficulty.EXPERT],
+    Instrument.KEYS: _KEYS_CHART_SECTIONS[Difficulty.EXPERT],
+    Instrument.DRUMS: _DRUM_CHART_SECTIONS[Difficulty.EXPERT],
+}
+"""A ``.chart`` may give each level its own phrases; Expert's are the ones read."""
+
 
 @dataclass(frozen=True)
 class ReferenceNote:
@@ -119,6 +141,25 @@ class ReferenceDrums:
 
 
 @dataclass(frozen=True)
+class ReferenceSection:
+    """Where a human-marked section of the song starts, and its name as written."""
+
+    time_s: float
+    tick: int
+    name: str
+
+
+@dataclass(frozen=True)
+class ReferencePhrase:
+    """A star power phrase of a human chart."""
+
+    start_s: float
+    end_s: float
+    tick: int
+    length_ticks: int
+
+
+@dataclass(frozen=True)
 class ReferenceSong:
     name: str
     source: Path
@@ -139,6 +180,12 @@ class ReferenceSong:
     """The same for keys. Empty if the chart has none."""
     drums: ReferenceDrums = field(default_factory=ReferenceDrums)
     """The drums, with no levels and a reason if the chart has none that can be read."""
+    sections: tuple[ReferenceSection, ...] = ()
+    """The sections the human marked, in order. Empty if the chart has none."""
+    star_power: Mapping[Instrument, tuple[ReferencePhrase, ...]] = field(default_factory=dict)
+    """The star power phrases of each instrument that has any."""
+    preview_start_s: float | None = None
+    """Where the song list's preview starts, from ``preview_start_time``. None if it is not set."""
 
 
 class _Clock:
@@ -347,6 +394,76 @@ def _chart_drums(parsed: ParsedChart, clock: _Clock, tags: Mapping[str, str]) ->
     return ReferenceDrums(levels, pro, double_kicks, "" if levels else "the drum sections have no notes")
 
 
+def _seconds(clock: _Clock, tick: int) -> float:
+    return float(clock.seconds_at(np.array([float(tick)]))[0])
+
+
+def _sections_from(marks: Iterable[tuple[int, str]], clock: _Clock) -> tuple[ReferenceSection, ...]:
+    return tuple(
+        ReferenceSection(_seconds(clock, tick), tick, name.strip()) for tick, name in sorted(marks, key=lambda mark: mark[0])
+    )
+
+
+def _midi_sections(midi: MidiChart, clock: _Clock) -> tuple[ReferenceSection, ...]:
+    track = midi.tracks.get(_EVENTS_TRACK)
+    if track is None:
+        return ()
+    return _sections_from(
+        ((tick, match.group(1)) for tick, text in track.texts if (match := _MIDI_SECTION.match(text.strip()))),
+        clock,
+    )
+
+
+def _chart_sections(parsed: ParsedChart, clock: _Clock) -> tuple[ReferenceSection, ...]:
+    return _sections_from(
+        (
+            (event.tick, match.group(1))
+            for event in parsed.sections.get("Events", [])
+            if event.type == "E" and (match := _CHART_SECTION.match(event.args.strip()))
+        ),
+        clock,
+    )
+
+
+def _phrases(spans: Iterable[tuple[int, int]], clock: _Clock) -> tuple[ReferencePhrase, ...]:
+    return tuple(
+        ReferencePhrase(_seconds(clock, tick), _seconds(clock, tick + length), tick, length)
+        for tick, length in sorted(spans)
+    )
+
+
+def _midi_star_power(midi: MidiChart, clock: _Clock) -> dict[Instrument, tuple[ReferencePhrase, ...]]:
+    phrases = {}
+    for instrument, track_name in _STAR_POWER_TRACKS.items():
+        track = midi.tracks.get(track_name)
+        spans = [(start, length) for start, number, length in track.notes if number == _STAR_POWER_NOTE] if track else []
+        if spans:
+            phrases[instrument] = _phrases(spans, clock)
+    return phrases
+
+
+def _chart_star_power(parsed: ParsedChart, clock: _Clock) -> dict[Instrument, tuple[ReferencePhrase, ...]]:
+    phrases = {}
+    for instrument, section in _STAR_POWER_CHART_SECTIONS.items():
+        spans = []
+        for event in parsed.sections.get(section, []):
+            parts = event.args.split()
+            if event.type == "S" and len(parts) == 2 and parts[0] == _CHART_STAR_POWER and parts[1].isdigit():
+                spans.append((event.tick, int(parts[1])))
+        if spans:
+            phrases[instrument] = _phrases(spans, clock)
+    return phrases
+
+
+def _preview_start(tags: Mapping[str, str]) -> float | None:
+    """``preview_start_time`` in seconds. A missing, negative or unreadable value means none is set."""
+    try:
+        value = float(str(tags.get("preview_start_time", "")).strip())
+    except ValueError:
+        return None
+    return value / 1000.0 if value >= 0 else None
+
+
 def _from_midi(
     name: str,
     source: Path,
@@ -392,6 +509,9 @@ def _from_midi(
         bass_levels=bass_levels,
         keys_levels=keys_levels,
         drums=_midi_drums(midi, clock, tags or {}),
+        sections=_midi_sections(midi, clock),
+        star_power=_midi_star_power(midi, clock),
+        preview_start_s=_preview_start(tags or {}),
     )
 
 
@@ -471,6 +591,9 @@ def _from_chart(
         bass_levels=bass_levels,
         keys_levels=keys_levels,
         drums=_chart_drums(parsed, clock, tags or {}),
+        sections=_chart_sections(parsed, clock),
+        star_power=_chart_star_power(parsed, clock),
+        preview_start_s=_preview_start(tags or {}),
     )
 
 

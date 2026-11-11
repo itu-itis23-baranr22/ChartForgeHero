@@ -26,6 +26,7 @@ from chartgen.chart.charter import ChartedTrack
 from chartgen.chart.difficulty import HARD_RULES, HardRuleViolation
 from chartgen.chart.drum_charter import DRUM_HARD_RULES, UNVERIFIED_GEMS, UNVERIFIED_PIECES, DrumChart
 from chartgen.chart.drum_difficulty import LEVEL_HARD_RULES
+from chartgen.chart.sections import opening_sections, song_start_s
 from chartgen.core.drums import DrumGem
 from chartgen.chart.instruments import (
     CHARTABLE_INSTRUMENTS,
@@ -51,16 +52,12 @@ from chartgen.clonehero.package import (
 )
 from chartgen.clonehero.song_ini import SongIni, difficulty_tier, render_song_ini
 from chartgen.clonehero.validate import validate_song_folder
-from chartgen.core.model import Chart, Difficulty, Instrument, Section, SongMetadata, Track
+from chartgen.core.model import Chart, Difficulty, Instrument, SongMetadata, Track
 from chartgen.errors import ChartValidationError, NoPlayableInstrumentError, PackagingError
 
 log = logging.getLogger(__name__)
 
 ANALYSIS_FILE = "analysis.json"
-INTRO_SECTION = "Intro"
-"""Marks the start of an opening that is not part of the song."""
-SONG_SECTION = "Song"
-"""Marks where the song begins after such an opening, or practice mode calls all of it the intro."""
 _BASE_STAGE_COUNT = 7
 
 
@@ -172,19 +169,6 @@ def _check_opening_is_empty(tracks: list[Track], tempo: TempoAnalysis) -> None:
                     f"{track.instrument.value}/{track.difficulty.value} has a note at tick "
                     f"{note.tick}, in the opening that ends at {tempo.lead_in_end_s:.1f} s"
                 )
-
-
-def _song_start(tempo: TempoAnalysis) -> float:
-    return tempo.song_start_s or tempo.lead_in_end_s
-
-
-def _sections(tempo: TempoAnalysis) -> list[Section]:
-    """Mark an opening that is not part of the song, and where the song begins after it."""
-    if tempo.lead_in_end_s <= 0:
-        return []
-    sixteenth = tempo.tempo_map.resolution // 4
-    tick = round(tempo.tempo_map.ticks_at(_song_start(tempo)) / sixteenth) * sixteenth
-    return [Section(0, INTRO_SECTION), Section(int(tick), SONG_SECTION)]
 
 
 def _report_track(instrument: Instrument, item: ChartedTrack, warnings: list[str]) -> None:
@@ -503,7 +487,7 @@ def _analysis(
             "unfit_lead_in": {
                 "end_s": round(tempo.lead_in_end_s, 3),
                 "onsets_on_grid": round(tempo.lead_in_on_grid, 3),
-                "song_start_s": round(_song_start(tempo), 3),
+                "song_start_s": round(song_start_s(tempo), 3),
             }
             if tempo.lead_in_end_s > 0
             else None,
@@ -664,17 +648,14 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
     temporary = Path(tempfile.mkdtemp(prefix=".build-", dir=config.output_dir))
     try:
         with stages.stage("Package song folder"):
-            chart = Chart(config.metadata, tempo.tempo_map, tracks, _sections(tempo))
+            chart = Chart(config.metadata, tempo.tempo_map, tracks, opening_sections(tempo))
             DotChartExporter().export(chart, temporary)
 
             plan = plan_audio(presence, config.instruments)
             encoded = write_audio_files(stems.stems, stems.samplerate, plan, temporary)
 
             song_length_ms = round(stems.duration_s * 1000)
-            preview_start_ms = best_preview_start_ms(
-                analysis_mono(_full_mix(stems), stems.samplerate),
-                ANALYSIS_SAMPLERATE,
-            )
+            preview_start_ms = preview_start_ms_of(stems)
             difficulties: dict[Instrument, int] = {}
             for track in tracks:
                 difficulties[track.instrument] = max(
@@ -748,3 +729,8 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
 
 def _full_mix(stems: StemSet) -> np.ndarray:
     return to_mono(np.sum([stems.stems[name] for name in STEM_NAMES], axis=0))
+
+
+def preview_start_ms_of(stems: StemSet) -> int:
+    """Where the song list's preview starts: the loudest window of the stems together."""
+    return best_preview_start_ms(analysis_mono(_full_mix(stems), stems.samplerate), ANALYSIS_SAMPLERATE)
