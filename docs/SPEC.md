@@ -188,6 +188,20 @@ Decisions made since it was written are listed first and take precedence.
      game activates drum star power, and whether it needs fills, is checked in the game in D.3.
    - No lyrics: they would need speech recognition and alignment (noted for later in STATUS.md).
    `vocals.ogg` has been written since Phase A.
+38. **How sections are found (D.1).** Each bar is described by the chroma of the pitched stems, the MFCC
+   and loudness of the mix and the loudness of the vocals, standardised over the song with a floor on each
+   spread, so that a loop that never changes is not blown up into sections. A section starts where Foote's
+   novelty over an eight-bar checkerboard reaches 0.18 (on a scale where two unrelated parts score 0.5),
+   strongest first and at least four bars from any other; there is no fixed count. A section takes the
+   letter of an earlier one whose bars, side by side from the start, are 0.6 similar on average. After an
+   opening, `Intro` and `Song` stay and the found sections start after `Song`; the part `Song` starts is
+   lettered like any other (it is `A1`, still written as `Song`), so its return is `A2` (owner,
+   2026-11-12). Settings in `audio/sections.toml`; bar lines, the four-bar minimum and ASCII names are hard
+   rules in code and in the validator. On Californication (train) the boundary F1 within one bar is 0.750
+   against 0.385 at best for naive boundaries; the test requires at least 0.70 (owner, 2026-11-12). A lower
+   letter threshold was measured and rejected: from 0.55 down, pairs Californication's human calls
+   different parts get one letter (0.86 of same-letter pairs the same kind at 0.6, 0.72 at 0.55, 0.64 at
+   0.5).
 
 ## Phase B1 targets (one reference song so far)
 

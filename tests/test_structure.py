@@ -188,7 +188,7 @@ def test_evaluate_reports_the_structure(tmp_path):
     report = evaluate_folder(tmp_path, separator_for(), tmp_path / "cache")
     structure = report.songs["structured"]["structure"]
     assert [section["name"] for section in structure["sections"]["human"]] == ["verse_1", "chorus 1"]
-    assert structure["sections"]["mine"] == [], "a song without an opening gets no section yet"
+    assert structure["sections"]["mine"] == [], "a click track that never changes gets no section"
     assert structure["sections"]["match"]["f1"] == 0.0
     assert {"every_4_bars", "every_8_bars", "every_16_bars", "best_naive"} <= set(structure["sections"]["naive"])
     assert set(structure["star_power"]["human"]) == {"guitar", "drums"}

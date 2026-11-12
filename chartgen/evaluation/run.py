@@ -18,12 +18,13 @@ import numpy as np
 
 from chartgen.audio.io import ANALYSIS_SAMPLERATE, analysis_mono
 from chartgen.audio.presence import analyze_presence
+from chartgen.audio.sections import find_sections
 from chartgen.audio.separation import STEM_NAMES, Separator, StemSet, separate_with_cache
 from chartgen.audio.tempo import TempoAnalysis, estimate_tempo_map
 from chartgen.chart.charter import ChartedTrack
 from chartgen.chart.difficulty import LANE_NAMES, LevelMeasures, load_config
 from chartgen.chart.instruments import STEM_FOR_INSTRUMENT, build_tracks_for
-from chartgen.chart.sections import opening_sections, song_start_s
+from chartgen.chart.sections import section_search_start_s, song_sections, song_start_s
 from chartgen.core.model import Difficulty, Instrument
 from chartgen.core.timing import TempoMap
 from chartgen.errors import ChartgenError
@@ -223,7 +224,17 @@ def compare_structure(song: ReferenceSong, tempo: TempoAnalysis, stems: StemSet)
 
     tempo_map = tempo.tempo_map
     bars = bar_lines_s(tempo_map, stems.duration_s)
-    mine = [(float(tempo_map.seconds_at(float(section.tick))), section.name) for section in opening_sections(tempo)]
+    pitched = np.sum([stems.stems[name] for name in ("bass", "guitar", "piano", "other")], axis=0)
+    found = find_sections(
+        analysis_mono(song.audio.samples, song.audio.samplerate),
+        analysis_mono(pitched, stems.samplerate),
+        analysis_mono(stems.stems["vocals"], stems.samplerate),
+        tempo_map,
+        stems.duration_s,
+        song_start_s=section_search_start_s(tempo),
+        after_opening=tempo.lead_in_end_s > 0,
+    )
+    mine = [(float(tempo_map.seconds_at(float(section.tick))), section.name) for section in song_sections(tempo, found)]
     human = [(section.time_s, section.name) for section in song.sections]
     sections: dict[str, object] = {
         "human": [{"time_s": round(time, 3), "name": name} for time, name in human],
@@ -252,6 +263,7 @@ def compare_structure(song: ReferenceSong, tempo: TempoAnalysis, stems: StemSet)
         "mine": {},
     }
     preview = preview_comparison(preview_start_ms_of(stems) / 1000.0, song.preview_start_s, human)
+    sections["strongest_change"] = round(found.strongest_change, 3)
     return {"sections": sections, "star_power": star_power, "preview": preview}
 
 

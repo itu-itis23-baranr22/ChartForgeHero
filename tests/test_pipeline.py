@@ -117,10 +117,15 @@ def test_analysis_records_the_whole_build(song_file, tmp_path):
         "Separate stems",
         "Check stem presence",
         "Track tempo on the mix",
+        "Find sections",
         "Chart instruments",
         "Package song folder",
         "Validate",
     }
+    assert set(analysis["sections"]) == {
+        "written", "found", "song_part", "strongest_change", "threshold", "after_opening", "seconds"
+    }
+    assert analysis["sections"]["song_part"] is None, "no opening, so no part is written as Song"
 
 
 @pytest.mark.heavy
@@ -206,8 +211,9 @@ def test_failed_rebuild_keeps_the_previous_song(song_file, tmp_path, monkeypatch
 def test_stages_are_reported_with_durations(song_file, tmp_path, caplog):
     with caplog.at_level(logging.INFO, logger="chartgen"):
         build_song(config(song_file, tmp_path), FakeSeparator(song_stems()))
-    assert "[1/7] Load audio done in" in caplog.text
-    assert "[7/7] Validate done in" in caplog.text
+    assert "[1/8] Load audio done in" in caplog.text
+    assert "[5/8] Find sections done in" in caplog.text
+    assert "[8/8] Validate done in" in caplog.text
 
 
 # ---------------------------------------------------------------- charter

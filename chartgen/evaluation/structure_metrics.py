@@ -23,18 +23,8 @@ _ON_A_LINE_S = 0.01
 
 def bar_lines_s(tempo_map: TempoMap, end_s: float) -> np.ndarray:
     """The time of every bar line of ``tempo_map`` from its start to ``end_s``."""
-    end_tick = float(tempo_map.ticks_at(end_s))
-    signatures = list(tempo_map.time_signatures)
-    ticks: list[float] = []
-    for index, signature in enumerate(signatures):
-        bar = tempo_map.resolution * 4 * signature.numerator / signature.denominator
-        if index + 1 < len(signatures):
-            # The next signature starts its own bar line; the song's end may fall on one.
-            stop = min(signatures[index + 1].tick, end_tick + 1e-9)
-        else:
-            stop = end_tick + 1e-9
-        ticks.extend(np.arange(signature.tick, stop, bar).tolist())
-    return tempo_map.seconds_at(np.array(ticks, dtype=np.float64)) if ticks else np.empty(0)
+    ticks = tempo_map.bar_lines(end_s)
+    return tempo_map.seconds_at(ticks.astype(np.float64)) if ticks.size else np.empty(0)
 
 
 def _bar_lengths(bars_s: np.ndarray, times: np.ndarray) -> np.ndarray:

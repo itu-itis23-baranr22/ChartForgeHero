@@ -4,7 +4,9 @@ Faz D (bölümler, preview, star power, vokal) devam ediyor; D.0, D.1, D.2 ve D.
 
 ## Şu anki adım
 
-**D.0 bu commit'te: ölçüm altyapısı (ses analizi yok, build çıktıları aynı). Proje sahibi 2026-11-11'de onayladı. Sırada D.1: bölüm tespiti.**
+**D.1 kapandı: bölüm tespiti. Proje sahibi 2026-11-12'de onayladı. Sırada D.2: preview noktası; bitince proje sahibi dört şarkının preview'unu dinleyecek.**
+
+D.0 `7251c84`'te kapandı (ölçüm altyapısı; vokal paketlemesi proje sahibince oyunda doğrulandı).
 
 Faz C `1ec287d`'de kapandı (C.2: davul Hard, Medium ve Easy). Proje sahibi 2026-11-11'de C.2'yi onayladı ve LastResort, Danza ve Toca'nın Pro Drums'ını Easy ve Hard'da çaldı: hepsi çalınabilir, hi-hat ve ride şeritleri doğal, Toca Easy tekdüze gelmedi, sorun yok. F1 alt sınırlarını onayladı (testte). `pyin` paylaşımı "ileride" listesinde.
 
@@ -48,6 +50,91 @@ Proje sahibi Toca'nın bas Easy ve Hard'ını çaldı: vuruşlar ve zamanlama iy
 - Ölçüm (Californication, `train`): sınır F1 ±1 ölçüde ≥ 0,55 ve her "her N ölçü" taban skorunu geçer; en kısa bölüm ≥ 4 ölçü.
 - Yumuşak: dakikada 2-5 bölüm; star power dakikada 1,5-3 ifade, ifade başına nota.
 - Oyun: bot dört enstrümanda star power toplar; proje sahibi en az bir şarkıda star power'ı toplayıp açar.
+
+## D.1: bölüm tespiti
+
+**Proje sahibinin kararları (2026-11-12):** alıştırma modunda bölüm başları gerçek değişimlere denk geliyor, sorun yok. Sınır F1 eşiği Californication'da ≥ 0,70 onaylandı ve teste yazıldı. `Song` bölümü de harflere katılıyor: `Song` olarak yazılıyor ama başlattığı kısım `A1` sayılıyor, sonradan dönerse `A2` görünüyor (terminalde `Song (A1)`, `analysis.json`'da `song_part`).
+
+**Harf eşiği taraması (2026-11-12).** Proje sahibinin sorusu: pop ve reggaeton'da nakarat birkaç kez döner, 0,6 eşiği fazla katı olabilir mi? Sınırlar build'inkiler, yalnızca harf eşiği değişti. Benzerlik, iki bölümün ölçüleri baştan yan yana konunca ortalama benzerlik (-1 ile 1 arası; build bunu kullanıyor).
+
+| Eşik | Californication: aynı harfli çiftlerden insanda aynı tür olanlar (P) | Aynı tür çiftlerden aynı harf alanlar (R) | Danza | Toca | LastResort |
+|---|---|---|---|---|---|
+| **0,60** (bugün) | **0,857** (14 çift) | 0,387 | Song(A1) B1 C1 D1 E1 F1 G1 H1 C2 I1 H2 | A1 B1 C1 D1 E1 F1 G1 D2 H1 I1 | A1 B1 C1 D1 E1 F1 G1 H1 I1 D2 J1 |
+| 0,55 | 0,722 (18) | 0,419 | Song(A1) B1 C1 D1 E1 F1 G1 E2 C2 H1 E3 | aynı | A1 B1 C1 D1 E1 F1 G1 A2 H1 D2 I1 |
+| 0,50 | 0,636 (22) | 0,452 | Song(A1) B1 C1 B2 D1 C2 E1 D2 C3 F1 D3 | A1 B1 C1 D1 E1 F1 E2 D2 B2 C2 | A1 B1 C1 D1 C2 E1 F1 A2 G1 D2 H1 |
+| 0,40 | 0,652 (23) | 0,484 | 0,50 ile aynı | 0,50 ile aynı | A1 B1 C1 D1 C2 E1 F1 A2 C3 D2 G1 |
+| 0,30 | 0,404 (47) | 0,613 | 0,50 ile aynı | A1 B1 C1 A2 D1 E1 D2 A3 B2 C2 | 0,40 ile aynı |
+
+0,45, 0,50 ile her şarkıda aynı; 0,35, 0,30 ile aynı; 0,25 ve altında Californication'ın 17 bölümünden 14'ü tek harf.
+
+**Eşiğin hemen altındaki çiftler** (0,40-0,60):
+- Californication: 0,56 verse_1'in son 4 ölçüsü ~ chorus_1'in ikinci yarısı; 0,56 intro ~ chorus_1'in ikinci yarısı; 0,55 verse_1 ~ verse_3 (ikisi de 4 ölçülük parçalar); 0,51 intro ~ intro. İnsan bunlardan yarısını aynı, yarısını farklı tür sayıyor. Hepsi 4 ölçülük, intro'ya benzeyen bloklar: müzikte aynı riff olabilirler, insan ise işlevine göre adlandırıyor (dinleyerek doğrulanmadı). Harf verme açgözlü olduğu için bir blok gruba girince ona benzeyen diğerleri de giriyor; 0,55'te dört blok tek harf oluyor ve P 0,86'dan 0,72'ye düşüyor.
+- Danza: 0,58 1:51.9 ~ 3:37.2 (sonuncusu -21 dB, sessiz kapanış), 0,55 1:51.9 ~ 2:36.2, 0,55 1:20.5 ~ 2:04.8, 0,55 0:51.0 ~ 1:35.3.
+- Toca: 0,53 0:07.9 ~ 1:58.4, 0,50 0:53.6 ~ 1:27.9, 0,50 0:21.3 ~ 2:11.7.
+- LastResort: 0,55 0:00.0 ~ 2:01.7, 0,51 0:21.0 ~ 0:52.8.
+
+**Sonuç: eşik 0,6'da kaldı.** Pop şarkılarında daha çok tekrar yakalayan her eşik (0,55 ve altı) Californication'da insanın ayırdığı kısımları da birleştiriyor: P en az 0,13 düşüyor. Pop şarkılarındaki yeni tekrarların doğru olup olmadığı ölçülemiyor (insan chart'ı yok). 0,6'da dört şarkının hepsinde en az bir tekrar eden harf var: Danza C ve H, Toca D, LastResort D, Californication B, C, F, G, H. D.2'de yedek kural (en gürültülü pencere) bu şarkılarda devreye girmiyor; D.2 raporu kaç şarkıda ve neden girdiğini yazacak. `sections.toml`'daki "0,55-0,75 arasında harfler değişmiyor" notu standartlaştırma alt sınırlarından önceki ölçümdendi, artık geçerli değil; düzeltildi.
+
+Betik ve tam matrisler commit'te değil (scratchpad, `letters_sweep.py`).
+
+**Nasıl bulunuyor** (`audio/sections.py`, ayarlar `audio/sections.toml`, SPEC 38. karar):
+- Her ölçü dört şeyle tarif ediliyor: perdeli stem'lerin akoru (chroma), karışımın tınısı (MFCC) ve ses düzeyi, vokalin ses düzeyi. Hepsi şarkı içinde standartlaştırılıyor; ağırlıklar 1 / 1 / 0,5 / 0,5.
+- Ölçülerin birbirine benzerliğinden, bir ölçü çizgisinin önündeki 4 ölçü ile arkasındaki 4 ölçünün ne kadar farklı olduğu hesaplanıyor (Foote'un dama tahtası "novelty"si). Değişim 0 (yok) ile 0,5 (ortak hiçbir şey yok) arasında; 0,18'i geçen tepeler, güçlüsü önce, birbirinden en az 4 ölçü uzakta seçiliyor. Sabit bir bölüm sayısı yok: eşiği geçen değişim yoksa bölüm de yok.
+- İlk bölüm şarkının sessiz olmayan ilk ölçüsünde başlıyor.
+- **Harfler:** bir bölüm, ölçüleri baştan yan yana konunca (köşegen benzerliği) ortalama 0,6'dan benzer olan önceki bölümün harfini alıyor, yoksa yeni harf. Adlar `A1`, `B1`, `A2`..., ASCII; 26 harften sonra `AA`.
+- **Giriş kuralı:** şarkıya ait olmayan girişi olan şarkıda `Intro` ve `Song` aynen kalıyor; tespit `Song`'dan sonra başlıyor ve ilk bulunan bölüm `Song`'dan en az 4 ölçü sonra. `Song`'un başlattığı kısım da harf alıyor (`A1`, yazılan ad yine `Song`), sonraki bölümler onunla da karşılaştırılıyor.
+- **Düz şarkı:** standartlaştırma, şarkının küçük titreşimlerini bölüme çevirmesin diye her grubun yayılımı duyulabilir bir alt sınırla tutuluyor (chroma 0,05, MFCC 2, ses düzeyi 1 dB, vokal 1 dB; dört gerçek şarkı en az 0,10 / 2,0 / 3,1 / 8,0 yayılıyor, hiç değişmeyen sentetik döngü 0,003 / 0,73 / 0,05 / 0). Döngüde en güçlü değişim 0,01; eşik 0,18. Bölüm bulunmazsa build uyarıyor (terminal ve `analysis.json`), hiçbir bölüm zorla yazılmıyor.
+- **Kesin kurallar kodda** (`check_found_sections`) ve validator'da: ölçü başı (`Song` hariç, o şarkının ilk onset'inde), en az 4 ölçü (son bölüm dahil; `Intro`→`Song` hariç), ASCII ad. `sections.toml` 4 ölçüyü yalnızca yükseltebilir; bilinmeyen anahtar reddediliyor.
+- Bir şarkı 0,4-0,9 sn sürüyor. Ölçü çizgileri artık `TempoMap.bar_lines`'tan, tespit ve ölçüm aynı çizgileri kullanıyor.
+
+**Californication** (`train`, ayarlar bu şarkıda seçildi, iyimser):
+
+| | Değer |
+|---|---|
+| Sınır F1, ±1 ölçü | **0,750** (P 0,706, R 0,800; bizim 17, insan 15) |
+| "Her N ölçü", şarkı başından (4 / 8 / 16) | 0,250 / 0,250 / 0,083 |
+| En iyi saf (insana bakarak) | 0,385 |
+| Eşik taraması (0,12-0,21, 8 ölçülük çekirdek) | 0,722-0,765, düz bir plato; seçilen 0,18 ortası |
+| Çekirdek 12 / 16 ölçü | en iyi 0,741 / 0,583: kısa bölümleri kaçırıyor |
+| Harfler, çift çift insan sınıfıyla | aynı harf verilen çiftlerin %86'sı insanda aynı tür (verse, chorus...), aynı tür çiftlerin %39'u aynı harf |
+
+Tarama, standartlaştırma alt sınırları eklenmeden önce yapıldı; 0,18'deki sonuç onlardan sonra birebir aynı kaldı.
+
+Harfler insanın yapısıyla örtüşüyor: beş verse'ün hepsi C (C1-C5), chorus_1 ve chorus_2 F1 ve F2, prechorus_2 ve prechorus_3 H1 ve H2. Kaçanlar: prechorus_1 (D1, E1), chorus'un ikinci yarısı (G1) ve chorus_3'ün başlangıcı (insan 4:57.6; biz bölümü 4:28.4'teki H2'nin içinde bırakıyoruz).
+
+**Eşik** (proje sahibi onayladı, 2026-11-12; `test_californication_sections_beat_the_naive_boundaries`): Californication sınır F1 ≥ **0,70**, üç taban skoru ve en iyi saf skor da geçilmeli. Ölçülenin 0,05 altı; eşik taramasındaki en düşük değer 0,722.
+
+**Bölümler, dk:sn** (`Songs`'daki kopyalar; Danza'nın kopyasında harfler henüz eski, `Song` harf almadan: `A1 0:51.0`... D.2'de yeniden kopyalanacak):
+
+| Şarkı | Bölümler |
+|---|---|
+| Danza | Intro 0:00.0, Song (A1) 0:37.1, B1 0:51.0, C1 1:20.5, D1 1:35.3, E1 1:51.9, F1 2:04.8, G1 2:21.4, H1 2:36.2, C2 2:49.1, I1 3:18.7, H2 3:37.2 |
+| Toca | A1 0:00.3, B1 0:07.9, C1 0:21.3, D1 0:38.4, E1 0:53.6, F1 1:10.8, G1 1:27.9, D2 1:43.2, H1 1:58.4, I1 2:11.7 |
+| Davul Testi - LastResort | A1 0:00.0, B1 0:10.3, C1 0:21.0, D1 0:42.2, E1 0:52.8, F1 1:16.6, G1 1:51.1, H1 2:01.7, I1 2:12.2, D2 2:22.8, J1 2:54.6 |
+| Californication (yalnızca `evaluate`) | A1 0:05.1, B1 0:15.4, C1 0:25.4, B2 0:40.6, C2 0:50.6, D1 1:05.6, E1 1:15.5, F1 1:35.2, G1 1:45.2, C3 1:55.1, G2 2:10.0, C4 2:19.9, H1 2:34.9, F2 3:04.5, I1 3:24.3, C5 4:13.6, H2 4:28.4 |
+
+Danza ve Toca'da bölüm bulundu, yalnızca `Intro`/`Song` kalmadı; uyarı yok. En güçlü değişimleri 0,43 ve 0,45 (Californication 0,44). Toca'nın 2:28.9'daki son sınırı eşiğin hemen üstündeydi, standartlaştırmanın alt sınırları gelince düştü.
+
+**Bayt bayt aynı:** üç şarkı yeniden derlendi; `[SyncTrack]`, gitar, bas ve davulun bütün seviyeleri (bütün `N` satırları) ve `song.ini` C.2 sürümüyle aynı, yalnızca `[Events]`'e bölüm satırları eklendi (Danza'nın `Intro` ve `Song`'u yerinde). Gitar ve bas hash'leri `-Full`'da. Üç klasör validator'dan geçti ve `Songs`'a kopyalandı (`notes.chart`, `song.ini`, `.ogg`'ler, `analysis.json`). Danza oyunda botlarla açıldı, log temiz.
+
+**Alıştırma modunda neye bakmalı:** bir bölüm başı müzikte duyulan bir değişime (giriş, verse, nakarat, solo) denk geliyor mu; aynı harfi alan bölümler gerçekten aynı kısım mı; çok kısa ya da gereksiz bölünmüş bir yer var mı. Not için şarkı ve dk:sn yeterli.
+
+**Sınırlar:**
+- Tek referanstan: eşik, çekirdek ve harf eşiği Californication'da seçildi.
+- Harfler tekrarların ancak %39'unu yakalıyor: yanlışlıkla "aynı" demektense yeni harf veriyor. Eşiği düşürmek pop şarkılarında daha çok tekrar buluyor ama Californication'da yanlış eşleşmeler ekliyor (yukarıdaki tarama).
+- Danza'da `Song`'un kısmı (0:38.0, 7 ölçü) sonra dönmüyor: diğer bölümlere en yüksek benzerliği 0,28.
+
+**Değişen testler** (tolerans gevşetilmedi):
+- `test_after_an_opening_the_sections_start_after_song`: `Song` artık harf alıyor (proje sahibinin kararı). Önce `A1 32 sn, B1 48 sn` bekliyordu (`Song` karşılaştırılmıyordu), şimdi `song_part == "A1"` ve `B1 32 sn, A2 48 sn`; girişsiz şarkıda `song_part` yok.
+- `test_californication_sections_beat_the_naive_boundaries`: sınır F1 tabanı 0,55'ten onaylanan 0,70'e sıkılaştı.
+- `test_analysis_records_the_whole_build`: build aşamaları listesine yeni "Find sections" aşaması eklendi; `analysis.json`'un `sections` kaydı da denetleniyor (`song_part` dahil; girişsiz şarkıda boş).
+- `test_stages_are_reported_with_durations`: aşama sayısı 7'den 8'e (`[1/8]`, `[8/8]`), "Find sections" aşamasının raporu da denetleniyor.
+- `test_evaluate_reports_the_structure`: yalnızca bir mesaj ("henüz bölüm yok" yerine "hiç değişmeyen click izi bölüm almaz"), doğrulama aynı.
+- Yeni: `tests/test_sections.py` (26 test).
+
+**Kontroller, commit öncesi (2026-11-12, kararlar uygulandıktan sonra):** `check.ps1 -Full` geçti: 968 test, 606 sn, 5 gerçek şarkının her biri bir kez yüklendi, 8 klasör validator'dan geçti, Californication'ın 0,70 eşiği dahil. Tepe özel bellek 3,42 GB, en düşük boş RAM 3,9 GB. İlk deneme `test_analysis_records_the_whole_build`'de durdu: `analysis.json`'a eklenen `song_part` anahtarı testin listesinde yoktu; test düzeltildi ve `-Full` baştan geçti.
+
+**Kontroller, onaydan önce (2026-11-11):** `check.ps1 -Full` geçti: 968 test (942 + 26 yeni), 1084 sn, 5 gerçek şarkının her biri bir kez yüklendi, 8 klasör validator'dan geçti (yeniden derlenen Danza, Toca ve `Davul Testi - LastResort` bölümleriyle), gitar ve bas hash'leri, davul F1 alt sınırları ve Californication bölüm testi dahil. Tepe özel bellek 3,42 GB, en düşük boş RAM 3,7 GB. Değişmeyen 942 test D.0'daki çalışmayla aynı yükte 1046 → 1055 sn (her build'e bölüm aşaması 0,5-1 sn ekliyor), yeni testler 22 sn. İlk `-Full` denemesi `test_stages_are_reported_with_durations`'ta durmuştu (aşama sayısı 7 → 8); test düzeltildi ve `-Full` baştan geçti.
 
 ## D.0: ölçüm altyapısı
 
@@ -612,7 +699,7 @@ Toca, LastResort, Şarkı Testi ve Californication'ın tempo haritaları, `final
 | C.1 | Expert davul: sınıflandırma, chart, `evaluate`, kanal teşhisi, `--drum-ear-test` | `3029bc8` |
 | Test hızlandırma | Gerçek şarkı oturumda bir kez, Demucs modeli bir kez, `real` işareti, `check.ps1 -Mid` | `dd05eb0` |
 | C.2 | Davul Hard, Medium, Easy, `evaluate` seviyeleri, `ProDrums` önizleme; Faz C kapandı | `1ec287d` |
-| D.0 | Bölüm, star power ve preview ölçümü (insan chart'ından), `evaluate` yapı satırları | bu commit |
+| D.0 | Bölüm, star power ve preview ölçümü (insan chart'ından), `evaluate` yapı satırları | `7251c84` |
 
 Proje sahibi LastResort ve Şarkı Testi'nin güncel Hard ve Medium sürümlerini de çaldı: akorlar rahat, fret dağılımı dengeli, senkron iyi.
 

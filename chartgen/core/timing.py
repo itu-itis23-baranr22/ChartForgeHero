@@ -124,6 +124,21 @@ class TempoMap:
         )
         return float(result) if result.ndim == 0 else result
 
+    def bar_ticks(self, signature: TimeSignatureEvent) -> float:
+        """How many ticks one bar of ``signature`` lasts."""
+        return self._resolution * 4 * signature.numerator / signature.denominator
+
+    def bar_lines(self, end_s: float) -> np.ndarray:
+        """The tick of every bar line from the start to ``end_s``, each time signature from its own tick."""
+        end_tick = float(self.ticks_at(end_s))
+        ticks: list[float] = []
+        signatures = self._time_signatures
+        for index, signature in enumerate(signatures):
+            # The next signature starts its own bar line; the end may fall on one.
+            stop = min(signatures[index + 1].tick, end_tick + 1e-9) if index + 1 < len(signatures) else end_tick + 1e-9
+            ticks.extend(np.arange(signature.tick, stop, self.bar_ticks(signature)).tolist())
+        return np.round(np.array(ticks, dtype=np.float64)).astype(np.int64)
+
 
 def _require_increasing_from_zero(ticks: Sequence[int], kind: str) -> None:
     if ticks[0] != 0:

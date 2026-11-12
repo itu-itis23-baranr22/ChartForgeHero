@@ -1,0 +1,36 @@
+# How a song is divided into sections. Every value here is a preference.
+#
+# The hard rules live in chartgen/audio/sections.py and cannot be loosened from this file: a section
+# starts on a bar line, lasts at least four bars, and is named in ASCII letters and digits (A1, B1,
+# A2...). min_section_bars may only be raised. Loading refuses any key it does not know.
+#
+# Set on the one human chart with sections (Californication, train), so its scores are flattered.
+
+# Each bar is described by four things, standardised over the song: the harmony of the pitched stems
+# (chroma), the timbre of the mix (MFCC), its loudness and the loudness of the vocals. How much each
+# counts:
+[weights]
+harmony = 1.0
+timbre = 1.0
+loudness = 0.5
+vocals = 0.5
+
+[boundaries]
+# Width of the checkerboard that compares the bars before a bar line with the bars after it. Eight
+# bars found the human boundaries best; twelve and sixteen missed short sections.
+kernel_bars = 8
+# How strong a change has to be to start a section, from 0 (none) to about 0.5 (two parts with nothing
+# in common). The score stayed between 0.72 and 0.77 from 0.12 to 0.21; this is the middle. A song whose
+# strongest change stays below it gets no sections, and the build says so.
+novelty_threshold = 0.18
+min_section_bars = 4
+# Bars more than this far below the song's loud level (the 95th percentile) count as silence: the first
+# section starts at the first bar that is not.
+silence_below_loud_db = 30.0
+
+[letters]
+# Two sections get the same letter when their bars, side by side from the start, are this similar on
+# average. 86% of the pairs given the same letter were the same kind of section in the human chart,
+# and 39% of those pairs got the same letter. Lower values find more repeats in Danza, Toca and
+# LastResort but join parts the human tells apart: 72% at 0.55, 64% at 0.5 (measured 2026-11-12).
+same_part_similarity = 0.6

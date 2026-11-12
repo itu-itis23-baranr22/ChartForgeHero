@@ -21,12 +21,13 @@ import chartgen
 from chartgen.audio.io import ANALYSIS_SAMPLERATE, AudioData, analysis_mono, load_audio, to_mono
 from chartgen.audio.presence import StemPresence, analyze_presence
 from chartgen.audio.separation import STEM_NAMES, Separator, StemSet, separate_with_cache
+from chartgen.audio.sections import SectionAnalysis, find_sections
 from chartgen.audio.tempo import DEFAULT_MAX_BEAT_DRIFT_S, TempoAnalysis, estimate_tempo_map
 from chartgen.chart.charter import ChartedTrack
 from chartgen.chart.difficulty import HARD_RULES, HardRuleViolation
 from chartgen.chart.drum_charter import DRUM_HARD_RULES, UNVERIFIED_GEMS, UNVERIFIED_PIECES, DrumChart
 from chartgen.chart.drum_difficulty import LEVEL_HARD_RULES
-from chartgen.chart.sections import opening_sections, song_start_s
+from chartgen.chart.sections import SONG_SECTION, section_search_start_s, song_sections, song_start_s
 from chartgen.core.drums import DrumGem
 from chartgen.chart.instruments import (
     CHARTABLE_INSTRUMENTS,
@@ -52,13 +53,13 @@ from chartgen.clonehero.package import (
 )
 from chartgen.clonehero.song_ini import SongIni, difficulty_tier, render_song_ini
 from chartgen.clonehero.validate import validate_song_folder
-from chartgen.core.model import Chart, Difficulty, Instrument, SongMetadata, Track
+from chartgen.core.model import Chart, Difficulty, Instrument, Section, SongMetadata, Track
 from chartgen.errors import ChartValidationError, NoPlayableInstrumentError, PackagingError
 
 log = logging.getLogger(__name__)
 
 ANALYSIS_FILE = "analysis.json"
-_BASE_STAGE_COUNT = 7
+_BASE_STAGE_COUNT = 8
 
 
 @dataclass(frozen=True)
@@ -376,6 +377,48 @@ def _level_analysis(item: ChartedTrack) -> dict[str, object]:
     }
 
 
+def _clock(seconds: float) -> str:
+    return f"{int(seconds // 60)}:{seconds % 60:04.1f}"
+
+
+def _report_sections(
+    sections: list[Section], found: SectionAnalysis, tempo: TempoAnalysis, warnings: list[str]
+) -> None:
+    """List the sections with their times, and warn when the song itself got none."""
+
+    def label(section: Section) -> str:
+        # Song is written as Song, but it is a lettered part like the others.
+        return f"{section.name} ({found.song_part})" if section.name == SONG_SECTION and found.song_part else section.name
+
+    listed = ", ".join(f"{label(section)} {_clock(tempo.tempo_map.seconds_at(float(section.tick)))}" for section in sections)
+    log.info("    sections: %s (%.1f s)", listed or "none", found.seconds)
+    if not found.found:
+        only = " only Intro and Song," if sections else ""
+        warnings.append(
+            f"sections:{only} none found in the song: its texture hardly changes (strongest change "
+            f"{found.strongest_change:.2f}, a section needs {found.threshold:.2f}); none were forced"
+        )
+
+
+def _sections_analysis(sections: list[Section], found: SectionAnalysis, tempo: TempoAnalysis) -> dict[str, object]:
+    """What ``analysis.json`` says about the sections: every one written, and how they were found."""
+    return {
+        "written": [
+            {"tick": section.tick, "time_s": round(tempo.tempo_map.seconds_at(float(section.tick)), 3), "name": section.name}
+            for section in sections
+        ],
+        "found": [
+            {"name": section.name, "letter": section.letter, "change": None if section.change is None else round(section.change, 3)}
+            for section in found.sections
+        ],
+        "song_part": found.song_part,
+        "strongest_change": round(found.strongest_change, 3),
+        "threshold": found.threshold,
+        "after_opening": found.after_opening,
+        "seconds": round(found.seconds, 3),
+    }
+
+
 def _analysis(
     config: BuildConfig,
     audio: AudioData,
@@ -390,6 +433,7 @@ def _analysis(
     timings_s: dict[str, float],
     click_schedule: ClickSchedule | None,
     ear_test: dict[str, int] | None = None,
+    sections: dict[str, object] | None = None,
 ) -> dict[str, object]:
     charts: dict[str, dict[str, dict[str, object]]] = {}
     for item in charted:
@@ -521,6 +565,7 @@ def _analysis(
             }
             for item in encoded
         },
+        "sections": sections,
         "charts": charts,
         "not_verified_on_real_data": sorted(
             instrument.value for instrument in UNVERIFIED_INSTRUMENTS if instrument.value in charts
@@ -594,12 +639,14 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
         pitched = np.sum(
             [stems.stems[name] for name in ("bass", "guitar", "piano", "other")], axis=0
         )
+        mix_mono = analysis_mono(audio.samples, audio.samplerate)
+        pitched_mono = analysis_mono(pitched, stems.samplerate)
         tempo = estimate_tempo_map(
-            analysis_mono(audio.samples, audio.samplerate),
+            mix_mono,
             bpm_override=config.bpm_override,
             max_beat_drift_s=config.max_beat_drift_ms / 1000.0,
             drums=analysis_mono(stems.stems["drums"], stems.samplerate),
-            harmonic=analysis_mono(pitched, stems.samplerate),
+            harmonic=pitched_mono,
             bass=analysis_mono(stems.stems["bass"], stems.samplerate),
         )
         if tempo.is_fallback:
@@ -634,6 +681,19 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
                     f"downbeat falls with --click-overlay"
                 )
 
+    with stages.stage("Find sections"):
+        found = find_sections(
+            mix_mono,
+            pitched_mono,
+            analysis_mono(stems.stems["vocals"], stems.samplerate),
+            tempo.tempo_map,
+            stems.duration_s,
+            song_start_s=section_search_start_s(tempo),
+            after_opening=tempo.lead_in_end_s > 0,
+        )
+        sections = song_sections(tempo, found)
+        _report_sections(sections, found, tempo, warnings)
+
     with stages.stage("Chart instruments"):
         charted = _build_tracks(config, stems, presence, tempo, warnings)
         tracks = [item.track for item in charted]
@@ -648,7 +708,7 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
     temporary = Path(tempfile.mkdtemp(prefix=".build-", dir=config.output_dir))
     try:
         with stages.stage("Package song folder"):
-            chart = Chart(config.metadata, tempo.tempo_map, tracks, opening_sections(tempo))
+            chart = Chart(config.metadata, tempo.tempo_map, tracks, sections)
             DotChartExporter().export(chart, temporary)
 
             plan = plan_audio(presence, config.instruments)
@@ -713,6 +773,7 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
             stages.timings_s,
             schedule,
             ear_test,
+            _sections_analysis(sections, found, tempo),
         )
         (temporary / ANALYSIS_FILE).write_text(
             json.dumps(analysis, indent=2, ensure_ascii=False), encoding="utf-8"

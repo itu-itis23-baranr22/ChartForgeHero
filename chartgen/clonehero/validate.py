@@ -177,6 +177,53 @@ def _check_sync_track(events: list[ParsedEvent], report: ValidationReport) -> No
         report.errors.append("[SyncTrack] has no time signature (TS) at tick 0")
 
 
+_SECTION_EVENT = re.compile(r'^"section (.*)"$')
+_OPENING_SECTIONS = ("Intro", "Song")
+"""Decision 30: an opening that is not part of the song, and where the song starts after it. ``Song``
+falls on the song's first onset, not on a bar line."""
+_MIN_SECTION_BARS = 4
+_SECTION_NAME = re.compile(r"^[A-Za-z0-9 _-]+$")
+
+
+def _bar_lengths(parsed: ParsedChart, resolution: int) -> list[tuple[int, float]]:
+    """(tick, bar length in ticks) from each time signature of [SyncTrack]."""
+    signatures = []
+    for event in parsed.sections.get("SyncTrack", []):
+        parts = event.args.split()
+        if event.type == "TS" and parts and all(part.isdigit() for part in parts) and int(parts[0]) > 0:
+            denominator = 2 ** int(parts[1]) if len(parts) > 1 else 4
+            signatures.append((event.tick, resolution * 4 * int(parts[0]) / denominator))
+    return sorted(signatures)
+
+
+def _check_sections(parsed: ParsedChart, report: ValidationReport) -> None:
+    """Sections are named in ASCII, start on a bar line and last at least four bars. The opening's
+    ``Intro`` and ``Song`` follow their own rule (decision 30)."""
+    resolution_field = parsed.fields.get("Resolution", "")
+    signatures = _bar_lengths(parsed, int(resolution_field)) if resolution_field.isdigit() else []
+    if not signatures:
+        return
+    sections = []
+    for event in parsed.sections.get("Events", []):
+        match = _SECTION_EVENT.match(event.args.strip()) if event.type == "E" else None
+        if match:
+            sections.append((event.tick, match.group(1)))
+    previous: tuple[int, str] | None = None
+    for tick, name in sections:
+        if not name.isascii() or not _SECTION_NAME.match(name):
+            report.errors.append(f"[Events] tick {tick}: section name {name!r} is not plain ASCII")
+        start, bar = max((item for item in signatures if item[0] <= tick), default=signatures[0])
+        if name not in _OPENING_SECTIONS and (tick - start) % bar:
+            report.errors.append(f"[Events] tick {tick}: section {name} is not on a bar line")
+        if previous is not None and (previous[1], name) != _OPENING_SECTIONS:
+            earlier_start, earlier_bar = max((item for item in signatures if item[0] <= previous[0]), default=signatures[0])
+            if tick - previous[0] < _MIN_SECTION_BARS * earlier_bar - 1e-6:
+                report.errors.append(
+                    f"[Events] tick {tick}: section {previous[1]} lasts less than {_MIN_SECTION_BARS} bars"
+                )
+        previous = (tick, name)
+
+
 def _check_track(name: str, events: list[ParsedEvent], report: ValidationReport) -> None:
     drums = _PLAYABLE_SECTIONS[name] is Instrument.DRUMS
     allowed = _DRUM_NOTES if drums else _FRET_NOTES
@@ -336,6 +383,7 @@ def validate_chart_text(text: str) -> tuple[ParsedChart, ValidationReport]:
         report.errors.append("no playable section contains notes")
     _check_difficulty_rules(parsed, report)
     _check_drum_rules(parsed, report)
+    _check_sections(parsed, report)
     return parsed, report
 
 
