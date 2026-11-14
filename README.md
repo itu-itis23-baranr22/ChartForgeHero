@@ -16,7 +16,7 @@ It only processes files you give it. It does not download audio or touch streami
 | B2 | Difficulty reduction to Hard, Medium and Easy | Done |
 | B3 | Bass and keys; a song no longer needs a guitar | Done; keys not verified on real data |
 | C | Drums (4-lane Pro): percussion classification, four difficulties | In progress: C.0 format, C.1 Expert and C.2 lower levels done; waiting for play-testing |
-| D | Sections, preview, star power, vocals | In progress: D.0 measuring and D.1 sections done; preview next |
+| D | Sections, preview, star power, vocals | In progress: D.0 measuring, D.1 sections and D.2 preview done; star power next |
 
 Guitar, bass, keys and drums are charted at all four difficulties, so a song needs at least one of the four.
 Drums are 4-lane Pro with cymbals; toms and the crash are not verified on real data, and a build says so.
@@ -148,6 +148,9 @@ one pitch. The rules that always hold are in
    by bar. They start on bar lines, last at least four bars and are named by structure: a part that
    comes back gets the same letter (`A1`, `B1`, `A2`...). After an opening, the part `Song` starts is
    `A1` too, so its return is `A2`. A song that hardly changes gets none, and the build says so.
+   The song list's preview starts four bars before the second start of the loudest part that comes
+   back, so it runs into a part already heard once. Without one it is the loudest 30 seconds on a bar
+   line. It never starts in an opening, and its 30 seconds fit in the song.
 4. **Detect onsets** on each stem, behind a noise gate and an adaptive threshold that reject bleed.
 5. **Remove vocal bleed**: a note where the singer is louder than a stem that is unusually quiet and
    does not stay is a trace of the vocals, not an instrument. `analysis.json` lists these.
@@ -175,6 +178,9 @@ scripts\check.ps1 -Mid    # every test but the real songs and references
 scripts\check.ps1 -Full   # every test, with real Demucs and the references: before a phase commit
 git config core.hooksPath .githooks     # makes every commit run the quick check
 ```
+
+The check validates every folder in `outputs/` but those whose name starts with `_`, such as
+`outputs/_songs_backup/`, where old copies of song folders from the game are kept.
 
 The code is layered so that `chartgen.core` knows nothing about Clone Hero:
 

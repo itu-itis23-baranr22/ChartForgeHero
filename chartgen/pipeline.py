@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 
 import chartgen
-from chartgen.audio.io import ANALYSIS_SAMPLERATE, AudioData, analysis_mono, load_audio, to_mono
+from chartgen.audio.io import AudioData, analysis_mono, load_audio
 from chartgen.audio.presence import StemPresence, analyze_presence
 from chartgen.audio.separation import STEM_NAMES, Separator, StemSet, separate_with_cache
 from chartgen.audio.sections import SectionAnalysis, find_sections
@@ -27,7 +27,8 @@ from chartgen.chart.charter import ChartedTrack
 from chartgen.chart.difficulty import HARD_RULES, HardRuleViolation
 from chartgen.chart.drum_charter import DRUM_HARD_RULES, UNVERIFIED_GEMS, UNVERIFIED_PIECES, DrumChart
 from chartgen.chart.drum_difficulty import LEVEL_HARD_RULES
-from chartgen.chart.sections import SONG_SECTION, section_search_start_s, song_sections, song_start_s
+from chartgen.chart.preview import LOUDEST_WINDOW, PREVIEW_LEAD_BARS, PreviewChoice, choose_preview
+from chartgen.chart.sections import SONG_SECTION, section_search_start_s, song_section_tick, song_sections, song_start_s
 from chartgen.core.drums import DrumGem
 from chartgen.chart.instruments import (
     CHARTABLE_INSTRUMENTS,
@@ -46,7 +47,6 @@ from chartgen.clonehero.click_overlay import (
 from chartgen.clonehero.package import (
     BACKING_STEM,
     EncodedAudio,
-    best_preview_start_ms,
     folder_name,
     plan_audio,
     write_audio_files,
@@ -388,7 +388,7 @@ def _report_sections(
 
     def label(section: Section) -> str:
         # Song is written as Song, but it is a lettered part like the others.
-        return f"{section.name} ({found.song_part})" if section.name == SONG_SECTION and found.song_part else section.name
+        return f"{section.name} ({found.song_part.name})" if section.name == SONG_SECTION and found.song_part else section.name
 
     listed = ", ".join(f"{label(section)} {_clock(tempo.tempo_map.seconds_at(float(section.tick)))}" for section in sections)
     log.info("    sections: %s (%.1f s)", listed or "none", found.seconds)
@@ -411,11 +411,45 @@ def _sections_analysis(sections: list[Section], found: SectionAnalysis, tempo: T
             {"name": section.name, "letter": section.letter, "change": None if section.change is None else round(section.change, 3)}
             for section in found.sections
         ],
-        "song_part": found.song_part,
+        "song_part": found.song_part.name if found.song_part else None,
         "strongest_change": round(found.strongest_change, 3),
         "threshold": found.threshold,
         "after_opening": found.after_opening,
         "seconds": round(found.seconds, 3),
+    }
+
+
+def _report_preview(preview: PreviewChoice, warnings: list[str]) -> None:
+    """Say where the preview starts and by which rule; warn when no part that comes back chose it."""
+    if preview.rule == LOUDEST_WINDOW:
+        why = f"the loudest 30 s, on a bar line ({preview.fallback_reason})"
+        warnings.append(f"preview: {preview.fallback_reason}, so the preview is the loudest 30 s on a bar line")
+    else:
+        letter = next(iter(preview.loudness_db))
+        why = (
+            f"{PREVIEW_LEAD_BARS} bars before {preview.leads_into} ({letter} is the loudest part that comes back, "
+            f"{preview.loudness_db[letter]:.1f} dB)"
+        )
+    if preview.moved_earlier_bars:
+        why += f", moved {preview.moved_earlier_bars} bars earlier to fit in the song"
+    if preview.too_short:
+        why += ", the song is shorter than the preview"
+    log.info("    preview: %s, %s", _clock(preview.start_s), why)
+
+
+def _preview_analysis(preview: PreviewChoice) -> dict[str, object]:
+    """What ``analysis.json`` says about the preview: where, by which rule, and what it weighed."""
+    return {
+        "start_s": round(preview.start_s, 3),
+        "start_ms": preview.start_ms,
+        "tick": preview.tick,
+        "rule": preview.rule,
+        "leads_into": preview.leads_into,
+        "lead_bars": PREVIEW_LEAD_BARS,
+        "loudness_db_of_parts_that_come_back": preview.loudness_db,
+        "fallback_reason": preview.fallback_reason,
+        "moved_earlier_bars": preview.moved_earlier_bars,
+        "song_shorter_than_preview": preview.too_short,
     }
 
 
@@ -434,6 +468,7 @@ def _analysis(
     click_schedule: ClickSchedule | None,
     ear_test: dict[str, int] | None = None,
     sections: dict[str, object] | None = None,
+    preview: dict[str, object] | None = None,
 ) -> dict[str, object]:
     charts: dict[str, dict[str, dict[str, object]]] = {}
     for item in charted:
@@ -566,6 +601,7 @@ def _analysis(
             for item in encoded
         },
         "sections": sections,
+        "preview": preview,
         "charts": charts,
         "not_verified_on_real_data": sorted(
             instrument.value for instrument in UNVERIFIED_INSTRUMENTS if instrument.value in charts
@@ -715,7 +751,9 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
             encoded = write_audio_files(stems.stems, stems.samplerate, plan, temporary)
 
             song_length_ms = round(stems.duration_s * 1000)
-            preview_start_ms = preview_start_ms_of(stems)
+            preview = choose_preview(found, mix_mono, tempo.tempo_map, stems.duration_s, song_section_tick(tempo))
+            _report_preview(preview, warnings)
+            preview_start_ms = preview.start_ms
             difficulties: dict[Instrument, int] = {}
             for track in tracks:
                 difficulties[track.instrument] = max(
@@ -774,6 +812,7 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
             schedule,
             ear_test,
             _sections_analysis(sections, found, tempo),
+            _preview_analysis(preview),
         )
         (temporary / ANALYSIS_FILE).write_text(
             json.dumps(analysis, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -786,12 +825,3 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
     for warning in warnings:
         log.warning("Warning: %s", warning)
     return BuildResult(destination, analysis)
-
-
-def _full_mix(stems: StemSet) -> np.ndarray:
-    return to_mono(np.sum([stems.stems[name] for name in STEM_NAMES], axis=0))
-
-
-def preview_start_ms_of(stems: StemSet) -> int:
-    """Where the song list's preview starts: the loudest window of the stems together."""
-    return best_preview_start_ms(analysis_mono(_full_mix(stems), stems.samplerate), ANALYSIS_SAMPLERATE)

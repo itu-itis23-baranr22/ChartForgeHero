@@ -202,6 +202,16 @@ Decisions made since it was written are listed first and take precedence.
    letter threshold was measured and rejected: from 0.55 down, pairs Californication's human calls
    different parts get one letter (0.86 of same-letter pairs the same kind at 0.6, 0.72 at 0.55, 0.64 at
    0.5).
+39. **How the preview is placed (D.2).** `preview_start_time` is four bars before the second start of the
+   letter that comes back whose bars are loudest in the mix on average (mean RMS in dB over all its bars;
+   the part `Song` starts counts as its letter's first). With no letter that comes back, or no sections,
+   it is the loudest 30 seconds after any opening, moved to the nearest bar line, and the build warns.
+   Hard rules in code (`chart/preview.py`): on a bar line, not before `Song`, and the 30 seconds fit in the
+   song (moved earlier bar by bar if not); only a song shorter than the preview after its start begins it
+   with the song. The validator checks on its own, from `notes.chart` and `song.ini`, that the preview is
+   not before `Song` and that it fits. On Californication (train) it lands 0.18 s from the human's
+   (174.6 s against 174.4 s, four bars before chorus 2); the loudest window was 285.1 s. Acceptance
+   criterion, approved 2026-11-15 and in the test: at most one bar, of the human chart, from the human's.
 
 ## Phase B1 targets (one reference song so far)
 

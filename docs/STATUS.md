@@ -4,7 +4,19 @@ Faz D (bölümler, preview, star power, vokal) devam ediyor; D.0, D.1, D.2 ve D.
 
 ## Şu anki adım
 
-**D.1 kapandı: bölüm tespiti. Proje sahibi 2026-11-12'de onayladı. Sırada D.2: preview noktası; bitince proje sahibi dört şarkının preview'unu dinleyecek.**
+**D.2 kapandı (2026-11-15, bu commit; preview noktası). Sırada D.3: star power. İlk iş davulda star power'ın oyunda nasıl açıldığını doğrulamak: deney `SP Deneyi - Davul` (`outputs\_experiments\d3_sp_deneyi\`) `Songs`'a kopyalanıp önce botla denenecek; bot açmazsa proje sahibi Expert ve Hard'ı çalacak. Sonuca göre seçenekler sunulacak.**
+
+**`-Full` (2026-11-15):** proje sahibinin kendi PowerShell penceresinde geçti: 992 test, 745 sn (check 750 sn), 5 gerçek şarkının her biri bir kez yüklendi, 8 klasör validator'dan geçti. Bu koşuda tepe bellek ölçülmedi. Claude Code'un arka planda başlattığı iki `-Full`'u Claude Code bellek azalınca durdurmuştu (aşağıda "Bellek"); bu yüzden `-Full` artık proje sahibinin penceresinde çalışıyor.
+
+**Proje sahibinin kararları (2026-11-15, ikinci tur):** `OPENBLAS_NUM_THREADS=4` yalnızca test ortamına (`check.ps1`) eklendi; üretim build'i için ayrı öneri (aşağıda), uygulanmadı. Commit taslağı ve deney klasörü Temp'ten `outputs\_drafts\` ve `outputs\_experiments\` altına taşındı; `check.ps1` adı `_` ile başlayan klasörleri şarkı saymıyor. Deneyden önce davul star power tuşu denetlendi (D.3 hazırlığı).
+
+**D.3 hazırlığı: star power tuşu (2026-11-15).** Oyunun kayıtlı tuş eşlemesi (kayıt defteri, Rewired `Player1` klavye haritası) okundu: Kırmızı `S` ve `H` (davulda `H` snare), Select/Star Power yalnızca `Return`. `H` star power'a bağlı değil, çakışma yok. Proje sahibi gitarda star power'ı `H` sanıyordu; Clone Hero'nun varsayılan klavye düzeni (kılavuz: "Select/Star Power - H") öyle, bu makinedeki kayıtlı düzen değil. Oyun açıkken Controls ekranında bir kez daha bakılacak. Diğer tuşlar: Yeşil `A`/`O`, Sarı `D`/`U`, Mavi `F`/`I`, Turuncu `G`/`B` (davulda kick), Sarı/Mavi/Yeşil zil `J`/`K`/`L`, Open `Space`, Whammy `;`, Start `RightShift`.
+
+**Deney `SP Deneyi - Davul`** (`outputs\_experiments\d3_sp_deneyi\`, `sp_experiment.py` ile `Davul Testi - LastResort`'tan): yalnızca Pro Drums. Expert'te yalnızca star power ifadeleri (`S 2`, 1 ölçü, her 4 ölçüde bir; ilkleri 0:13.0, 0:23.6, 0:34.2, 0:44.8), fill yok. Hard'da aynı ifadeler ve her ikinci ifadeden hemen sonra 2 ölçülük `S 64` fill (0:26.3-0:31.6, 0:47.5-0:52.8, 1:08.7-1:14.0, 1:29.9-1:35.2), fill'in son tick'inde bir nota var.
+
+**Proje sahibinin D.2 kararları (2026-11-15):** dört şarkıda da preview tanınır kısma giriyor. Harf eşiği 0,6'da kalıyor. Preview kabul kriteri: Californication'da insanınkinden en çok 1 ölçü uzakta (teste yazıldı: insan chart'ının, insan preview'unun düştüğü ölçüsü; SPEC 39). D.1 commit mesajındaki küçük yanlışlık düzeltilmiyor, geçmişe dokunulmuyor.
+
+D.1 `838c88a`'da kapandı (bölüm tespiti; proje sahibi 2026-11-12'de onayladı).
 
 D.0 `7251c84`'te kapandı (ölçüm altyapısı; vokal paketlemesi proje sahibince oyunda doğrulandı).
 
@@ -50,6 +62,66 @@ Proje sahibi Toca'nın bas Easy ve Hard'ını çaldı: vuruşlar ve zamanlama iy
 - Ölçüm (Californication, `train`): sınır F1 ±1 ölçüde ≥ 0,55 ve her "her N ölçü" taban skorunu geçer; en kısa bölüm ≥ 4 ölçü.
 - Yumuşak: dakikada 2-5 bölüm; star power dakikada 1,5-3 ifade, ifade başına nota.
 - Oyun: bot dört enstrümanda star power toplar; proje sahibi en az bir şarkıda star power'ı toplayıp açar.
+
+## D.2: preview noktası
+
+**Nasıl seçiliyor** (`chart/preview.py`, SPEC 39. karar):
+- Bölümlerden tekrar eden harfler (`Song`'un kısmı da harfinin ilki sayılıyor) karışımın ses düzeyine göre sıralanıyor: harfin bütün ölçüleri boyunca ortalama RMS, dB. En gürültülüsünün ikinci kez başladığı ölçüden 4 ölçü önce preview başlıyor.
+- Tekrar eden harf ya da bölüm yoksa yedek kural: girişten sonraki en gürültülü 30 sn, en yakın ölçü çizgisine oturtuluyor. Build bunu uyarı olarak yazıyor (`preview: no part comes back, ...`).
+- 30 sn şarkıya sığmıyorsa preview ölçü ölçü öne kayıyor; kaç ölçü kaydığı yazılıyor. Girişten sonra 30 sn'den kısa bir şarkıda preview şarkının ilk ölçüsünde başlıyor.
+- **Kesin kurallar kodda** (`check_preview`): ölçü başında, `Song`'dan önce değil, 30 sn şarkıya sığıyor. **Validator kendi başına** (`notes.chart`'taki `Song` ve `song.ini`'den): preview `Song`'dan önce değil, şarkının sonunu geçmiyor, 30 sn sığıyor (şarkı `Song`'dan sonra 38 sn'den kısaysa sığma aranmıyor: 30 sn + en uzun ölçü 8 sn). `-1` ya da yazılmamış preview oyunun seçimi, denetlenmiyor.
+- Terminal: `preview: 2:41.8, 4 bars before C2 (C is the loudest part that comes back, -12.2 dB)`. `analysis.json`'da `preview` kaydı: başlangıç, kural, hangi bölüme götürdüğü, tekrar eden harflerin ses düzeyi, yedek kuralın nedeni, kayma.
+- `evaluate` aynı kuralı kullanıyor: `preview: mine 174.6 s (prechorus_2, 4 bars before F2), human 174.4 s (prechorus_2): 0.2 s apart`.
+
+**Sonuçlar** (dk:sn; eski = en gürültülü pencere, D.1'e kadar):
+
+| Şarkı | Preview | Kural | Götürdüğü bölüm | Tekrar eden harfler, dB | Eski |
+|---|---|---|---|---|---|
+| Californication (`train`, yalnızca `evaluate`) | 2:54.6 (174,6 sn) | tekrar | F2 3:04.5 (insanda chorus_2) | F -19,3, H -20,9, C -22,3, G -24,3, B -26,6 | 4:45.1 |
+| Danza | 2:41.8 | tekrar | C2 2:49.1 | C -12,2, H -16,1 | 3:21.4 |
+| Toca | 1:35.5 | tekrar | D2 1:43.2 | D -13,9 | 0:38.4 |
+| Davul Testi - LastResort | 2:12.2 | tekrar | D2 2:22.8 | D -10,6 | 1:18.1 |
+| Yerel Test - Şarkı Testi | 2:37.1 | yedek: tekrar eden bölüm yok | – | – | 2:37.0 |
+
+- **Californication:** insanın preview'u 174,4 sn (ikinci nakarattan 4 ölçü önce). Bizimki 174,6 sn, fark 0,18 sn, ikisi de `prechorus_2`'de. En gürültülü tekrar eden harf F, insanın chorus_1 ve chorus_2'si. Eski kural 110,7 sn uzaktaydı.
+- **Yedek kural** 5 şarkının 1'inde devreye girdi: Şarkı Testi'nin 8 bölümünden hiçbiri 0,6 eşiğinde tekrar etmiyor. Danza, Toca ve LastResort'ta en az bir harf tekrar ediyor. Toca ve LastResort'ta tek tekrar eden harf var (D), yani seçim "en gürültülü" değil "tek seçenek".
+- Hiçbir şarkıda preview kaymadı (30 sn hepsinde sığıyor), hiçbiri girişte değil (girişli tek şarkı Danza; `Song` 0:37.1, preview 2:41.8).
+- **Önerilen ölçüm kriteri** (proje sahibinin kararı bekleniyor, teste yazılmadı): Californication'da preview insanınkinden en çok 1 ölçü (yaklaşık 2,5 sn) uzakta. Testte bugün ölçülen değer (174,61 ± 0,05 sn), kural (F2'den 4 ölçü önce) ve insan bölümü (`prechorus_2`) sabit.
+
+**Bayt bayt aynı:** dört şarkı yeniden derlendi. `notes.chart`'ın bütün `N` satırları ve `[SyncTrack]` önceki kopyalarla aynı. `song.ini`'de yalnızca `preview_start_time` değişti. `[Events]`'te: Danza'nın harfleri D.1'deki `Song` kararıyla değişti (10 satır, tick'ler aynı); Şarkı Testi ilk kez bölüm aldı (8 satır; önceki kopyası B fazından). Dördü validator'dan geçti.
+
+**Oyun:** dört klasör `Songs`'a kopyalandı (`notes.chart`, `song.ini`, `analysis.json`, `.ogg`'ler) ve `Songs`'taki hâlleri de validator'dan geçti. Oyun kapalıyken yazıldı. Önceki kopyalar `outputs\_songs_backup\2026-11-12\` altında.
+- **Şarkı Testi düzeltildi (2026-11-15).** D.2'de `--instruments guitar` ile derlenmişti: bas ve davul `song.ogg`'a gitmişti. Proje sahibi bunu beklenmedik buldu. Bulunanlar:
+  - O derlemenin `notes.chart`'ında bas ve davul bölümü yoktu (`[ExpertSingle]`...`[EasySingle]` ve `diff_bass = -1`, `diff_drums = -1`). `Songs`'taki önceki kopyada (2026-11-08, Faz B) da yoktu: o zaman bas ve davul henüz chart'lanmıyordu (`analysis.json`: "chart generation is not implemented yet; audio only"), yalnızca sesleri ayrı dosyadaydı. Bas hash testleri bu şarkının basını `-Full`'da ayrıca derliyor; oyundaki kopyaya hiç girmemişti.
+  - Varsayılan build dört enstrümanı da istiyor (`--instruments` verilmezse `guitar,bass,drums,keys`). Bir enstrümanı yalnızca stem varlık kontrolü dışarıda bırakıyor. `--instruments guitar` D.2'de elle verilmişti: önceki kopyada yalnızca gitar chart'ı olduğu için "önceki gibi" sanıldı. Kodda hata yok; varsayılanı sabitleyen bir test eklendi (`test_cli_build_asks_for_every_instrument_unless_told_otherwise`, varsayılan yalnızca gitar olunca başarısız olduğu denendi).
+  - Varsayılanla yeniden derlendi: gitar, bas (4 seviye) ve Pro Drums (4 seviye). Keys yok: piyano stem'i eşiğin altında (-63,5 dB, %1 etkin). Ses dosyaları ayrı: `guitar.ogg`, `bass.ogg`, `drums.ogg`, `vocals.ogg`, `song.ogg` (other ve piyano). Gitarın bütün satırları, `[SyncTrack]` ve `[Events]` gitarlı derlemeyle aynı; `song.ini`'de `diff_bass = 2`, `diff_drums = 4`, `pro_drums = True`. Ses dosyalarının boyutları 2026-11-08 kopyasıyla aynı, ortak kazanç yeniden 1,0. Preview aynı (2:37.1, yedek kural).
+  - `Songs`'a kopyalandı, `Songs`'taki hâli validator'dan geçti. Eski `debug_click.wav` duruyor: tempo haritası değişmediği için hâlâ doğru.
+- **Yedekler** `outputs\_songs_backup\` altında: `2026-11-11\` (C.2 öncesi Danza ve Toca), `2026-11-12\` (D.2 öncesi dört şarkı), `2026-11-15\` (gitarlı Şarkı Testi). Temp'teki iki `songs_backup_*` klasörü buraya taşındı. `scripts\check.ps1` artık adı `_` ile başlayan klasörleri şarkı saymıyor, yoksa validator yedek klasörünü şarkı diye denetleyip başarısız olurdu.
+- `Tempo Test - LastResort otomatik` (`Songs`'ta, gitar tempo testi) yeniden derlenmedi: preview'u eski (1:18.1).
+
+**Preview'ları dinlerken neye bakmalı:** şarkı listesinde şarkının üstüne gelince preview çalıyor. Preview birkaç saniye sonra daha önce duyulmuş, şarkının en tanınır kısmına (çoğu zaman nakarat) giriyor mu? Başlangıcı bir cümlenin ortasında kalıyor mu? Şarkı Testi yedek kuralda, onda da en gürültülü kısım mı çalıyor? Not için şarkı ve "nakarat değil, şuradaki kısım olmalıydı (dk:sn)" yeterli.
+
+**Sınırlar:**
+- "En enerjik" = karışımın ses düzeyi. Yoğunluk (vuruş sayısı) ya da vokalin varlığı ölçülmüyor. Harfler tekrarların ancak bir kısmını yakaladığı için (D.1, %39) en gürültülü tekrar her zaman nakarat olmayabilir.
+- Tek referanstan: kural Californication'da insanın preview'unu buluyor, başka insan preview'u yok.
+
+**Değişen testler** (tolerans gevşetilmedi):
+- `test_californication_structure_is_read_and_measured` (`-Full`): bizim preview 285,1 sn ("en gürültülü pencere, build'deki gibi") bekleniyordu; artık kural değişti, 174,61 ± 0,05 sn, F2'den 4 ölçü önce ve `prechorus_2` bekleniyor.
+- `test_after_an_opening_the_sections_start_after_song`: `song_part` artık bir ad değil bölümün kendisi (`.name == "A1"`, başlangıcı 16 sn); `parts` da denetleniyor.
+- `test_a_build_writes_its_sections_and_says_how_it_found_them` ve `test_a_build_of_a_song_that_never_changes_warns_and_forces_nothing`: yalnızca yeni denetimler eklendi (preview kaydı, `song.ini`, yedek kural uyarısı).
+- `test_californication_structure_is_read_and_measured` (2026-11-15): proje sahibinin kriteri eklendi, preview insanınkinden en çok 1 ölçü uzakta (insan chart'ının o ölçüsü); `compare_structure` artık stem'ler yerine `analysis_signals(...)` alıyor.
+- `test_californication_sections_beat_the_naive_boundaries`: yalnızca `compare_structure` çağrısı (`analysis_signals`), doğrulama aynı.
+- Yeni (2026-11-15): `test_cli_build_asks_for_every_instrument_unless_told_otherwise` (`tests/test_pipeline.py`).
+- Yeni: `tests/test_preview.py` (21 test: seçim, yedek kural, giriş, sığma, kısa şarkı, kesin kurallar, validator) ve `test_the_preview_line_says_how_the_preview_was_chosen` (2 test).
+
+**Bellek (2026-11-15).** `-Full` iki kez `test_real_references_when_available` sırasında ya da hemen sonrasında Claude Code tarafından durduruldu. Ölçüm (bu test tek başına, yeni süreçte; özel bellek = commit edilen bellek):
+- Önce: süreç import'larla 1,05 GB'ta başlıyor, test 3,21 GB'a çıkıyor (+2,16 GB). Tepe `estimate_tempo_map` sırasında: o anda Californication'ın 6 stereo stem'i (~0,8 GB), 4 stem'i yığınlayan `np.sum`'un sonucu ve tempo analizinin kendi geçici belleği (+0,96 GB) aynı anda duruyordu. Referans yükleme de `.sng`'nin 8 ses dosyasını önce hepsini çözüp sonra karıştırıyordu (+1,13 GB geçici).
+- Değişiklikler (`evaluation/reference.py`, `evaluation/run.py`): referansın ses dosyaları tek tek çözülüp karışıma ekleniyor; stereo stem'lerden mono analiz sinyalleri ayrıştırmadan hemen sonra bir kez yapılıyor (`analysis_signals`) ve stem'ler tempo analizinden önce bırakılıyor; stem toplamları tek dizide, `np.sum`'la aynı toplamalar aynı sırada (Californication, Danza ve Toca'da bayt bayt aynı); `evaluate_folder` bir referansı bırakmadan sonrakini yüklemiyor. Demucs modeli önbellek varken hiç yüklenmiyor (yalnızca cihaz seçimi için torch import ediliyor, +0,15 GB, süreçten çıkarılamıyor). Test şarkı başına bölünmedi: tek referans var, gerek kalmadı.
+- Sonra: tek başına 1,05 → 2,50 GB (+1,45 GB, önce +2,16). `-Full` içinde 1,35 → 2,53 GB. Değerlendirme raporu (JSON) değişiklikten önceki kodla bayt bayt aynı.
+- **OpenBLAS (test ortamında uygulandı):** sürecin başlangıçtaki 1,05 GB'ının ~1 GB'ı OpenBLAS'ın iş parçacığı tamponları: numpy ve scipy ayrı OpenBLAS kopyası taşıyor, her biri 16 iş parçacığı için ~0,5 GB commit ediyor (`OPENBLAS_NUM_THREADS=1`: 71 MB, `=4`: 264 MB, varsayılan: 1036 MB). Bu sayfalar çoğunlukla dokunulmadığı için RAM'den çok commit payını tüketiyor; bu makinede commit payı dar (21 GB sınırın ~16 GB'ı `-Full` başlamadan dolu). `check.ps1` testleri artık 4 iş parçacığıyla çalıştırıyor, pencerenin önceki değerini sonunda geri koyuyor. Doğrulama: gitar (2 şarkı) ve bas (4 şarkı) hash testleri geçti; Şarkı Testi'nin tam build'i (gitar, bas, davul) varsayılan iş parçacığıyla yapılanla bayt bayt aynı (`analysis.json`'da yalnızca süreler farklı); aynı 86 test arka arkaya 4 / varsayılan / 4 / varsayılan: 59,8 / 60,9 / 58,1 / 59,8 sn, yani süre değişmiyor. `-Mid` geçti: 972 test, 506 sn, pytest tepe özel bellek 2,08 GB (gerçek Demucs testinde), en düşük boş commit 4,0 GB. 506 sn önceki `-Mid`'in (275 sn) iki katı, ama ortak 822 testin hepsi birlikte yavaşladı, OpenBLAS kullanmayan Demucs testleri dahil: makine yükü.
+- **Üretim build'i için öneri (uygulanmadı):** `chartgen` komutu numpy'ı import etmeden önce `OPENBLAS_NUM_THREADS`'ı 4'e çekebilir (kullanıcı ortamda başka bir değer verdiyse ona dokunmadan). Build'in commit payı ~0,75 GB düşer; çıktı bu ölçümlerde aynı. Önce build süresi ve tepe bellek önce/sonra ölçülmeli, sonra karar.
+
+**Kontroller:** gerçek şarkılar dışındaki bütün testler geçti (`-m "not slow and not real"`: 969 test, 290 sn); değişen değerlendirme koduyla ilgili 7 dosyanın `not real` testleri yeniden geçti (231 test). **`-Full` yine tamamlanmadı (2026-11-15):** 977 test bitti, hiçbiri başarısız olmadı (`-x` ilkinde dururdu), %94'te (Californication grubu, `test_the_configured_limit_costs_the_human_bass_chart_at_most_0_005`, ~830. sn) Claude Code arka plandaki işi "sistem belleği kritik, oturum boşta" diye durdurdu. O anda (son 5 sn'lik örnek) boş RAM 4,1 GB, boş commit 2,2 GB, pytest özel belleği 2,4 GB idi; izleyicinin 1,5 GB'lık kendi durdurma eşiğine hiç inilmedi. En düşük değerler referans testinde: boş RAM 3,57 GB, boş commit 1,97 GB (o sırada oturum boşta değildi, durdurulmadı). Koşunun en yüksek test tepesi Danza'nın gerçek build'i (2,71 GB); referans testi 2,53 GB. Sona kalan gerçek Demucs testleri (önceki koşularda 3,42 GB) çalışmadı. Californication preview testi ve kalan Californication testleri, gerçek Demucs testleri ve validator adımı D.2 koduyla henüz çalışmadı. Sonra proje sahibi `-Full`'u kendi penceresinde çalıştırdı: geçti (992 test, 745 sn; yukarıda "Şu anki adım").
 
 ## D.1: bölüm tespiti
 
@@ -104,7 +176,7 @@ Harfler insanın yapısıyla örtüşüyor: beş verse'ün hepsi C (C1-C5), chor
 
 **Eşik** (proje sahibi onayladı, 2026-11-12; `test_californication_sections_beat_the_naive_boundaries`): Californication sınır F1 ≥ **0,70**, üç taban skoru ve en iyi saf skor da geçilmeli. Ölçülenin 0,05 altı; eşik taramasındaki en düşük değer 0,722.
 
-**Bölümler, dk:sn** (`Songs`'daki kopyalar; Danza'nın kopyasında harfler henüz eski, `Song` harf almadan: `A1 0:51.0`... D.2'de yeniden kopyalanacak):
+**Bölümler, dk:sn** (`Songs`'daki kopyalar; Danza'nınki `Song` harf aldıktan sonra D.2'de yeniden kopyalandı):
 
 | Şarkı | Bölümler |
 |---|---|
@@ -700,6 +772,8 @@ Toca, LastResort, Şarkı Testi ve Californication'ın tempo haritaları, `final
 | Test hızlandırma | Gerçek şarkı oturumda bir kez, Demucs modeli bir kez, `real` işareti, `check.ps1 -Mid` | `dd05eb0` |
 | C.2 | Davul Hard, Medium, Easy, `evaluate` seviyeleri, `ProDrums` önizleme; Faz C kapandı | `1ec287d` |
 | D.0 | Bölüm, star power ve preview ölçümü (insan chart'ından), `evaluate` yapı satırları | `7251c84` |
+| D.1 | Bölüm tespiti, yapısal harfler, `Song` de harfli; Californication sınır F1 0,750 (eşik 0,70) | `838c88a` |
+| D.2 | Preview: tekrar eden en gürültülü bölümün ikinci başlangıcından 4 ölçü önce; Californication insanınkinden 0,18 sn (kriter ≤ 1 ölçü); referans değerlendirmesinin belleği 3,21 → 2,50 GB | bu commit |
 
 Proje sahibi LastResort ve Şarkı Testi'nin güncel Hard ve Medium sürümlerini de çaldı: akorlar rahat, fret dağılımı dengeli, senkron iyi.
 

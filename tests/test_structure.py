@@ -12,7 +12,13 @@ from chartgen.clonehero.package import encode_ogg
 from chartgen.core.model import Instrument
 from chartgen.core.timing import TempoEvent, TempoMap, TimeSignatureEvent
 from chartgen.evaluation.reference import load_reference
-from chartgen.evaluation.run import _structure_lines, compare_structure, evaluate_folder, format_report
+from chartgen.evaluation.run import (
+    _structure_lines,
+    analysis_signals,
+    compare_structure,
+    evaluate_folder,
+    format_report,
+)
 from chartgen.evaluation.structure_metrics import (
     bar_lines_s,
     boundary_scores,
@@ -199,6 +205,18 @@ def test_evaluate_reports_the_structure(tmp_path):
     assert "Structure of structured" in text and "best naive" in text and "star power, human: guitar 2" in text
 
 
+@pytest.mark.parametrize(
+    "rule,leads_into,shown",
+    [("repeated part", "F2", "(prechorus_2, 4 bars before F2)"), ("loudest window", None, "(prechorus_2, loudest window)")],
+)
+def test_the_preview_line_says_how_the_preview_was_chosen(rule, leads_into, shown):
+    preview = {"mine_s": 174.6, "mine_section": "prechorus_2", "human_s": 174.4, "human_section": "prechorus_2",
+               "apart_s": 0.2, "rule": rule, "leads_into": leads_into}
+    structure = {"sections": {"human": [], "mine": []}, "star_power": {"human": {}, "mine": {}}, "preview": preview}
+    lines = _structure_lines("S", {"structure": structure})
+    assert f"preview: mine 174.6 s {shown}, human 174.4 s (prechorus_2): 0.2 s apart" in lines
+
+
 def test_the_structure_lines_hold_up_without_a_human_structure():
     lines = _structure_lines(
         "S",
@@ -233,9 +251,18 @@ def test_californication_structure_is_read_and_measured(real_song):
         "drums": 11,
     }
     assert song.preview_start_s == pytest.approx(174.428)
-    structure = compare_structure(song, real_song.tempo, real_song.stems)
+    structure = compare_structure(song, real_song.tempo, analysis_signals(song, real_song.stems))
     naive = structure["sections"]["naive"]
     assert naive["best_naive"]["f1"] == pytest.approx(0.385, abs=0.001), "what D.1 has to beat, with room to spare"
     assert naive["every_4_bars"] == pytest.approx(0.25, abs=0.001)
     assert all(value["on_a_bar_line"] == 1.0 for value in structure["star_power"]["human"].values())
-    assert structure["preview"]["mine_s"] == pytest.approx(285.1, abs=0.05), "the loudest window, as built"
+    # D.2: four bars before F2 (chorus_2 in the human chart), as built. The loudest window was 285.1 s.
+    preview = structure["preview"]
+    assert (preview["rule"], preview["leads_into"]) == ("repeated part", "F2")
+    assert preview["mine_s"] == pytest.approx(174.61, abs=0.05)
+    assert preview["mine_section"] == preview["human_section"] == "prechorus_2"
+    # The owner's acceptance criterion (2026-11-15): at most one bar from the human's preview, the bar
+    # of the human chart in which the human's preview starts.
+    bar = int(np.searchsorted(song.bars, song.preview_start_s, side="right")) - 1
+    one_bar_s = float(song.bars[bar + 1] - song.bars[bar])
+    assert abs(preview["mine_s"] - song.preview_start_s) <= one_bar_s

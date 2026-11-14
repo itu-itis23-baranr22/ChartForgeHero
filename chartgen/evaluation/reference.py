@@ -5,7 +5,7 @@ from __future__ import annotations
 import configparser
 import re
 import tempfile
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -275,17 +275,31 @@ def _midi_level(
     )
 
 
-def _mix(sources: list[tuple[np.ndarray, int]]) -> AudioData:
-    if not sources:
+def _mix(paths: Sequence[Path]) -> AudioData:
+    """Mix a reference's audio files into one stereo song, reading one file at a time.
+
+    A ``.sng`` holds up to eight stems of five minutes, about 125 MB each once decoded: decoding them
+    all before mixing took a gigabyte. The additions are the same, in the same order.
+    """
+    if not paths:
         raise ChartgenError("a reference song has no audio")
-    rate = sources[0][1]
-    frames = max(samples.shape[0] for samples, _ in sources)
-    mix = np.zeros((frames, 2), dtype=np.float32)
-    for samples, source_rate in sources:
-        if source_rate != rate:
-            raise ChartgenError("a reference song mixes sample rates")
+    infos = [sf.info(str(path)) for path in paths]
+    rate = infos[0].samplerate
+    if any(info.samplerate != rate for info in infos):
+        raise ChartgenError("a reference song mixes sample rates")
+    mix = np.zeros((max(info.frames for info in infos), 2), dtype=np.float32)
+    longest = 0
+    for path in paths:
+        samples, _ = sf.read(str(path), dtype="float32", always_2d=True)
+        frames = samples.shape[0]
+        if frames > mix.shape[0]:  # a header that counts short: the decoded length is what counts
+            mix = np.concatenate([mix, np.zeros((frames - mix.shape[0], 2), dtype=np.float32)])
         stereo = samples if samples.shape[1] >= 2 else np.repeat(samples, 2, axis=1)
-        mix[: samples.shape[0]] += stereo[:, :2]
+        mix[:frames] += stereo[:, :2]
+        longest = max(longest, frames)
+        del samples, stereo
+    if longest < mix.shape[0]:
+        mix = np.ascontiguousarray(mix[:longest])
     peak = float(np.abs(mix).max())
     if peak > _PEAK:
         mix *= _PEAK / peak
@@ -611,9 +625,8 @@ def _load_sng(path: Path) -> ReferenceSong:
             if _is_song_audio(name):
                 target = Path(folder) / name
                 target.write_bytes(container.read(name))
-                samples, rate = sf.read(str(target), dtype="float32", always_2d=True)
-                sources.append((samples, rate))
-    audio = _mix(sources)
+                sources.append(target)
+        audio = _mix(sources)
     tags = container.metadata
     if "notes.mid" in container.entries:
         midi = parse_midi(container.read("notes.mid"))
@@ -655,11 +668,7 @@ def _song_ini_delay(folder: Path) -> float:
 
 
 def _load_folder(folder: Path) -> ReferenceSong:
-    sources = []
-    for path in sorted(folder.iterdir()):
-        if path.is_file() and _is_song_audio(path.name):
-            samples, rate = sf.read(str(path), dtype="float32", always_2d=True)
-            sources.append((samples, rate))
+    sources = [path for path in sorted(folder.iterdir()) if path.is_file() and _is_song_audio(path.name)]
     audio = _mix(sources)
     delay_s = _song_ini_delay(folder)
     tags = _song_ini_tags(folder)

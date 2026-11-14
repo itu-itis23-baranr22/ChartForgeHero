@@ -22,7 +22,7 @@ from chartgen.audio.sections import (
 from chartgen.clonehero.validate import validate_chart_text, validate_song_folder
 from chartgen.core.model import Instrument, SongMetadata
 from chartgen.core.timing import TempoEvent, TempoMap, TimeSignatureEvent
-from chartgen.evaluation.run import compare_structure
+from chartgen.evaluation.run import analysis_signals, compare_structure
 from chartgen.pipeline import BuildConfig, build_song
 
 SR = ANALYSIS_SAMPLERATE
@@ -88,8 +88,9 @@ def test_after_an_opening_the_sections_start_after_song():
     opening = found_for(song("CABA"), song_start_s=16.0, after_opening=True)
     assert opening.after_opening
     # Song is the A part from 16 s, written as Song but lettered: it is A1, so its return is A2.
-    assert opening.song_part == "A1"
+    assert (opening.song_part.name, opening.song_part.time_s) == ("A1", 16.0)
     assert named(opening) == [("B1", 32.0), ("A2", 48.0)]
+    assert [part.name for part in opening.parts] == ["A1", "B1", "A2"]
     assert all(section.time_s >= 16.0 + 4 * BAR_S for section in opening.sections)
     assert found_for(song("ABAB")).song_part is None, "without an opening the first part is written as A1"
 
@@ -241,6 +242,15 @@ def test_a_build_writes_its_sections_and_says_how_it_found_them(tmp_path):
     assert [section["name"] for section in analysis["sections"]["written"]] == ["A1", "B1", "A2", "B2"]
     assert [section["letter"] for section in analysis["sections"]["found"]] == ["A", "B", "A", "B"]
     assert not any(warning.startswith("sections:") for warning in analysis["warnings"])
+    # D.2: B (with the voice and the hiss) is the louder part that comes back, so the preview leads into
+    # B2; four bars before it, its 30 s would run past the 64 s song, so it moves earlier to fit.
+    preview = analysis["preview"]
+    assert (preview["rule"], preview["leads_into"]) == ("repeated part", "B2")
+    assert list(preview["loudness_db_of_parts_that_come_back"]) == ["B", "A"]
+    assert preview["start_s"] + 30 <= 64.0 + 1e-6 and preview["moved_earlier_bars"] > 0
+    assert f"preview_start_time = {preview['start_ms']}" in (result.folder / "song.ini").read_text(encoding="utf-8")
+    assert analysis["song_ini"]["preview_start_time_ms"] == preview["start_ms"]
+    assert not any(warning.startswith("preview:") for warning in analysis["warnings"])
 
 
 @pytest.mark.heavy
@@ -263,6 +273,9 @@ def test_a_build_of_a_song_that_never_changes_warns_and_forces_nothing(tmp_path)
     analysis = json.loads((result.folder / "analysis.json").read_text(encoding="utf-8"))
     assert analysis["sections"]["written"] == []
     assert any(warning.startswith("sections: none found in the song") for warning in analysis["warnings"])
+    # D.2: with no sections the preview falls back on the loudest window, and the build says so.
+    assert (analysis["preview"]["rule"], analysis["preview"]["fallback_reason"]) == ("loudest window", "no sections were found")
+    assert any(warning.startswith("preview: no sections were found") for warning in analysis["warnings"])
 
 
 # ---------------------------------------------------------------- the real reference
@@ -272,7 +285,8 @@ def test_a_build_of_a_song_that_never_changes_warns_and_forces_nothing(tmp_path)
 @pytest.mark.parametrize("real_song", [CALIFORNICATION], indirect=True)
 def test_californication_sections_beat_the_naive_boundaries(real_song):
     """Californication is train: the settings were chosen on it."""
-    structure = compare_structure(real_song.reference, real_song.tempo, real_song.stems)
+    song = real_song.reference
+    structure = compare_structure(song, real_song.tempo, analysis_signals(song, real_song.stems))
     sections = structure["sections"]
     print(sections["match"], sections["naive"])
     f1 = sections["match"]["f1"]

@@ -24,7 +24,8 @@ from chartgen.audio.tempo import TempoAnalysis, estimate_tempo_map
 from chartgen.chart.charter import ChartedTrack
 from chartgen.chart.difficulty import LANE_NAMES, LevelMeasures, load_config
 from chartgen.chart.instruments import STEM_FOR_INSTRUMENT, build_tracks_for
-from chartgen.chart.sections import section_search_start_s, song_sections, song_start_s
+from chartgen.chart.preview import LOUDEST_WINDOW, PREVIEW_LEAD_BARS, choose_preview
+from chartgen.chart.sections import section_search_start_s, song_section_tick, song_sections, song_start_s
 from chartgen.core.model import Difficulty, Instrument
 from chartgen.core.timing import TempoMap
 from chartgen.errors import ChartgenError
@@ -135,6 +136,67 @@ class EvaluationReport:
     """The same for bass, on the songs that have it."""
 
 
+_PITCHED_STEMS = ("bass", "guitar", "piano", "other")
+"""The stems that carry chords, summed in this order, as a build sums them."""
+
+
+@dataclass(frozen=True)
+class AnalysisSignals:
+    """What the evaluation reads from a reference's audio and stems: mono signals at the analysis rate.
+
+    The stereo stems of a five-minute song take about 750 MB, these about 200 MB, so an evaluation
+    makes these first and lets the stems go before anything else runs.
+    """
+
+    duration_s: float
+    """Of the stems."""
+    mix: np.ndarray
+    """The whole song."""
+    pitched: np.ndarray
+    """The sum of :data:`_PITCHED_STEMS`, made mono."""
+    stems: Mapping[str, np.ndarray]
+    """Each stem the evaluation charts or listens to, by stem name."""
+    keys_present: bool | None = None
+    """Whether the keys stem passes the presence threshold, as in a build. None if not asked."""
+
+
+def _summed(stems: StemSet, names: Sequence[str]) -> np.ndarray:
+    """The sum of these stems, added into one array one stem at a time.
+
+    The same additions in the same order as ``np.sum`` over the list, so the same samples, without
+    first stacking every stem into one array of four or six times a stem's size.
+    """
+    total = stems.stems[names[0]].copy()
+    for name in names[1:]:
+        total += stems.stems[name]
+    return total
+
+
+def analysis_signals(song: ReferenceSong, stems: StemSet, keys: bool = False) -> AnalysisSignals:
+    """Make the mono signals of ``song`` and its ``stems``. With ``keys``, also decide whether the keys
+    stem is present, which needs the stereo stems."""
+    names = {STEM_FOR_INSTRUMENT[instrument] for instrument in Instrument} | {"vocals"}
+    keys_stem = STEM_FOR_INSTRUMENT[Instrument.KEYS]
+    keys_present = None
+    if keys:
+        # As in a build, an absent stem gets no chart: scoring its bleed would mean nothing.
+        everything = _summed(stems, STEM_NAMES)
+        keys_present = analyze_presence(keys_stem, stems.stems[keys_stem], everything, stems.samplerate).present
+        del everything
+    if not keys_present:
+        names.discard(keys_stem)
+    pitched = _summed(stems, _PITCHED_STEMS)
+    pitched_mono = analysis_mono(pitched, stems.samplerate)
+    del pitched
+    return AnalysisSignals(
+        duration_s=stems.duration_s,
+        mix=analysis_mono(song.audio.samples, song.audio.samplerate),
+        pitched=pitched_mono,
+        stems={name: analysis_mono(stems.stems[name], stems.samplerate) for name in sorted(names)},
+        keys_present=keys_present,
+    )
+
+
 def _measures_dict(measures: LevelMeasures) -> dict[str, float | None]:
     """Plain numbers for the report. A level with one note has no gap, which JSON cannot hold."""
     return {
@@ -218,19 +280,17 @@ def _average_levels(
     return averages
 
 
-def compare_structure(song: ReferenceSong, tempo: TempoAnalysis, stems: StemSet) -> dict[str, object]:
+def compare_structure(song: ReferenceSong, tempo: TempoAnalysis, signals: AnalysisSignals) -> dict[str, object]:
     """Sections, star power and the preview against the human chart's, where it has them."""
-    from chartgen.pipeline import preview_start_ms_of
-
     tempo_map = tempo.tempo_map
-    bars = bar_lines_s(tempo_map, stems.duration_s)
-    pitched = np.sum([stems.stems[name] for name in ("bass", "guitar", "piano", "other")], axis=0)
+    bars = bar_lines_s(tempo_map, signals.duration_s)
+    mix = signals.mix
     found = find_sections(
-        analysis_mono(song.audio.samples, song.audio.samplerate),
-        analysis_mono(pitched, stems.samplerate),
-        analysis_mono(stems.stems["vocals"], stems.samplerate),
+        mix,
+        signals.pitched,
+        signals.stems["vocals"],
         tempo_map,
-        stems.duration_s,
+        signals.duration_s,
         song_start_s=section_search_start_s(tempo),
         after_opening=tempo.lead_in_end_s > 0,
     )
@@ -262,7 +322,9 @@ def compare_structure(song: ReferenceSong, tempo: TempoAnalysis, stems: StemSet)
         },
         "mine": {},
     }
-    preview = preview_comparison(preview_start_ms_of(stems) / 1000.0, song.preview_start_s, human)
+    choice = choose_preview(found, mix, tempo_map, signals.duration_s, song_section_tick(tempo))
+    preview = preview_comparison(choice.start_s, song.preview_start_s, human)
+    preview.update({"rule": choice.rule, "leads_into": choice.leads_into})
     sections["strongest_change"] = round(found.strongest_change, 3)
     return {"sections": sections, "star_power": star_power, "preview": preview}
 
@@ -272,21 +334,21 @@ def evaluate_song(
 ) -> dict[str, object]:
     """Run the analysis on one reference song and compare it with the human chart."""
     stems = separate_with_cache(song.source, song.audio, separator, cache_dir)
-    mono = analysis_mono(song.audio.samples, song.audio.samplerate)
-    pitched = np.sum([stems.stems[name] for name in ("bass", "guitar", "piano", "other")], axis=0)
+    signals = analysis_signals(song, stems, keys=bool(song.keys_levels))
+    del stems  # the stereo stems are three quarters of an evaluation's memory and nothing needs them now
+    mono = signals.mix
     tempo = estimate_tempo_map(
         mono,
-        drums=analysis_mono(stems.stems["drums"], stems.samplerate),
-        harmonic=analysis_mono(pitched, stems.samplerate),
-        bass=analysis_mono(stems.stems["bass"], stems.samplerate),
+        drums=signals.stems["drums"],
+        harmonic=signals.pitched,
+        bass=signals.stems["bass"],
     )
-    stem = analysis_mono(stems.stems[STEM_FOR_INSTRUMENT[Instrument.GUITAR]], stems.samplerate)
-    vocals = analysis_mono(stems.stems["vocals"], stems.samplerate)
+    vocals = signals.stems["vocals"]
     charted = build_tracks_for(
         Instrument.GUITAR,
-        stem,
+        signals.stems[STEM_FOR_INSTRUMENT[Instrument.GUITAR]],
         tempo.tempo_map,
-        stems.duration_s,
+        signals.duration_s,
         vocals=vocals,
         not_before_s=tempo.lead_in_end_s,
     )
@@ -309,25 +371,21 @@ def evaluate_song(
     if song.bass_levels:
         bass = build_tracks_for(
             Instrument.BASS,
-            analysis_mono(stems.stems[STEM_FOR_INSTRUMENT[Instrument.BASS]], stems.samplerate),
+            signals.stems[STEM_FOR_INSTRUMENT[Instrument.BASS]],
             tempo.tempo_map,
-            stems.duration_s,
+            signals.duration_s,
             not_before_s=tempo.lead_in_end_s,
         )
         if bass:
             result["bass"] = compare_levels(bass, tempo.tempo_map, song, song.bass_levels)
     if song.keys_levels:
-        # As in a build, an absent stem gets no chart: scoring its bleed would mean nothing.
-        stem_name = STEM_FOR_INSTRUMENT[Instrument.KEYS]
-        mix = np.sum([stems.stems[name] for name in STEM_NAMES], axis=0)
-        present = analyze_presence(stem_name, stems.stems[stem_name], mix, stems.samplerate).present
-        result["keys_stem"] = "present" if present else "absent"
-        if present:
+        result["keys_stem"] = "present" if signals.keys_present else "absent"
+        if signals.keys_present:
             keys = build_tracks_for(
                 Instrument.KEYS,
-                analysis_mono(stems.stems[stem_name], stems.samplerate),
+                signals.stems[STEM_FOR_INSTRUMENT[Instrument.KEYS]],
                 tempo.tempo_map,
-                stems.duration_s,
+                signals.duration_s,
                 vocals=vocals,
                 not_before_s=tempo.lead_in_end_s,
             )
@@ -337,9 +395,9 @@ def evaluate_song(
     if human_drums:
         drums = build_tracks_for(
             Instrument.DRUMS,
-            analysis_mono(stems.stems[STEM_FOR_INSTRUMENT[Instrument.DRUMS]], stems.samplerate),
+            signals.stems[STEM_FOR_INSTRUMENT[Instrument.DRUMS]],
             tempo.tempo_map,
-            stems.duration_s,
+            signals.duration_s,
             not_before_s=tempo.lead_in_end_s,
         )
         if drums:
@@ -358,7 +416,7 @@ def evaluate_song(
                 result["drum_levels"] = levels
     elif song.drums.skipped:
         result["drums_skipped"] = song.drums.skipped
-    result["structure"] = compare_structure(song, tempo, stems)
+    result["structure"] = compare_structure(song, tempo, signals)
     return result
 
 
@@ -387,6 +445,7 @@ def evaluate_folder(
     failures: dict[str, str] = {}
     for path in references:
         log.info("Evaluating %s ...", path.name)
+        song = None
         try:
             song = load_reference(path)
             songs[song.name] = evaluate_song(song, separator, cache_dir)
@@ -394,6 +453,9 @@ def evaluate_folder(
         except ChartgenError as error:
             log.warning("Skipping %s: %s", path.name, error)
             failures[path.name] = str(error)
+        finally:
+            # One reference in memory at a time: this one goes before the next is decoded.
+            del song
     averages = {
         name: average([songs[song] for song in songs if splits[song] == name])
         for name in _SPLIT_ORDER
@@ -538,7 +600,9 @@ def _structure_lines(name: str, song: dict[str, object]) -> list[str]:
         ]
         lines.append(f"star power, {source}: " + ("; ".join(parts) if parts else "none"))
     preview = structure["preview"]
-    mine_text = f"mine {preview['mine_s']:.1f} s ({preview['mine_section'] or '-'})"
+    led = f", {PREVIEW_LEAD_BARS} bars before {preview['leads_into']}" if preview.get("leads_into") else ""
+    fallback = f", {preview['rule']}" if preview.get("rule") == LOUDEST_WINDOW else ""
+    mine_text = f"mine {preview['mine_s']:.1f} s ({preview['mine_section'] or '-'}{led}{fallback})"
     if "human_s" in preview:
         lines.append(
             f"preview: {mine_text}, human {preview['human_s']:.1f} s ({preview['human_section'] or '-'}): "

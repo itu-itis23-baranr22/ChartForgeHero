@@ -38,6 +38,12 @@ def song_sections(tempo: TempoAnalysis, found: SectionAnalysis | None) -> list[S
     return opening_sections(tempo) + [Section(section.tick, section.name) for section in (found.sections if found else ())]
 
 
+def song_section_tick(tempo: TempoAnalysis) -> int:
+    """The tick of ``Song`` after an opening, 0 without one: nothing of the song's own comes before it."""
+    opening = opening_sections(tempo)
+    return opening[1].tick if opening else 0
+
+
 def section_search_start_s(tempo: TempoAnalysis) -> float:
     """Where section finding starts: at ``Song`` after an opening, otherwise at the start."""
     return song_start_s(tempo) if tempo.lead_in_end_s > 0 else 0.0

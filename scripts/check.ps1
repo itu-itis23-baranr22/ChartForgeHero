@@ -21,46 +21,63 @@ if (-not (Test-Path $python)) {
     exit 1
 }
 
-$watch = [System.Diagnostics.Stopwatch]::StartNew()
+# numpy and scipy each carry their own OpenBLAS, and each commits about 32 MB per thread at import:
+# about 1 GB with 16 threads, before any test runs. Four threads commit about 0.26 GB for both.
+# Only for the tests; the value the window had before is put back when the check ends.
+$blasThreadsBefore = $env:OPENBLAS_NUM_THREADS
+$env:OPENBLAS_NUM_THREADS = '4'
 
-if ($Full) {
-    Write-Output 'check: running every test, with real Demucs and the reference songs ...'
-    $references = Join-Path $root 'references'
-    if (Test-Path $references) {
-        $env:CHARTGEN_REFERENCE_DIR = $references
-    } else {
-        Write-Output 'check: no references folder, so the reference test will be skipped'
-    }
-    $music = Join-Path $HOME 'Desktop\musica'
-    if (Test-Path $music) {
-        $env:CHARTGEN_MUSIC_DIR = $music
-    } else {
-        Write-Output 'check: no music folder, so the real song tests will be skipped'
-    }
-    # An empty -m overrides the "not slow and not real" default from pyproject.toml.
-    & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m '""'
-} elseif ($Mid) {
-    Write-Output 'check: running every test but the real songs and references ...'
-    & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m 'not real'
-} else {
-    Write-Output 'check: running the quick tests ...'
-    & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m 'not slow and not heavy and not real'
-}
-if ($LASTEXITCODE -ne 0) {
-    Write-Output 'check: FAILED, the tests did not pass'
-    exit 1
-}
+try {
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
 
-$folders = @(Get-ChildItem (Join-Path $root 'outputs') -Directory -ErrorAction SilentlyContinue)
-Write-Output "check: validating $($folders.Count) song folder(s) in outputs ..."
-if ($folders.Count -gt 0) {
-    # One process for all of them: starting Python takes longer than checking a folder.
-    & $python -X utf8 -m chartgen validate @($folders | ForEach-Object { $_.FullName })
+    if ($Full) {
+        Write-Output 'check: running every test, with real Demucs and the reference songs ...'
+        $references = Join-Path $root 'references'
+        if (Test-Path $references) {
+            $env:CHARTGEN_REFERENCE_DIR = $references
+        } else {
+            Write-Output 'check: no references folder, so the reference test will be skipped'
+        }
+        $music = Join-Path $HOME 'Desktop\musica'
+        if (Test-Path $music) {
+            $env:CHARTGEN_MUSIC_DIR = $music
+        } else {
+            Write-Output 'check: no music folder, so the real song tests will be skipped'
+        }
+        # An empty -m overrides the "not slow and not real" default from pyproject.toml.
+        & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m '""'
+    } elseif ($Mid) {
+        Write-Output 'check: running every test but the real songs and references ...'
+        & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m 'not real'
+    } else {
+        Write-Output 'check: running the quick tests ...'
+        & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m 'not slow and not heavy and not real'
+    }
     if ($LASTEXITCODE -ne 0) {
-        Write-Output 'check: FAILED, a song folder did not validate'
+        Write-Output 'check: FAILED, the tests did not pass'
         exit 1
     }
-}
 
-Write-Output ("check: all passed in {0:N0} s" -f $watch.Elapsed.TotalSeconds)
-exit 0
+    # A folder whose name starts with _ is not a song: outputs\_songs_backup holds old copies from the
+    # game, outputs\_experiments and outputs\_drafts hold experiments and notes.
+    $folders = @(Get-ChildItem (Join-Path $root 'outputs') -Directory -ErrorAction SilentlyContinue |
+        Where-Object { -not $_.Name.StartsWith('_') })
+    Write-Output "check: validating $($folders.Count) song folder(s) in outputs ..."
+    if ($folders.Count -gt 0) {
+        # One process for all of them: starting Python takes longer than checking a folder.
+        & $python -X utf8 -m chartgen validate @($folders | ForEach-Object { $_.FullName })
+        if ($LASTEXITCODE -ne 0) {
+            Write-Output 'check: FAILED, a song folder did not validate'
+            exit 1
+        }
+    }
+
+    Write-Output ("check: all passed in {0:N0} s" -f $watch.Elapsed.TotalSeconds)
+    exit 0
+} finally {
+    if ($null -eq $blasThreadsBefore) {
+        Remove-Item Env:OPENBLAS_NUM_THREADS -ErrorAction SilentlyContinue
+    } else {
+        $env:OPENBLAS_NUM_THREADS = $blasThreadsBefore
+    }
+}

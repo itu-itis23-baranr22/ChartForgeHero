@@ -289,6 +289,22 @@ def test_cli_rejects_blank_artist(song_file):
     assert main(["build", str(song_file), "--artist", "  ", "--title", "T"]) == 2
 
 
+def test_cli_build_asks_for_every_instrument_unless_told_otherwise(song_file, monkeypatch):
+    """Without --instruments a build charts every instrument whose stem is there; the stem presence
+    check, not the command line, leaves an instrument out."""
+    asked = []
+
+    def stop_after_reading_the_config(config, separator):
+        asked.append(config.instruments)
+        raise NoPlayableInstrumentError("stopped by the test")
+
+    monkeypatch.setattr("chartgen.audio.separation.DemucsSeparator", lambda device="auto": None)
+    monkeypatch.setattr("chartgen.pipeline.build_song", stop_after_reading_the_config)
+    assert main(["build", str(song_file), "--artist", "A", "--title", "T"]) == 2
+    assert asked == [frozenset(Instrument)]
+    assert {instrument.value for instrument in Instrument} == {"guitar", "bass", "drums", "keys"}
+
+
 @pytest.mark.parametrize("value", ["kazoo", "guitar,kazoo", ""])
 def test_cli_rejects_unknown_instruments(song_file, value):
     with pytest.raises(SystemExit):

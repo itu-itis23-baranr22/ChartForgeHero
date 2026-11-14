@@ -131,9 +131,14 @@ class SectionAnalysis:
     after_opening: bool
     """Whether the song has an opening that is not part of it, so ``Song`` starts the first part."""
     seconds: float
-    song_part: str | None = None
-    """After an opening, the name the part that ``Song`` starts was given (``A1``): it is written as
-    ``Song`` but lettered like any other part, so a later return of it is ``A2``."""
+    song_part: FoundSection | None = None
+    """After an opening, the part that ``Song`` starts (``A1``), from its first bar line: it is written
+    as ``Song`` but lettered like any other part, so a later return of it is ``A2``."""
+
+    @property
+    def parts(self) -> tuple[FoundSection, ...]:
+        """Every lettered part in order: the one ``Song`` starts, if any, then the written sections."""
+        return ((self.song_part,) if self.song_part is not None else ()) + self.sections
 
     @property
     def found(self) -> bool:
@@ -279,19 +284,18 @@ def find_sections(
     song_part = None
     for (start, _), letter in zip(segments, letters):
         counts[letter] = counts.get(letter, 0) + 1
+        part = FoundSection(
+            int(bar_ticks[start]),
+            float(bar_times[start]),
+            f"{letter}{counts[letter]}",
+            letter,
+            float(novelty[start]) if start != first else None,
+        )
         if after_opening and song_part is None:
             # After an opening the first part is written as ``Song``, but it counts as its letter's first.
-            song_part = f"{letter}{counts[letter]}"
-            continue
-        sections.append(
-            FoundSection(
-                int(bar_ticks[start]),
-                float(bar_times[start]),
-                f"{letter}{counts[letter]}",
-                letter,
-                float(novelty[start]) if start != first else None,
-            )
-        )
+            song_part = part
+        else:
+            sections.append(part)
     analysis = SectionAnalysis(
         tuple(sections), strongest, config.novelty_threshold, after_opening, time.perf_counter() - started, song_part
     )

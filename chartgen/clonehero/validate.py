@@ -427,6 +427,63 @@ def _check_opening(folder: Path, parsed: ParsedChart, report: ValidationReport) 
                 break
 
 
+_PREVIEW_MS = 30_000
+"""How long the song list plays the preview."""
+_LONGEST_BAR_MS = 8_000
+"""A 4/4 bar at 30 BPM. A song shorter than the preview plus this after its start may start the preview
+on its first bar line instead of fitting it."""
+
+
+def _song_start_ms(parsed: ParsedChart) -> float:
+    """Where the song starts after an opening that is not part of it: its ``Song`` section, else 0."""
+    try:
+        resolution = int(parsed.fields["Resolution"])
+        tempos = [
+            (event.tick, int(event.args) / 1000.0)
+            for event in parsed.sections["SyncTrack"]
+            if event.type == "B"
+        ]
+    except (KeyError, ValueError):
+        return 0.0
+    for event in parsed.sections.get("Events", []):
+        match = _SECTION_EVENT.match(event.args.strip()) if event.type == "E" else None
+        if match and match.group(1) == _OPENING_SECTIONS[1] and tempos and tempos[0][0] == 0:
+            return 1000.0 * _seconds_at(event.tick, tempos, resolution)
+    return 0.0
+
+
+def _check_preview(parsed: ParsedChart | None, ini: dict[str, str], report: ValidationReport) -> None:
+    """The preview does not start in an opening that is not part of the song, and its 30 seconds fit in
+    the song unless the song is too short for that after its start (decision 37, D.2). A preview that is
+    not set, or set to -1, is the game's to choose."""
+    raw = ini.get("preview_start_time", "").strip()
+    if not raw:
+        return
+    try:
+        preview = int(raw)
+    except ValueError:
+        report.errors.append(f"song.ini preview_start_time is not a whole number of ms: {raw!r}")
+        return
+    if preview < 0:
+        return
+    start = _song_start_ms(parsed) if parsed is not None else 0.0
+    if preview < start - 1:
+        report.errors.append(
+            f"song.ini preview_start_time {preview} ms is in the opening: the song starts at {start:.0f} ms"
+        )
+    try:
+        length = int(ini.get("song_length", "").strip())
+    except ValueError:
+        return
+    if preview >= length:
+        report.errors.append(f"song.ini preview_start_time {preview} ms is past the song's end ({length} ms)")
+    elif preview + _PREVIEW_MS > length and length - start >= _PREVIEW_MS + _LONGEST_BAR_MS:
+        report.errors.append(
+            f"song.ini preview_start_time {preview} ms: its {_PREVIEW_MS // 1000} s do not fit in the "
+            f"{length} ms song"
+        )
+
+
 def _read_song_ini(path: Path, report: ValidationReport) -> dict[str, str]:
     parser = configparser.ConfigParser(
         delimiters=("=",), comment_prefixes=(), interpolation=None, strict=False
@@ -486,6 +543,7 @@ def validate_song_folder(folder: Path) -> ValidationReport:
         for key in ("name", "artist"):
             if not ini.get(key, "").strip():
                 report.errors.append(f"song.ini has no {key}: Clone Hero would call it a bad song")
+        _check_preview(parsed, ini, report)
 
     if parsed is not None and ini:
         for instrument, key in DIFFICULTY_KEYS.items():
