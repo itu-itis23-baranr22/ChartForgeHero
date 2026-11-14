@@ -26,7 +26,8 @@ from chartgen.chart.difficulty import LANE_NAMES, LevelMeasures, load_config
 from chartgen.chart.instruments import STEM_FOR_INSTRUMENT, build_tracks_for
 from chartgen.chart.preview import LOUDEST_WINDOW, PREVIEW_LEAD_BARS, choose_preview
 from chartgen.chart.sections import section_search_start_s, song_section_tick, song_sections, song_start_s
-from chartgen.core.model import Difficulty, Instrument
+from chartgen.chart.star_power import place_star_power
+from chartgen.core.model import Difficulty, Instrument, Track
 from chartgen.core.timing import TempoMap
 from chartgen.errors import ChartgenError
 from chartgen.evaluation.drum_metrics import channel_metrics, drum_level_metrics, drum_metrics
@@ -280,8 +281,18 @@ def _average_levels(
     return averages
 
 
-def compare_structure(song: ReferenceSong, tempo: TempoAnalysis, signals: AnalysisSignals) -> dict[str, object]:
-    """Sections, star power and the preview against the human chart's, where it has them."""
+def compare_structure(
+    song: ReferenceSong,
+    tempo: TempoAnalysis,
+    signals: AnalysisSignals,
+    ours: Mapping[Instrument, Sequence[Track]] | None = None,
+) -> dict[str, object]:
+    """Sections, star power and the preview against the human chart's, where it has them.
+
+    Args:
+        ours: Our levels of each charted instrument, the hardest first: their star power is placed as a
+            build places it and measured as the human chart's is. Without them, ours is not measured.
+    """
     tempo_map = tempo.tempo_map
     bars = bar_lines_s(tempo_map, signals.duration_s)
     mix = signals.mix
@@ -322,6 +333,19 @@ def compare_structure(song: ReferenceSong, tempo: TempoAnalysis, signals: Analys
         },
         "mine": {},
     }
+    for instrument, levels in (ours or {}).items():
+        if not levels:
+            continue
+        plan = place_star_power(levels, tempo_map, signals.duration_s, song_section_tick(tempo))
+        expert = levels[0].notes
+        # Counted as the human chart's are: every gem on fretted instruments, every hit on drums.
+        ticks = sorted({note.tick for note in expert}) if instrument is Instrument.DRUMS else [note.tick for note in expert]
+        star_power["mine"][instrument.value] = star_power_summary(
+            [(phrase.start_s, phrase.end_s) for phrase in plan.phrases],
+            bars,
+            signals.duration_s,
+            tempo_map.seconds_at(np.array(ticks, dtype=np.float64)),
+        )
     choice = choose_preview(found, mix, tempo_map, signals.duration_s, song_section_tick(tempo))
     preview = preview_comparison(choice.start_s, song.preview_start_s, human)
     preview.update({"rule": choice.rule, "leads_into": choice.leads_into})
@@ -354,6 +378,7 @@ def evaluate_song(
     )
 
     duration = len(mono) / ANALYSIS_SAMPLERATE
+    ours: dict[Instrument, list[Track]] = {}  # our levels of each instrument the human chart has, for star power
     result: dict[str, object] = {
         "bpm": round(tempo.bpm, 2),
         "tempo_method": tempo.method,
@@ -368,6 +393,7 @@ def evaluate_song(
         result["removed_as_vocal"] = sum(note.removed for note in charted[0].bleed)
         result["chord_limit_adjusted"] = charted[0].chord_limit_adjusted
         result["levels"] = compare_levels(charted, tempo.tempo_map, song)
+        ours[Instrument.GUITAR] = [item.track for item in charted]
     if song.bass_levels:
         bass = build_tracks_for(
             Instrument.BASS,
@@ -378,6 +404,7 @@ def evaluate_song(
         )
         if bass:
             result["bass"] = compare_levels(bass, tempo.tempo_map, song, song.bass_levels)
+            ours[Instrument.BASS] = [item.track for item in bass]
     if song.keys_levels:
         result["keys_stem"] = "present" if signals.keys_present else "absent"
         if signals.keys_present:
@@ -391,6 +418,7 @@ def evaluate_song(
             )
             if keys:
                 result["keys"] = compare_levels(keys, tempo.tempo_map, song, song.keys_levels)
+                ours[Instrument.KEYS] = [item.track for item in keys]
     human_drums = song.drums.levels.get(Difficulty.EXPERT)
     if human_drums:
         drums = build_tracks_for(
@@ -409,6 +437,7 @@ def evaluate_song(
                     drums[0].track, tempo.tempo_map, human_drums, channels
                 )
             result["drums"] = entry
+            ours[Instrument.DRUMS] = [item.track for item in drums]
             levels = drum_level_metrics(
                 [item.track for item in drums], tempo.tempo_map, song.drums.levels
             )
@@ -416,7 +445,7 @@ def evaluate_song(
                 result["drum_levels"] = levels
     elif song.drums.skipped:
         result["drums_skipped"] = song.drums.skipped
-    result["structure"] = compare_structure(song, tempo, signals)
+    result["structure"] = compare_structure(song, tempo, signals, ours)
     return result
 
 

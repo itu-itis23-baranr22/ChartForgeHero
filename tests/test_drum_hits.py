@@ -19,6 +19,7 @@ from chartgen.audio.io import ANALYSIS_SAMPLERATE, resample
 from chartgen.chart.difficulty import HardRuleViolation
 from chartgen.chart.drum_charter import UNVERIFIED_PIECES, build_drum_expert_track, check_drum_track
 from chartgen.chart.instruments import CHARTABLE_INSTRUMENTS, build_tracks_for
+from chartgen.chart.star_power import DRUM_ACTIVATION_NOT_VERIFIED
 from chartgen.clonehero.chart_format import DotChartExporter
 from chartgen.clonehero.drum_ear_test import EAR_TEST_FILES, chart_drum_gems, write_drum_ear_test
 from chartgen.clonehero.validate import validate_song_folder
@@ -465,6 +466,9 @@ def test_a_build_charts_drums_says_what_is_not_verified_and_writes_listening_fil
     assert drums["not_verified"]["parts"] == sorted(piece.value for piece in UNVERIFIED_PIECES)
     assert set(drums["not_verified"]["gems"]) == {"yellow_tom", "blue_tom", "green_tom", "green_cymbal"}
     assert drums["gems_by_kind"]["kick"] >= 30
+    # D.3: drum star power is written without activation fills, and the build says that was not checked in the game.
+    assert analysis["star_power"]["not_verified_in_game"] == [DRUM_ACTIVATION_NOT_VERIFIED]
+    assert "S 64" not in text
     assert analysis["drum_hard_rules"]
     assert any("toms and crash are not verified" in warning for warning in analysis["warnings"])
     assert set(analysis["drum_ear_test"]["clicks_per_file"]) == set(EAR_TEST_FILES)

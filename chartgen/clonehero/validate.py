@@ -224,6 +224,48 @@ def _check_sections(parsed: ParsedChart, report: ValidationReport) -> None:
         previous = (tick, name)
 
 
+def _song_section_tick(parsed: ParsedChart) -> int:
+    """The tick of ``Song`` after an opening that is not part of the song, 0 without one."""
+    for event in parsed.sections.get("Events", []):
+        match = _SECTION_EVENT.match(event.args.strip()) if event.type == "E" else None
+        if match and match.group(1) == _OPENING_SECTIONS[1]:
+            return event.tick
+    return 0
+
+
+def _check_star_power(parsed: ParsedChart, report: ValidationReport) -> None:
+    """Star power phrases (``S 2``) start on a bar line, do not overlap, hold a note of their own track,
+    and none starts before the song does, at ``Song`` after an opening (decision 40, D.3)."""
+    resolution_field = parsed.fields.get("Resolution", "")
+    signatures = _bar_lengths(parsed, int(resolution_field)) if resolution_field.isdigit() else []
+    if not signatures:
+        return
+    song_tick = _song_section_tick(parsed)
+    for name in _PLAYABLE_SECTIONS:
+        events = parsed.sections.get(name, [])
+        notes = sorted({event.tick for event in events if event.type == "N"})
+        phrases = []
+        for event in events:
+            parts = event.args.split()
+            if event.type == "S" and len(parts) == 2 and all(part.isdigit() for part in parts) and int(parts[0]) == _STAR_POWER:
+                phrases.append((event.tick, int(parts[1])))
+        previous_end: int | None = None
+        for tick, length in sorted(phrases):
+            where = f"[{name}] tick {tick}: star power"
+            start, bar = max((item for item in signatures if item[0] <= tick), default=signatures[0])
+            if (tick - start) % bar:
+                report.errors.append(f"{where} is not on a bar line")
+            if tick < song_tick:
+                report.errors.append(f"{where} starts before the song does (Song at tick {song_tick})")
+            if length <= 0:
+                report.errors.append(f"{where} has no length")
+            elif not any(tick <= note < tick + length for note in notes):
+                report.errors.append(f"{where} holds no note")
+            if previous_end is not None and tick < previous_end:
+                report.errors.append(f"{where} overlaps the phrase before it")
+            previous_end = max(previous_end or 0, tick + length)
+
+
 def _check_track(name: str, events: list[ParsedEvent], report: ValidationReport) -> None:
     drums = _PLAYABLE_SECTIONS[name] is Instrument.DRUMS
     allowed = _DRUM_NOTES if drums else _FRET_NOTES
@@ -384,6 +426,7 @@ def validate_chart_text(text: str) -> tuple[ParsedChart, ValidationReport]:
     _check_difficulty_rules(parsed, report)
     _check_drum_rules(parsed, report)
     _check_sections(parsed, report)
+    _check_star_power(parsed, report)
     return parsed, report
 
 

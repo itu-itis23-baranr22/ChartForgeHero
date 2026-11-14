@@ -1,0 +1,27 @@
+# Where star power phrases go. Every value here is a preference.
+#
+# The hard rules live in chartgen/chart/star_power.py and cannot be loosened from this file: a phrase
+# starts on a bar line, phrases do not overlap, every phrase holds a note on every level of its
+# instrument, and none starts before the song does (before Song after an opening). Loading refuses any
+# key it does not know.
+#
+# Californication (train) is the one human chart with star power: 11-13 phrases on guitar, bass and
+# drums, one bar each, all on a bar line, the same span on every level, 20 to 30 s apart (median 22-29 s),
+# the first 10 to 28 s into the song, and at least two notes inside on Easy.
+
+[phrases]
+# How long a phrase is, in bars (decision 40).
+bars = 1
+# The first phrase goes about this long after the song starts, the next ones about gap_s apart.
+first_after_s = 15.0
+gap_s = 25.0
+# A phrase starts at least min_gap_s after the previous one, and at most max_gap_s when a bar there
+# holds a note on every level. A longer gap is reported.
+min_gap_s = 20.0
+max_gap_s = 30.0
+# Bars with at least this many notes on the instrument's easiest level come first.
+preferred_notes_on_easiest = 2
+
+[soft_targets]
+# Phrases per minute of the song; the build warns outside this range.
+per_minute = [1.5, 3.0]

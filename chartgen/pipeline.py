@@ -29,6 +29,8 @@ from chartgen.chart.drum_charter import DRUM_HARD_RULES, UNVERIFIED_GEMS, UNVERI
 from chartgen.chart.drum_difficulty import LEVEL_HARD_RULES
 from chartgen.chart.preview import LOUDEST_WINDOW, PREVIEW_LEAD_BARS, PreviewChoice, choose_preview
 from chartgen.chart.sections import SONG_SECTION, section_search_start_s, song_section_tick, song_sections, song_start_s
+from chartgen.chart.star_power import HARD_RULES as STAR_POWER_HARD_RULES
+from chartgen.chart.star_power import DRUM_ACTIVATION_NOT_VERIFIED, StarPowerPlan, place_star_power
 from chartgen.core.drums import DrumGem
 from chartgen.chart.instruments import (
     CHARTABLE_INSTRUMENTS,
@@ -419,6 +421,50 @@ def _sections_analysis(sections: list[Section], found: SectionAnalysis, tempo: T
     }
 
 
+def _place_star_power(
+    tracks: list[Track], tempo: TempoAnalysis, duration_s: float, warnings: list[str]
+) -> dict[Instrument, StarPowerPlan]:
+    """Give each instrument its star power, the same phrases on all of its levels, and say where."""
+    by_instrument: dict[Instrument, list[Track]] = {}
+    for track in tracks:
+        by_instrument.setdefault(track.instrument, []).append(track)
+    plans: dict[Instrument, StarPowerPlan] = {}
+    for instrument, levels in by_instrument.items():
+        plan = place_star_power(levels, tempo.tempo_map, duration_s, song_section_tick(tempo))
+        for track in levels:
+            track.star_power = plan.star_power_phrases()
+        plans[instrument] = plan
+        warnings.extend(plan.soft_warnings())
+        if not plan.phrases:
+            continue
+        gaps = plan.gaps_s
+        spacing = (
+            f", {min(gaps):.1f}-{max(gaps):.1f} s apart (median {float(np.median(gaps)):.1f} s)" if gaps else ""
+        )
+        fewest = min(phrase.notes[-1] for phrase in plan.phrases)
+        unverified = "; activation without fills not verified in the game" if instrument is Instrument.DRUMS else ""
+        log.info(
+            "    star power: %s %d phrases, %.1f per minute%s, fewest notes inside on %s %d%s",
+            instrument.value,
+            len(plan.phrases),
+            plan.per_minute or 0.0,
+            spacing,
+            plan.levels[-1].value.title(),
+            fewest,
+            unverified,
+        )
+    return plans
+
+
+def _star_power_analysis(plans: dict[Instrument, StarPowerPlan]) -> dict[str, object]:
+    """What ``analysis.json`` says about star power: every phrase, and what was not checked in the game."""
+    return {
+        "instruments": {instrument.value: plan.as_dict() for instrument, plan in plans.items()},
+        "hard_rules": list(STAR_POWER_HARD_RULES),
+        "not_verified_in_game": [DRUM_ACTIVATION_NOT_VERIFIED] if Instrument.DRUMS in plans else [],
+    }
+
+
 def _report_preview(preview: PreviewChoice, warnings: list[str]) -> None:
     """Say where the preview starts and by which rule; warn when no part that comes back chose it."""
     if preview.rule == LOUDEST_WINDOW:
@@ -469,6 +515,7 @@ def _analysis(
     ear_test: dict[str, int] | None = None,
     sections: dict[str, object] | None = None,
     preview: dict[str, object] | None = None,
+    star_power: dict[str, object] | None = None,
 ) -> dict[str, object]:
     charts: dict[str, dict[str, dict[str, object]]] = {}
     for item in charted:
@@ -602,6 +649,7 @@ def _analysis(
         },
         "sections": sections,
         "preview": preview,
+        "star_power": star_power,
         "charts": charts,
         "not_verified_on_real_data": sorted(
             instrument.value for instrument in UNVERIFIED_INSTRUMENTS if instrument.value in charts
@@ -739,6 +787,7 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
                 "No requested instrument produced a chart, so the song would be unplayable. "
                 + " ".join(warnings)
             )
+        star_power = _place_star_power(tracks, tempo, stems.duration_s, warnings)
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=".build-", dir=config.output_dir))
@@ -813,6 +862,7 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
             ear_test,
             _sections_analysis(sections, found, tempo),
             _preview_analysis(preview),
+            _star_power_analysis(star_power),
         )
         (temporary / ANALYSIS_FILE).write_text(
             json.dumps(analysis, indent=2, ensure_ascii=False), encoding="utf-8"

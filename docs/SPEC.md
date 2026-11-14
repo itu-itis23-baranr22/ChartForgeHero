@@ -212,6 +212,16 @@ Decisions made since it was written are listed first and take precedence.
    not before `Song` and that it fits. On Californication (train) it lands 0.18 s from the human's
    (174.6 s against 174.4 s, four bars before chorus 2); the loudest window was 285.1 s. Acceptance
    criterion, approved 2026-11-15 and in the test: at most one bar, of the human chart, from the human's.
+40. **Star power (D.3), approved 2026-11-15.** Every charted instrument gets phrases (`S 2`) one bar long,
+   the same on all four of its levels, placed on its own notes: the first about 15 s after the song starts,
+   each next in the bar closest to 25 s after the last, 20 to 30 s apart, among the bars that hold a note on
+   every level; bars with two or more notes on Easy come first. Hard rules in code (`chart/star_power.py`)
+   and, on its own, in the validator: a phrase starts on a bar line, phrases do not overlap, every phrase
+   holds a note (in code on every level), and no phrase starts before the song does (`Song` after an
+   opening). Soft targets in `chart/star_power.toml`: 1.5 to 3 phrases a minute, no gap over 30 s, two
+   notes on Easy. Drums get no activation fills (`S 64`): how the game activates drum star power without
+   them was not checked in the game, and `analysis.json` says so (`star_power.not_verified_in_game`). The
+   owner chose to leave the drum test for later; the experiment is kept in `outputs/_experiments/`.
 
 ## Phase B1 targets (one reference song so far)
 

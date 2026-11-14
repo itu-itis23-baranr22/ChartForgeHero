@@ -1,18 +1,53 @@
 # Proje durumu
 
-Faz D (bölümler, preview, star power, vokal) devam ediyor; D.0, D.1, D.2 ve D.3 adımlarına bölündü ve her birinin sonunda onay bekleniyor. Şartname ve alınan kararlar `docs/SPEC.md` dosyasında.
+Faz D kapandı (D.3 bu commit'te). A'dan D'ye bütün fazlar tamamlandı; sıradaki iş için proje sahibinin kararı bekleniyor. Şartname ve alınan kararlar `docs/SPEC.md` dosyasında.
 
 ## Şu anki adım
 
-**D.2 kapandı (2026-11-15, bu commit; preview noktası). Sırada D.3: star power. İlk iş davulda star power'ın oyunda nasıl açıldığını doğrulamak: deney `SP Deneyi - Davul` (`outputs\_experiments\d3_sp_deneyi\`) `Songs`'a kopyalanıp önce botla denenecek; bot açmazsa proje sahibi Expert ve Hard'ı çalacak. Sonuca göre seçenekler sunulacak.**
+**Faz D kapandı: D.3 (star power) bu commit'te. Yeni bir adım planlanmadı; proje sahibinin sıradaki iş için kararını bekliyor.**
 
-**`-Full` (2026-11-15):** proje sahibinin kendi PowerShell penceresinde geçti: 992 test, 745 sn (check 750 sn), 5 gerçek şarkının her biri bir kez yüklendi, 8 klasör validator'dan geçti. Bu koşuda tepe bellek ölçülmedi. Claude Code'un arka planda başlattığı iki `-Full`'u Claude Code bellek azalınca durdurmuştu (aşağıda "Bellek"); bu yüzden `-Full` artık proje sahibinin penceresinde çalışıyor.
+**`-Full` (2026-11-15):** proje sahibinin kendi PowerShell penceresinde geçti: 1022 test, 600 sn (check 605 sn), 5 gerçek şarkının her biri bir kez yüklendi, 8 klasör validator'dan geçti (yeniden derlenen dört şarkı star power'lı). Californication star power testi, gitar ve bas hash'leri, davul F1 alt sınırları ve gerçek Demucs testleri dahil. Bu koşuda tepe bellek ölçülmedi.
+
+## Projenin genel durumu (2026-11-15)
+
+**Ne yapıyor:** proje sahibinin kendi ses dosyasından Clone Hero şarkı klasörü üretiyor (`chartgen build`): Demucs ile stem ayrıştırma (önbellekli, sabit seed), değişken tempo haritası ve ölçü, şarkıya ait olmayan girişin ayıklanması, dört seviyede gitar, bas, keys ve 4-lane Pro Drums, bölümler, preview noktası, star power, `song.ini`, ayrı ses dosyaları (`vocals.ogg` dahil), her build'de validator ve her kararın gerekçesiyle `analysis.json`. Ayrıca `chartgen validate` ve insan chart'larıyla karşılaştıran `chartgen evaluate`.
+
+**Enstrümanlar:**
+
+| | Durum | Oyunda | Ölçüm (Californication, `train`) |
+|---|---|---|---|
+| Gitar | Dört seviye | Proje sahibi LastResort ve Şarkı Testi'ni çaldı | Expert nota F1 0,794; alt seviyeler "önce vuruşlar" tabanını geçiyor |
+| Bas | Dört seviye, ayrı ayarlar | Danza ve Toca çalındı | Onaylı alt sınırlar testte; dört şarkının bası hash'le sabit |
+| Pro Drums | Dört seviye, zil/tom | LastResort, Danza, Toca Easy ve Hard çalındı | Expert konum F1 0,919; seviye alt sınırları 0,85/0,85/0,80 testte; tom ve crash doğrulanmadı |
+| Keys | Dört seviye | Hiçbir şarkıda piyano stem'i yok | Gerçek veriyle doğrulanmadı |
+| Vokal | Yalnızca `vocals.ogg` | Ses kaydırıcısı çalışıyor | Şarkı sözü yok |
+
+**Yapı (Faz D):** bölümler yapısal harflerle (`A1`, `B1`, `A2`; Californication sınır F1 0,750, eşik 0,70); preview tekrar eden en gürültülü bölümün ikinci başlangıcından 4 ölçü önce (insanınkinden 0,18 sn; kriter en çok 1 ölçü); star power her enstrümanda 1 ölçülük ifadeler, ~25 sn arayla, dört seviyede aynı yerde (Californication'da insanınkine yakın sayı ve aralık). Davulda star power'ın oyunda nasıl açıldığı doğrulanmadı.
+
+**Güvence:** kesin kurallar kodda ve validator'da, yumuşak hedefler `.toml` dosyalarında (uyarır, build'i durdurmaz). `scripts\check.ps1`: hızlı kademe her commit'te (hook, ~1 dk), `-Mid` gerçek şarkılar olmadan, `-Full` her şey (gerçek Demucs, beş gerçek şarkı, referans; ~12 dk). Testler `OPENBLAS_NUM_THREADS=4` ile çalışıyor. `-Full` proje sahibinin kendi PowerShell penceresinde çalıştırılıyor: Claude Code arka planda bellek azalınca onu durduruyor.
+
+**Oyundaki şarkılar** (`Documents\Clone Hero\Songs`): `Don Omar - Danza Kuduro`, `Fly Project - Toca Toca`, `Davul Testi - LastResort`, `Yerel Test - Şarkı Testi` (D.3 sürümü, star power'lı); `Tempo Test - LastResort otomatik` (eski gitar tempo testi); `SP Deneyi - Davul` (davul star power deneyi). Önceki kopyalar `outputs\_songs_backup\<tarih>\` altında.
+
+**Sınır:** bütün ayarlar ve ölçümler tek insan chart'ından (Californication, `train`); `references/test` boş. Ayrıntı: "Bilinen sınırlar ve açık konular".
+
+## İleride (özet)
+
+Proje sahibinin "şimdilik değil" dedikleri ve önerilip uygulanmayanlar. Ayrıntılar ilgili bölümlerde.
+
+- **Web editörü** (proje sahibinin ilk planındaki Phase 5): timeline, ses senkronu ve notaları elle düzeltme. Başlanmadı.
+- **Davul star power'ının oyunda açılışı** (proje sahibi test edecek): deney `outputs\_experiments\d3_sp_deneyi\` altında ve oyunda (`SP Deneyi - Davul`), kontrol listesi D.3 bölümünde. Sonuca göre `S 64` fill yazılıp yazılmayacağına karar verilecek.
+- **Basta open note (`N 7`)** tekrar eden en alçak notalar için (proje sahibinin önerisi).
+- **Şarkı sözü:** konuşma tanıma ve hizalama, yeni ve ağır bağımlılık.
+- **Testlerde `pyin` paylaşımı:** gerçek şarkı testlerinin zamanının çoğu; üretim koduna dokunur.
+- **Üretim build'inde `OPENBLAS_NUM_THREADS=4`:** build'in commit payını ~0,75 GB düşürür, çıktı aynı; önce süre ve tepe bellek ölçülmeli.
+- **Test referansları:** `references/test`'e insan chart'ları; önce ölçülür, hiçbir ayar yapılmaz.
+- **Keys doğrulaması:** piyanosu baskın bir şarkıyla oyunda ve `evaluate`'te.
+
+## Önceki adımlardan notlar
 
 **Proje sahibinin kararları (2026-11-15, ikinci tur):** `OPENBLAS_NUM_THREADS=4` yalnızca test ortamına (`check.ps1`) eklendi; üretim build'i için ayrı öneri (aşağıda), uygulanmadı. Commit taslağı ve deney klasörü Temp'ten `outputs\_drafts\` ve `outputs\_experiments\` altına taşındı; `check.ps1` adı `_` ile başlayan klasörleri şarkı saymıyor. Deneyden önce davul star power tuşu denetlendi (D.3 hazırlığı).
 
-**D.3 hazırlığı: star power tuşu (2026-11-15).** Oyunun kayıtlı tuş eşlemesi (kayıt defteri, Rewired `Player1` klavye haritası) okundu: Kırmızı `S` ve `H` (davulda `H` snare), Select/Star Power yalnızca `Return`. `H` star power'a bağlı değil, çakışma yok. Proje sahibi gitarda star power'ı `H` sanıyordu; Clone Hero'nun varsayılan klavye düzeni (kılavuz: "Select/Star Power - H") öyle, bu makinedeki kayıtlı düzen değil. Oyun açıkken Controls ekranında bir kez daha bakılacak. Diğer tuşlar: Yeşil `A`/`O`, Sarı `D`/`U`, Mavi `F`/`I`, Turuncu `G`/`B` (davulda kick), Sarı/Mavi/Yeşil zil `J`/`K`/`L`, Open `Space`, Whammy `;`, Start `RightShift`.
-
-**Deney `SP Deneyi - Davul`** (`outputs\_experiments\d3_sp_deneyi\`, `sp_experiment.py` ile `Davul Testi - LastResort`'tan): yalnızca Pro Drums. Expert'te yalnızca star power ifadeleri (`S 2`, 1 ölçü, her 4 ölçüde bir; ilkleri 0:13.0, 0:23.6, 0:34.2, 0:44.8), fill yok. Hard'da aynı ifadeler ve her ikinci ifadeden hemen sonra 2 ölçülük `S 64` fill (0:26.3-0:31.6, 0:47.5-0:52.8, 1:08.7-1:14.0, 1:29.9-1:35.2), fill'in son tick'inde bir nota var.
+**D.2 `-Full` (2026-11-15):** proje sahibinin kendi PowerShell penceresinde geçti: 992 test, 745 sn (check 750 sn), 5 gerçek şarkının her biri bir kez yüklendi, 8 klasör validator'dan geçti. Bu koşuda tepe bellek ölçülmedi. Claude Code'un arka planda başlattığı iki `-Full`'u Claude Code bellek azalınca durdurmuştu (aşağıda "Bellek"); bu yüzden `-Full` artık proje sahibinin penceresinde çalışıyor.
 
 **Proje sahibinin D.2 kararları (2026-11-15):** dört şarkıda da preview tanınır kısma giriyor. Harf eşiği 0,6'da kalıyor. Preview kabul kriteri: Californication'da insanınkinden en çok 1 ölçü uzakta (teste yazıldı: insan chart'ının, insan preview'unun düştüğü ölçüsü; SPEC 39). D.1 commit mesajındaki küçük yanlışlık düzeltilmiyor, geçmişe dokunulmuyor.
 
@@ -62,6 +97,78 @@ Proje sahibi Toca'nın bas Easy ve Hard'ını çaldı: vuruşlar ve zamanlama iy
 - Ölçüm (Californication, `train`): sınır F1 ±1 ölçüde ≥ 0,55 ve her "her N ölçü" taban skorunu geçer; en kısa bölüm ≥ 4 ölçü.
 - Yumuşak: dakikada 2-5 bölüm; star power dakikada 1,5-3 ifade, ifade başına nota.
 - Oyun: bot dört enstrümanda star power toplar; proje sahibi en az bir şarkıda star power'ı toplayıp açar.
+
+## D.3: star power
+
+**Proje sahibinin kararları (2026-11-15):** star power dört enstrümanda planlandığı gibi: ifade başına 1 ölçü, ~20-30 sn'de bir, bir enstrümanın dört seviyesinde aynı yerde. İfadelerin oyunda doğru göründüğü bot denemesinde doğrulandı. Davul fill'i (`S 64`) şimdilik yazılmıyor; davulda star power'ın nasıl açıldığı "oyunda doğrulanmadı" olarak burada ve `analysis.json`'da yazılı. Davul deneyini proje sahibi şimdilik atladı, deney klasörü ileride test için duruyor. Validator star power kurallarını kendi başına denetliyor.
+
+**Nasıl yerleştiriliyor** (`chart/star_power.py`, ayarlar `chart/star_power.toml`, SPEC 40. karar):
+- Her enstrüman kendi notalarına göre, ayrı ayrı. Aday ölçüler: şarkı başladıktan sonraki (`Song`'dan sonra), enstrümanın dört seviyesinin her birinde en az bir nota olan ölçüler.
+- İlk ifade şarkı başladıktan ~15 sn sonraki en yakın aday ölçüde; her sonraki öncekinden 25 sn sonraya en yakın aday ölçüde, 20-30 sn aralığında. Easy'de en az 2 nota olan ölçüler önce gelir (Californication'ın insan chart'ında her ifadenin Easy'sinde en az 2 nota var). Aralıkta aday yoksa 20 sn'den sonraki ilk aday alınır ve uzun aralık uyarılır.
+- İfade 1 ölçü; ölçü değişen şarkıda o ölçünün kendi uzunluğu.
+- **Kesin kurallar kodda** (`check_star_power`) ve **validator'da** (`notes.chart`'tan, kendi başına): ifade ölçü başında başlar, ifadeler çakışmaz, her ifadede (kodda: enstrümanın her seviyesinde; validator'da: yazıldığı bölümde) en az bir nota var, hiçbir ifade şarkı başlamadan (`Song`'dan önce) başlamaz. `star_power.toml` bunları gevşetemez; bilinmeyen anahtar reddediliyor.
+- **Yumuşak hedefler** (uyarı, terminal ve `analysis.json`): dakikada 1,5-3 ifade, 30 sn'den uzun aralık yok, Easy'de en az 2 nota.
+- Terminal: `star power: guitar 8 phrases, 2.4 per minute, 21.2-29.1 s apart (median 26.5 s), fewest notes inside on Easy 1`; davulda sonuna `activation without fills not verified in the game`. `analysis.json`'da `star_power`: her enstrümanın ifadeleri (tick, süre, her seviyede içindeki nota sayısı), sayı, dakikadaki ifade, aralıklar, kesin kurallar ve `not_verified_in_game` (davul chart'lanınca: fill yazılmadığı ve açılışın oyunda denetlenmediği).
+- `evaluate` bizim star power'ımızı da insanınkiyle aynı ölçülerle yazıyor (`star power, mine`).
+
+**Californication** (`train`, ayarlar insan chart'ına bakarak seçildi):
+
+| | İnsan | Bizim |
+|---|---|---|
+| Gitar | 13 ifade, 2,41/dk, aralık ortanca 22,4 sn, içinde en az 4 nota (Expert) | 12 ifade, 2,22/dk, 24,9 sn, en az 4 |
+| Bas | 12, 2,22/dk, 26,8 sn, en az 5 | 12, 2,22/dk, 25,2 sn, en az 4 |
+| Davul | 11, 2,04/dk, 28,6 sn, en az 10 | 13, 2,41/dk, 24,8 sn, en az 8 |
+| Keys | 1 | yok (piyano stem'i yok) |
+
+Hepsi ölçü başında, 1 ölçü. Bizim bütün aralıklar 20-30 sn içinde (insanınkiler 12,3-44,5 sn). Easy'de 2'den az nota tutan ifade: gitarda 1 (11.'si), bas ve davulda yok; insan chart'ında yok. Test bunları sabitliyor (`test_californication_star_power_is_spaced_like_the_human_charts`: sayı insanınkinden en çok 2 farklı, dakikada 1,5-3, aralıklar 20-30 sn, Easy'de seyrek ifade gitarda en çok 1).
+
+**Gerçek şarkılar** (yeniden derlendi, `Songs`'a kopyalandı):
+
+| Şarkı | Enstrüman | İfade | Dakikada | Aralık (ortanca) | Easy'de en az | Uyarı |
+|---|---|---|---|---|---|---|
+| Danza | bas | 8 | 2,0 | 22,2-25,9 (25,9) | 2 | – |
+| | davul | 8 | 2,0 | 22,2-25,9 (25,9) | 4 | – |
+| Toca | bas | 6 | 2,2 | 24,8-28,6 (26,7) | 2 | – |
+| | davul | 7 | 2,5 | 21,0-24,8 (24,8) | 3 | – |
+| Davul Testi - LastResort | gitar | 8 | 2,4 | 21,2-29,1 (26,5) | 1 | 1 ifade Easy'de tek nota |
+| | bas | 8 | 2,4 | 23,8-23,9 (23,8) | 2 | – |
+| | davul | 8 | 2,4 | 23,8-23,9 (23,8) | 4 | – |
+| Yerel Test - Şarkı Testi | gitar | 7 | 2,1 | 22,2-32,1 (24,7) | 1 | 1 aralık 32,1 sn; 1 ifade Easy'de tek nota |
+| | bas | 8 | 2,4 | 22,3-27,2 (24,7) | 2 | – |
+| | davul | 8 | 2,4 | 24,6-24,8 (24,7) | 2 | – |
+
+Danza'nın girişli olduğu (`Song` 0:37.1) hesaba katıldı: ilk ifadesi 0:52.6'da.
+
+**Bayt bayt aynı:** dört şarkıda `notes.chart`'ın `S 2` dışındaki bütün satırları ve `song.ini` önceki derlemeyle aynı (`outputs\_experiments\d3_compare_builds.py`); yalnızca her seviyeye aynı `S 2` satırları eklendi. Dördü validator'dan geçti. `Songs`'a yalnızca `notes.chart`, `song.ini` ve `analysis.json` kopyalandı (ses dosyaları değişmedi, dosya kümeleri aynı); `Songs`'taki hâlleri validator'dan geçti. Önceki üç dosya `outputs\_songs_backup\2026-11-15_d3\` altında. Oyun kapalıyken yazıldı.
+
+**Oyun (bot):**
+- `Davul Testi - LastResort` üç botla (`--player Guitar,Expert --player Bass,Expert --player ProDrums,Expert -i`): Lead Guitar, Bass Guitar ve Pro Drums otoyollarında star power notaları aynı anda, beklenen yerde camgöbeği çerçeveli görünüyor (`outputs\_experiments\d3_sp_deneyi\bot_lastresort\screen_024.0s.jpg`, ızgara `sheet_lastresort.jpg`).
+- Keys oyunda görülmedi: hiçbir şarkıda piyano stem'i yok (yalnızca sentetik test).
+- Bot star power'ı hiç açmıyor ve bot görünümünde oyuncunun star power ölçeri gösterilmiyor; ölçerin dolduğu ve açılış botla görülemiyor.
+
+**Davulda star power'ın açılışı: oyunda doğrulanmadı.** Fill (`S 64`) yazılmıyor. Web kaynakları ve oyunun kılavuzu fill'siz chart'ta davulda star power'ın nasıl açıldığını söylemiyor (`S 64` = davul star power açma bölümü). Bot denemesinde (aşağıda) bot açmadı ve Hard'daki fill'ler görünmedi; botun ölçeri görünmediği için nedeni bilinmiyor. Proje sahibi deneyi şimdilik atladı.
+
+**Star power tuşu (2026-11-15).** Oyunun kayıtlı tuş eşlemesi (kayıt defteri, Rewired `Player1` klavye haritası) okundu: Kırmızı `S` ve `H` (davulda `H` snare), Select/Star Power yalnızca `Return`. `H` star power'a bağlı değil, çakışma yok. Proje sahibi gitarda star power'ı `H` sanıyordu; Clone Hero'nun varsayılan klavye düzeni (kılavuz: "Select/Star Power - H") öyle, bu makinedeki kayıtlı düzen değil. Oyun açıkken Controls ekranında bir kez daha bakılacak. Diğer tuşlar: Yeşil `A`/`O`, Sarı `D`/`U`, Mavi `F`/`I`, Turuncu `G`/`B` (davulda kick), Sarı/Mavi/Yeşil zil `J`/`K`/`L`, Open `Space`, Whammy `;`, Start `RightShift`.
+
+**Deney `SP Deneyi - Davul`** (`outputs\_experiments\d3_sp_deneyi\`, `sp_experiment.py` ile `Davul Testi - LastResort`'tan): yalnızca Pro Drums. Expert'te yalnızca star power ifadeleri (`S 2`, 1 ölçü, her 4 ölçüde bir; ilkleri 0:13.0, 0:23.6, 0:34.2, 0:44.8), fill yok. Hard'da aynı ifadeler ve her ikinci ifadeden hemen sonra 2 ölçülük `S 64` fill (0:26.3-0:31.6, 0:47.5-0:52.8, 1:08.7-1:14.0, 1:29.9-1:35.2), fill'in son tick'inde bir nota var.
+
+**Bot denemesi (2026-11-15, D.2 commit'inden sonra).** `SP Deneyi - Davul` `Songs`'a kopyalandı; oyun iki botla yan yana açıldı (`--player ProDrums,Expert --player ProDrums,Hard -i`), 117 sn boyunca 1,5 sn'de bir ekran görüntüsü alındı (`outputs\_experiments\d3_sp_deneyi\bot_run.ps1`, kareler `bot_run_2\`, özet ızgaralar `sheet_2_*.jpg`). Şarkı açılıştan ~10 sn sonra başlıyor.
+- Star power ifadeleri görünüyor: notalar beklenen anlarda (her ~10,6 sn) camgöbeği vurgulu, iki seviyede de.
+- **Bot star power'ı açmadı:** otoyol hiçbir karede star power rengine dönmedi.
+- **Hard'da fill görünmedi:** fill anlarında (0:26.3, 0:47.5, 1:08.7, 1:29.9) sağdaki otoyolda normal notalar var, boş/serbest bölge yok.
+- Bot görünümünde oyuncu başına çarpan ve star power ölçeri gösterilmiyor; skor panelindeki mavi çubuk şarkının ilerleyişi (düzgünce doluyor), turuncu çubuk yıldız ilerlemesi. Yani botun ölçerinin yarıyı geçip geçmediği, fill'in bu yüzden mi gösterilmediği bilinmiyor.
+- Sonuç: davulda star power'ın nasıl açıldığı bot modunda doğrulanamıyor. Proje sahibi Expert ve Hard'ı kontrol listesiyle çalacak. Controls ekranı oyunda açılmadı; tuşlar kayıt defterinden (`Return` = Select/Star Power).
+
+**Proje sahibi çalarken neye bakacak** (`SP Deneyi - Davul`, Pro Drums; star power tuşu `Return`):
+- Expert (fill yok): 0:13 ve 0:23.6'daki parlayan notaları hatasız vur (ölçer yarıya dolar; kaçarsa 0:34.2, 0:44.8). Sonra: notaların kaybolduğu, sonunda tek nota olan bir bölge (fill) çıkıyor mu; `Return` star power'ı açıyor mu; açmazsa sarı ve mavi zile birlikte vurmak (`J` + `K`) açıyor mu.
+- Hard (fill var): aynı iki ifade; fill'ler 0:26.3, 0:47.5, 1:08.7, 1:29.9'da (~5 sn). İlki ölçer dolar dolmaz başladığı için gösterilmeyebilir. Fill sırasında notalar mı var yoksa boş bölge mi; sondaki notaya vurunca star power açılıyor mu; `Return` fill dışında da açıyor mu.
+
+**Değişen testler** (tolerans gevşetilmedi):
+- `test_evaluate_reports_the_structure`: `star_power.mine` boş bekleniyordu (D.0'da bizim star power yoktu); artık `evaluate` bizimkini ölçüyor: gitar 1 ifade, 1 ölçü, ölçü başında, rapor satırı `star power, mine: guitar 1 (`.
+- `test_a_build_charts_drums_says_what_is_not_verified_and_writes_listening_files`: yalnızca yeni denetimler (`not_verified_in_game`, `S 64` yok).
+- Yeni: `tests/test_star_power.py` (30 test: yerleştirme, ölçü değişimi, şarkı başlangıcı, seyrek seviye, uzun aralık uyarısı, ayarlar, kodda kesin kurallar, validator kuralları, `S 64` star power sayılmıyor, build'de dört seviyede aynı ifadeler, Californication).
+
+**Kontroller:** `scripts\check.ps1 -Mid` geçti (2026-11-15): 1001 test, 315 sn, 8 klasör validator'dan geçti (yeniden derlenen dört şarkı star power'lı). Californication testi (`real`) ayrıca geçti. `-Full` proje sahibinin penceresinde geçti: 1022 test, 600 sn, 8 klasör validator'dan geçti.
 
 ## D.2: preview noktası
 
@@ -538,8 +645,11 @@ Ses analizi yok. Build davulu henüz chart'lamıyor ("not implemented yet" uyar�
 
 ## İleride değerlendirilecek fikirler
 
+- **Web editörü:** proje sahibinin ilk planındaki Phase 5: timeline, ses senkronu ve notaları elle düzeltme. Faz D kapanırken (2026-11-15) "ileride" listesine eklendi, başlanmadı.
 - **Basta open note (`N 7`):** tekrar eden en alçak notalar için. Proje sahibinin önerisi, uygulanmadı.
 - **Şarkı sözü (lyric olayları):** konuşma tanıma (Whisper gibi) ve sözlerin vokal notalarına hizalanması gerekir; yeni ve ağır bir bağımlılık. Proje sahibi 2026-11-11'de "yazma, ileride" dedi.
+- **Davul star power fill'leri (`S 64`):** davulda star power'ın oyunda nasıl açıldığı doğrulanmadı (D.3). Deney `outputs\_experiments\d3_sp_deneyi\` altında, oyunda `SP Deneyi - Davul`. Proje sahibi 2026-11-15'te "şimdilik yazma, ileride test edeceğim" dedi.
+- **Üretim build'inde `OPENBLAS_NUM_THREADS=4`:** testlerde uygulandı (2026-11-15), build için yalnızca öneri; önce süre ve tepe bellek ölçülmeli.
 - **Testlerde `pyin` paylaşımı:** gerçek şarkı testlerinde zamanın çoğu basın `librosa.pyin`'inde, aynı şarkının bası oturumda 2-3 kez chart'lanıyor (Toca ve Californication 3, Danza 2). Paylaşmak üretim koduna dokunmayı gerektirir. Proje sahibi 2026-11-11'de "şimdilik uygulama" dedi.
 
 ```powershell
@@ -773,7 +883,8 @@ Toca, LastResort, Şarkı Testi ve Californication'ın tempo haritaları, `final
 | C.2 | Davul Hard, Medium, Easy, `evaluate` seviyeleri, `ProDrums` önizleme; Faz C kapandı | `1ec287d` |
 | D.0 | Bölüm, star power ve preview ölçümü (insan chart'ından), `evaluate` yapı satırları | `7251c84` |
 | D.1 | Bölüm tespiti, yapısal harfler, `Song` de harfli; Californication sınır F1 0,750 (eşik 0,70) | `838c88a` |
-| D.2 | Preview: tekrar eden en gürültülü bölümün ikinci başlangıcından 4 ölçü önce; Californication insanınkinden 0,18 sn (kriter ≤ 1 ölçü); referans değerlendirmesinin belleği 3,21 → 2,50 GB | bu commit |
+| D.2 | Preview: tekrar eden en gürültülü bölümün ikinci başlangıcından 4 ölçü önce; Californication insanınkinden 0,18 sn (kriter ≤ 1 ölçü); referans değerlendirmesinin belleği 3,21 → 2,50 GB | `f5e9551` |
+| D.3 | Star power: dört enstrüman, 1 ölçü, ~25 sn arayla, dört seviyede aynı yerde; validator kuralları; davul fill'i yok, açılışı oyunda doğrulanmadı; Faz D kapandı | bu commit |
 
 Proje sahibi LastResort ve Şarkı Testi'nin güncel Hard ve Medium sürümlerini de çaldı: akorlar rahat, fret dağılımı dengeli, senkron iyi.
 
@@ -805,6 +916,8 @@ Pre-commit hook 39–80 sn sürüyor (hızlı testler + validator, makine yükü
 - **Otomatik HOPO:** LastResort Expert %15.9 ve Hard %3.6, Şarkı Testi Expert %10.6, hedefler aşıldığı için uyarıyor. Davranış değiştirilmedi. `N 5` düzeltmesi gerçek şarkılarda hiç gerekmedi, yalnızca sentetik testte çalıştı.
 - **Şerit hedefi başka şarkılarda sert olabilir:** build, Californication'ın paylarıyla karşılaştırıyor. LastResort Easy'de kırmızı %73, ama oynarken tek düzelik hissedilmedi. Test referanslarıyla yeniden ayarlanmalı.
 - **Davul tek referanstan:** sınıflandırıcının eşikleri ve alt seviyelerin oranları Californication'dan (rock). Tom ve crash doğrulanmadı (build bunu yazıyor). Danza ve Toca'da gem payı uyarıları, hedef paylar rock şarkısından geldiği için; oynarken sorun görülmedi.
+- **Davul star power açılışı oyunda doğrulanmadı:** fill (`S 64`) yazılmıyor; deney hazır (D.3).
+- **Star power'da seyrek ifade:** gitarda bazı ifadeler Easy'de tek nota tutuyor (Californication 1, LastResort 1, Şarkı Testi 1); uyarı veriyor.
 - **Davul Expert'te flam:** 37-40 ms arayla iki konum kalabiliyor (C.1'in 35 ms birleştirme sınırının hemen üstü). Alt seviyelerde aralık kuralı bunları ayırıyor.
 
 ## Bekleyen kararlar ve ön tercihler

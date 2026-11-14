@@ -199,10 +199,15 @@ def test_evaluate_reports_the_structure(tmp_path):
     assert {"every_4_bars", "every_8_bars", "every_16_bars", "best_naive"} <= set(structure["sections"]["naive"])
     assert set(structure["star_power"]["human"]) == {"guitar", "drums"}
     assert structure["star_power"]["human"]["guitar"]["phrases"] == 2
-    assert structure["star_power"]["mine"] == {}
+    # D.3: our star power, placed as a build places it, on the instruments the human chart has and we chart.
+    mine = structure["star_power"]["mine"]
+    assert set(mine) == {"guitar"}
+    assert (mine["guitar"]["phrases"], mine["guitar"]["median_length_bars"], mine["guitar"]["on_a_bar_line"]) == (1, 1.0, 1.0)
+    assert mine["guitar"]["fewest_notes_inside"] >= 1
     assert structure["preview"]["human_s"] == pytest.approx(12.5)
     text = format_report(report)
     assert "Structure of structured" in text and "best naive" in text and "star power, human: guitar 2" in text
+    assert "star power, mine: guitar 1 (" in text
 
 
 @pytest.mark.parametrize(
