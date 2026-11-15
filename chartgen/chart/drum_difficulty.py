@@ -92,6 +92,9 @@ class DrumLevelConfig:
     second_gem_from: frozenset[DrumGem]
     """Which gems may join the first one at a position. Every gem, unless the level says otherwise."""
     soft_targets: DrumSoftTargets
+    min_gap_s: float = 0.0
+    """Positions are also never closer than this in seconds, however many beats apart: in a fast song
+    the beat rule alone would let through what a player cannot keep up with."""
 
 
 @dataclass(frozen=True)
@@ -120,7 +123,7 @@ def _range(name: str, value: object, where: str) -> tuple[float, float]:
 def _load_level(name: str, level: Difficulty, values: Mapping[str, object], tolerance: float, file: str) -> DrumLevelConfig:
     where = f"{file} [{name}]"
     values = dict(values)
-    known = {"position_ratio", "min_gap_beats", "gem_weights", "gem_shares", "soft_targets", "second_gem_from"}
+    known = {"position_ratio", "min_gap_beats", "min_gap_s", "gem_weights", "gem_shares", "soft_targets", "second_gem_from"}
     unknown = set(values) - known
     if unknown:
         raise ValueError(f"{where}: unknown keys {sorted(unknown)}; the hard rules are not settings")
@@ -128,8 +131,9 @@ def _load_level(name: str, level: Difficulty, values: Mapping[str, object], tole
     if missing:
         raise ValueError(f"{where}: missing {sorted(missing)}")
     ratio, gap = float(values["position_ratio"]), float(values["min_gap_beats"])  # type: ignore[arg-type]
-    if not 0 < ratio <= 1 or gap < 0:
-        raise ValueError(f"{where}: position_ratio must be in (0, 1] and min_gap_beats not negative")
+    floor = float(values.get("min_gap_s", 0.0))  # type: ignore[arg-type]
+    if not 0 < ratio <= 1 or gap < 0 or floor < 0:
+        raise ValueError(f"{where}: position_ratio must be in (0, 1], min_gap_beats and min_gap_s not negative")
     weights = {_gem(gem, where): float(weight) for gem, weight in dict(values.get("gem_weights", {})).items()}  # type: ignore[call-overload]
     second = frozenset(_gem(gem, where) for gem in values.get("second_gem_from", [gem.value for gem in DrumGem]))  # type: ignore[union-attr]
     if level in NO_KICK_WITH_A_PAD and DrumGem.KICK in second:
@@ -141,7 +145,7 @@ def _load_level(name: str, level: Difficulty, values: Mapping[str, object], tole
     unknown_targets = set(ranges) - _SOFT_TARGET_NAMES
     if unknown_targets:
         raise ValueError(f"{where}: unknown soft targets {sorted(unknown_targets)}")
-    return DrumLevelConfig(ratio, gap, weights, second, DrumSoftTargets(ranges, shares, tolerance))
+    return DrumLevelConfig(ratio, gap, weights, second, DrumSoftTargets(ranges, shares, tolerance), floor)
 
 
 def load_drum_config(path: Path = CONFIG_PATH) -> DrumDifficultyConfig:
@@ -379,16 +383,19 @@ def reduce_drums(
         )
         target = min(ticks.size, round(settings.position_ratio * expert_count))
         gap = round(settings.min_gap_beats * resolution)
-        times = ticks.astype(np.float64)
+        times = tempo_map.seconds_at(ticks.astype(np.float64)) if ticks.size else ticks.astype(np.float64)
+        floor = settings.min_gap_s
         # A flam puts two snares next to one beat. Only the better of them is protected, so the
         # protected ones keep the gap too.
         backbeats = select_positions(
-            np.flatnonzero(protected), times, scores, np.zeros(ticks.size, dtype=bool), ticks.size, math.inf, ticks, gap
+            np.flatnonzero(protected), times, scores, np.zeros(ticks.size, dtype=bool), ticks.size, math.inf, ticks, gap,
+            floor,
         )
         protected = np.zeros(ticks.size, dtype=bool)
         protected[backbeats] = True
         chosen = select_positions(
-            np.arange(ticks.size), times, scores, protected, target, math.inf, ticks=ticks, min_gap_ticks=gap
+            np.arange(ticks.size), times, scores, protected, target, math.inf, ticks=ticks, min_gap_ticks=gap,
+            floor_s=floor,
         )
         kept = {int(ticks[index]): candidates[int(ticks[index])] for index in chosen}
         notes = [gem.note(tick) for tick, gems in kept.items() for gem in gems]

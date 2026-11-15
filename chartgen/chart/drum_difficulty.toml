@@ -45,6 +45,11 @@ hit_strength = 0.2
 # position_ratio: the share of Expert's positions this level aims for. A level never has more
 # positions than the level above, so it can end up below its target, which then warns.
 # min_gap_beats: positions at least this far apart; a protected snare stays anyway.
+# min_gap_s: and never closer than this in seconds, protected snares included. In a fast song half a
+# beat is too little: the human charts in train keep Hard at least 0.10 s apart (Dani California), Medium
+# at least 0.21 s and Easy at least 0.25 s; First Date (191 BPM) keeps a whole beat on Medium and Easy.
+# Each floor is what min_gap_beats lasts at 150 BPM (FLOOR_BPM, SPEC 41), so nothing changes at 150 BPM
+# or slower, and each lies below every one of those human values.
 # [*.gem_weights]: added to a position's score by the gem that stays longest there. May be negative.
 #
 # [*.soft_targets] are [low, high] ranges, and gem_shares are the human's share of each gem, which
@@ -54,6 +59,7 @@ hit_strength = 0.2
 [hard]
 position_ratio = 0.76
 min_gap_beats = 0.25
+min_gap_s = 0.10
 
 [hard.gem_shares]
 kick = 0.159
@@ -74,6 +80,7 @@ min_gap_beats = [0.25, inf]
 [medium]
 position_ratio = 0.64
 min_gap_beats = 0.5
+min_gap_s = 0.20
 
 [medium.gem_shares]
 kick = 0.169
@@ -93,6 +100,7 @@ min_gap_beats = [0.5, inf]
 [easy]
 position_ratio = 0.54
 min_gap_beats = 0.5
+min_gap_s = 0.20
 # The human keeps the hi-hat with the snare in one Easy position out of six, the ride always.
 second_gem_from = ["red", "green_cymbal", "blue_cymbal"]
 

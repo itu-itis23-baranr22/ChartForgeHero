@@ -222,6 +222,18 @@ Decisions made since it was written are listed first and take precedence.
    notes on Easy. Drums get no activation fills (`S 64`): how the game activates drum star power without
    them was not checked in the game, and `analysis.json` says so (`star_power.not_verified_in_game`). The
    owner chose to leave the drum test for later; the experiment is kept in `outputs/_experiments/`.
+41. **Tempo octave (reference tuning, step 1, 2026-11-15).** The tempo search still stops at 160 BPM, so a
+   faster song is first found at half its tempo. Then the snare decides (`check_double_time` in
+   `audio/meter.py`): the drum classifier's snares are placed on the eighth-note grid, and in windows of 8
+   beats it is counted whether they fall on both even and odd beats. A backbeat at the right tempo falls
+   on one parity (beats 2 and 4), read at half tempo on every beat. The beat is split in two when at least
+   65% of the counting windows show both parities, at least 8 windows count, at most 60% of the snares come
+   with a kick (more means the kick leaks into the snare band, as in Toca Toca), and the split tempo stays
+   at 230 BPM or below. `--bpm` is never split. Every beat that was on the grid stays on it. Values from
+   the train references and the owner's songs only. Drum levels also get a floor in seconds next to their
+   floor in beats (`min_gap_s` in `chart/drum_difficulty.toml`: Hard 0.10, Medium 0.20, Easy 0.20), below
+   every human value in train and without effect at 150 BPM or slower; otherwise a split tempo would let
+   eighth notes into Easy.
 
 ## Phase B1 targets (one reference song so far)
 

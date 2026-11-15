@@ -316,11 +316,17 @@ def test_toca_real_grid_did_not_move(real_song):
 @pytest.mark.real
 @pytest.mark.parametrize("real_song", ["LastResort.wav"], indirect=True)
 def test_last_resort_real_grid_did_not_move(real_song):
+    """Not half a beat off, and since reference tuning step 1 (SPEC 41) its beat is split in two: the
+    snare falls on every beat at 90.6 BPM, a backbeat at 181. The owner heard the snare on every click
+    at 90.6 and agreed, but has not played the 181 BPM version yet. Before the split the events were
+    (0, 81.812), (192, 85.622), (1728, 90.051), (5376, 90.597): the later ones are now at twice the
+    tick and twice the tempo; only the stretch from the start of the audio to the first beat differs."""
     analysis = real_song.tempo
     assert not analysis.beat_phase.half_beat_off
+    assert analysis.double_time is not None and analysis.double_time.double
     assert [(e.tick, e.bpm) for e in analysis.tempo_map.tempos] == [
-        (0, 81.812),
-        (192, 85.622),
-        (1728, 90.051),
-        (5376, 90.597),
+        (0, 156.654),
+        (192, 171.244),
+        (3456, 180.102),
+        (10752, 181.194),
     ]

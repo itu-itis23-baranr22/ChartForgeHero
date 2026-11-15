@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import struct
 from pathlib import Path
 
@@ -593,15 +594,35 @@ def test_generated_charts_are_playable_on_a_reference(tmp_path):
 
 
 @pytest.mark.real
-def test_real_references_when_available():
-    """Set CHARTGEN_REFERENCE_DIR to a folder of .sng files or chart folders to run this."""
+def test_real_references_when_available(tmp_path):
+    """Set CHARTGEN_REFERENCE_DIR to a folder of .sng files or chart folders to run this.
+
+    Only Californication is evaluated: the floors below were set on it, so it is train. Every other
+    reference is measured with ``chartgen evaluate`` and held to no floor here; a test song held to a
+    floor would be tuned on. The stem cache is keyed by the file's contents, so the linked copy finds
+    the same stems.
+    """
     folder = os.environ.get("CHARTGEN_REFERENCE_DIR")
     if not folder:
         pytest.skip("CHARTGEN_REFERENCE_DIR is not set")
     from chartgen.audio.separation import DemucsSeparator
 
-    report = evaluate_folder(Path(folder), DemucsSeparator(), Path(".cache/stems"))
-    assert report.songs, "no reference could be evaluated"
+    found = [path for path in find_references(Path(folder) / "train") if "Californication" in path.name]
+    if not found:
+        pytest.skip("Californication is not among the references")
+    source = found[0]
+    (tmp_path / "train").mkdir()
+    target = tmp_path / "train" / source.name
+    if source.is_file():
+        try:
+            os.link(source, target)
+        except OSError:
+            shutil.copyfile(source, target)
+    else:
+        shutil.copytree(source, target)
+    report = evaluate_folder(tmp_path, DemucsSeparator(), Path(".cache/stems"))
+    assert list(report.songs) == [found[0].stem if source.is_file() else source.name]
+    assert set(report.averages) == {"train"}
     for averages in report.averages.values():
         assert averages["bars_agreeing"] >= 0.8
     # The targets for bass approved by the owner. Its settings were chosen on this song, so it is train.

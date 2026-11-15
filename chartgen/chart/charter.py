@@ -30,7 +30,7 @@ from chartgen.chart.difficulty import (
 )
 from chartgen.chart.fret_mapping import FretWeights, NoteInput, map_notes, single_notes_only
 from chartgen.core.model import ChartNote, Difficulty, Instrument, Track
-from chartgen.core.timing import TempoMap
+from chartgen.core.timing import TempoMap, seconds_floor
 
 if TYPE_CHECKING:
     from chartgen.chart.drum_charter import DrumChart
@@ -46,6 +46,10 @@ END_MARGIN_S = 0.1
 MIN_SUSTAIN_BEATS = 0.75
 """Human charts leave shorter notes unsustained: in one measured chart, no note lasted
 between a sixteenth and an eighth note."""
+MIN_SUSTAIN_S = seconds_floor(MIN_SUSTAIN_BEATS)
+"""A sustain also lasts at least this long, however many beats that is (0.30 s). Without it, a fast song
+whose beat was split in two (SPEC 41) sustained its quarter notes: First Date went from 18% to 46%
+sustained notes on guitar Expert, against the human's 1%."""
 SUSTAIN_GAP_BEATS = 0.25
 """A sustain ends this long before the next note, so the hand can change position."""
 
@@ -118,7 +122,8 @@ def _sustain_ticks(
         length = int(end_tick - tick)
         if index + 1 < ticks.size:
             length = min(length, int(ticks[index + 1] - tick) - gap)
-        if length >= MIN_SUSTAIN_BEATS * resolution:
+        lasts = tempo_map.seconds_at(float(tick + max(length, 0))) - tempo_map.seconds_at(float(tick))
+        if length >= MIN_SUSTAIN_BEATS * resolution and lasts >= MIN_SUSTAIN_S - 1e-6:
             lengths[index] = length - length % grid
     return lengths
 

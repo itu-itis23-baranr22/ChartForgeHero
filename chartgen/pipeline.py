@@ -610,6 +610,15 @@ def _analysis(
                 "confidence": round(tempo.beat_phase.confidence, 1),
                 "moved_half_a_beat": tempo.beat_phase.half_beat_off,
             },
+            "double_time": tempo.double_time
+            and {
+                "beat_split_in_two": tempo.double_time.double,
+                "reason": tempo.double_time.reason,
+                "windows": tempo.double_time.windows,
+                "snare_on_every_beat_share": round(tempo.double_time.both_parities_share, 3),
+                "snare_with_kick_share": round(tempo.double_time.snare_with_kick, 3),
+                "doubled_bpm": round(tempo.double_time.doubled_bpm, 3),
+            },
             "unfit_lead_in": {
                 "end_s": round(tempo.lead_in_end_s, 3),
                 "onsets_on_grid": round(tempo.lead_in_on_grid, 3),

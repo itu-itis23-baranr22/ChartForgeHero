@@ -45,7 +45,7 @@ from chartgen.chart.fret_mapping import (
 )
 from chartgen.chart.hopo import natural_hopo_ticks, positions_of
 from chartgen.core.model import LANE_COUNT, ChartNote, Difficulty, Instrument, Track
-from chartgen.core.timing import TempoMap
+from chartgen.core.timing import TempoMap, seconds_floor
 
 CONFIG_PATH = Path(__file__).with_name("difficulty.toml")
 BASS_CONFIG_PATH = Path(__file__).with_name("bass_difficulty.toml")
@@ -458,6 +458,7 @@ def select_positions(
     min_gap_s: float,
     ticks: np.ndarray | None = None,
     min_gap_ticks: int | None = None,
+    floor_s: float = 0.0,
 ) -> np.ndarray:
     """Choose indices among ``candidates``, best score first, keeping notes apart.
 
@@ -465,10 +466,13 @@ def select_positions(
     reached or nothing fits, so a level can end up short of its target, which then warns.
 
     Two notes are far enough apart if they are ``min_gap_s`` apart or, when ``ticks`` and
-    ``min_gap_ticks`` are given, that many ticks apart.
+    ``min_gap_ticks`` are given, that many ticks apart; and in any case at least ``floor_s`` apart,
+    which needs ``times`` in seconds.
     """
 
     def apart(earlier: int, later: int) -> bool:
+        if times[later] - times[earlier] < floor_s - 1e-6:  # a floor met exactly is met
+            return False
         if times[later] - times[earlier] >= min_gap_s:
             return True
         return ticks is not None and min_gap_ticks is not None and ticks[later] - ticks[earlier] >= min_gap_ticks
@@ -781,19 +785,28 @@ def _build_level(
     chosen: Sequence[Position],
     shapes: Sequence[tuple[int, ...]],
     config: LevelConfig,
-    resolution: int,
+    tempo_map: TempoMap,
 ) -> Track:
+    resolution = tempo_map.resolution
     forced: set[int] = set()
     if not config.keep_auto_hopos:
         forced = natural_hopo_ticks(
             [(position.tick, shape) for position, shape in zip(chosen, shapes)], resolution
         )
     shortest = config.min_sustain_beats * resolution
+    shortest_s = seconds_floor(config.min_sustain_beats) - 1e-6
+
+    def sustained(position: Position) -> bool:
+        if position.length < shortest:
+            return False
+        start = tempo_map.seconds_at(float(position.tick))
+        return tempo_map.seconds_at(float(position.tick + position.length)) - start >= shortest_s
+
     notes = [
         ChartNote(
             position.tick,
             lane,
-            position.length if position.length >= shortest else 0,
+            position.length if sustained(position) else 0,
             forced=position.tick in forced,
         )
         for position, shape in zip(chosen, shapes)
@@ -838,7 +851,7 @@ def reduce_track(
         )
         chosen = [ordered[int(index)] for index in candidates]
         shapes = _assign_shapes(chosen, labels[candidates], level, cfg, fret_weights)
-        track = _build_level(instrument, level, chosen, shapes, cfg, tempo_map.resolution)
+        track = _build_level(instrument, level, chosen, shapes, cfg, tempo_map)
         measures = measure_track(track, tempo_map, len(ordered))
         levels[level] = ReducedLevel(
             track, measures, tuple(check_soft_targets(measures, cfg.soft_targets))

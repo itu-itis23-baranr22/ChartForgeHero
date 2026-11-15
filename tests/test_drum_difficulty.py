@@ -74,6 +74,7 @@ EXPERT = drums(rock_groove())
 def test_the_settings_follow_the_human_chart():
     config = load_drum_config()
     assert [config.levels[level].position_ratio for level in LOWER] == [0.76, 0.64, 0.54]
+    assert [config.levels[level].min_gap_s for level in LOWER] == [0.10, 0.20, 0.20]
     assert config.gem_order[:4] == (S, CR, RD, K), "the snare stays longest, the hi-hat gives way to the kick"
     assert K not in config.levels[Difficulty.EASY].second_gem_from
     assert config.protect_backbeat_snare
@@ -101,6 +102,7 @@ def broken_config(tmp_path, old: str, new: str):
         ("kick = 0.159", "kick = 0.5", "adding up to one"),
         ('"red",\n    "green_cymbal"', '"snare",\n    "green_cymbal"', "unknown gem"),
         ("protect_backbeat_snare = true\n", "", "expected keys"),
+        ("min_gap_s = 0.20\n", "min_gap_s = -0.1\n", "not negative"),
     ],
 )
 def test_the_settings_cannot_decide_a_hard_rule_or_be_wrong(tmp_path, old, new, message):

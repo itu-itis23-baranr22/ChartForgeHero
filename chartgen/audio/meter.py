@@ -11,7 +11,8 @@ A song does not always say clearly where its bars begin. Rather than guess silen
 result says how confident it is, and how many sections of the song agree.
 
 Before any of that, :func:`check_beat_phase` asks whether the grid's beats are the song's beats
-at all, or the notes halfway between them.
+at all, or the notes halfway between them, and :func:`check_double_time` whether each of them is two
+of the song's beats.
 """
 
 from __future__ import annotations
@@ -22,9 +23,11 @@ import librosa
 import numpy as np
 from scipy.signal import butter, sosfiltfilt
 
+from chartgen.audio.drum_hits import detect_drum_hits
 from chartgen.audio.io import ANALYSIS_SAMPLERATE
 from chartgen.audio.onsets import HOP_LENGTH, onset_envelope
 from chartgen.audio.presence import DEFAULT_THRESHOLDS
+from chartgen.core.drums import DrumPiece
 from chartgen.core.timing import TempoEvent, TempoMap, TimeSignatureEvent
 
 MIN_BEATS = 16
@@ -57,6 +60,29 @@ SNARE_MARKS_THE_BEAT = 0.8
 """If the snare's off-beats fall below this share of its beats, the grid is right whatever the kick
 does: a syncopated kick lands between beats the snare still marks. Measured 0.93 on the song whose
 grid was off, at most 0.58 on the others."""
+
+MAX_DOUBLED_BPM = 230.0
+"""The tracked beat is only split in two if the song then stays this slow or slower. The fastest
+human tempo among the train references is 191 BPM (First Date)."""
+DOUBLE_TIME_WINDOW_BEATS = 8
+DOUBLE_TIME_MIN_SNARES = 4
+"""A window of :data:`DOUBLE_TIME_WINDOW_BEATS` beats counts only if it holds this many snares on
+the beat (or off it, whichever has more)."""
+DOUBLE_TIME_MIN_WINDOWS = 8
+"""With fewer counting windows than this, the snare says nothing about the tempo."""
+BOTH_PARITIES_SHARE = 0.65
+"""Share of the counting windows whose snares fall on both even and odd beats, above which a beat
+is two of the song's beats. A backbeat at the right tempo falls on beats 2 and 4, one parity; read at
+half tempo it falls on every beat. Measured under the 160 BPM ceiling of the tempo search: six train
+songs at their human tempo 0 to 0.12, Fat Lip 0.48 (its double-time parts the human still charted at
+98 BPM); First Date, which the human charted at 191 and the search found at 95.6, 0.83; the project
+owner's Zombiler, which he hears at about 183 and the search found at 91.6, 0.86."""
+SNARE_WITH_KICK_LIMIT = 0.6
+"""Above this share of snare hits that come with a kick, the snare band is hearing the kick: a kick on
+every beat then looks like a snare on every beat. Toca Toca (a kick on every beat) 0.74, every other
+measured song 0.48 or less."""
+SNARE_GRID_TOLERANCE_S = 0.04
+"""How close to an eighth note of the grid a snare must be to count."""
 
 
 @dataclass(frozen=True)
@@ -95,6 +121,29 @@ class BeatPhaseCheck:
     confidence: float
     """How many standard errors the kick's off-beats lead its beats by."""
     half_beat_off: bool
+
+
+@dataclass(frozen=True)
+class DoubleTimeCheck:
+    """Whether each tracked beat is two of the song's beats.
+
+    The tempo search stops at 160 BPM, so a faster song comes out at half its tempo. Its notes still
+    land on the grid, but bars, sections, star power and every rule counted in beats are twice too
+    long, and eighth notes turn into sixteenths that the game plays as HOPOs. The snare tells: a
+    backbeat comes back every second beat at the right tempo, and every beat at half of it.
+    """
+
+    windows: int
+    """Windows of :data:`DOUBLE_TIME_WINDOW_BEATS` beats with enough snares to count."""
+    both_parities_share: float
+    """Share of those windows whose snares fall on both even and odd beats."""
+    snare_with_kick: float
+    """Share of the snare's hits that come with a kick."""
+    doubled_bpm: float
+    """What the main tempo would be if the beat were split."""
+    double: bool
+    reason: str
+    """Why the beat is or is not split, in words."""
 
 
 def _z_scored(values: np.ndarray) -> np.ndarray:
@@ -284,11 +333,7 @@ def check_beat_phase(
     error = np.sqrt(kick_on.var() / kick_on.size + kick_off.var() / kick_off.size)
     confidence = float((kick_off.mean() - kick_on.mean()) / error) if error > 0 else 0.0
 
-    frames = min(len(drums), len(mono))
-    drum_energy = float(np.sum(np.square(drums[:frames])))
-    mix_energy = float(np.sum(np.square(mono[:frames])))
-    limit = 10.0 ** (DEFAULT_THRESHOLDS["drums"].min_energy_ratio_db / 10.0)
-    has_drums = drum_energy > 0 and drum_energy >= limit * mix_energy
+    has_drums = _has_drums(drums, mono)
 
     kick_ratio = _level_ratio(kick_off, kick_on)
     snare_ratio = _level_ratio(snare_off, snare_on)
@@ -304,6 +349,89 @@ def check_beat_phase(
             and agreement >= MIN_SECTION_AGREEMENT
             and confidence >= MIN_CONFIDENCE
         ),
+    )
+
+
+def _has_drums(drums: np.ndarray, mono: np.ndarray) -> bool:
+    frames = min(len(drums), len(mono))
+    drum_energy = float(np.sum(np.square(drums[:frames])))
+    mix_energy = float(np.sum(np.square(mono[:frames])))
+    limit = 10.0 ** (DEFAULT_THRESHOLDS["drums"].min_energy_ratio_db / 10.0)
+    return drum_energy > 0 and drum_energy >= limit * mix_energy
+
+
+def _parity_windows(slots: np.ndarray) -> np.ndarray:
+    """For each window of eighth-note slots, whether its snares fall on both beat parities.
+
+    Slot ``2 k`` is beat ``k``, slot ``2 k + 1`` the eighth after it. In each window the snares on the
+    beat, or off it if more fall there, are split by the parity of their beat. Windows with too few
+    snares are left out.
+    """
+    span = 2 * DOUBLE_TIME_WINDOW_BEATS
+    both: list[bool] = []
+    for start in range(0, int(slots.max(initial=-1)) + 1, span):
+        inside = slots[(slots >= start) & (slots < start + span)]
+        on, off = inside[inside % 2 == 0], inside[inside % 2 == 1]
+        group = on if on.size >= off.size else off
+        if group.size < DOUBLE_TIME_MIN_SNARES:
+            continue
+        odd = int(np.sum((group // 2) % 2))
+        even = group.size - odd
+        both.append(min(even, odd) / max(even, odd) >= 0.5)
+    return np.array(both, dtype=bool)
+
+
+def check_double_time(
+    tempo_map: TempoMap,
+    drums: np.ndarray,
+    mono: np.ndarray,
+    bpm: float,
+    samplerate: int = ANALYSIS_SAMPLERATE,
+) -> DoubleTimeCheck | None:
+    """Check whether the snare says each beat of the grid is two of the song's beats.
+
+    Args:
+        tempo_map: Its quarter-note ticks must be the song's tracked beats.
+        drums: The drum stem, whose snare hits the drum classifier finds.
+        mono: The mix, to judge whether the drums are loud enough to be drums and not bleed.
+        bpm: The main tempo of the grid.
+        samplerate: Sample rate of both signals.
+
+    Returns:
+        The check, or None if the song has no drums to ask.
+    """
+    if not _has_drums(drums, mono):
+        return None
+    doubled = 2.0 * bpm
+    snares = [hit for hit in detect_drum_hits(drums).hits if DrumPiece.SNARE in hit.pieces]
+    with_kick = float(np.mean([DrumPiece.KICK in hit.pieces for hit in snares])) if snares else 0.0
+    times = np.array([hit.time_s for hit in snares], dtype=np.float64)
+    eighth = tempo_map.resolution / 2.0
+    slots = np.round(tempo_map.ticks_at(times) / eighth).astype(np.int64) if times.size else np.empty(0, np.int64)
+    on_grid = np.abs(tempo_map.seconds_at(slots * eighth) - times) <= SNARE_GRID_TOLERANCE_S
+    windows = _parity_windows(np.unique(slots[on_grid]))
+    share = float(windows.mean()) if windows.size else 0.0
+
+    if doubled > MAX_DOUBLED_BPM:
+        reason = f"{doubled:.0f} BPM would be faster than {MAX_DOUBLED_BPM:.0f}"
+    elif windows.size < DOUBLE_TIME_MIN_WINDOWS:
+        reason = f"only {windows.size} stretches of {DOUBLE_TIME_WINDOW_BEATS} beats have enough snares"
+    elif with_kick > SNARE_WITH_KICK_LIMIT:
+        reason = f"{with_kick:.0%} of the snare's hits come with a kick: the snare band hears the kick"
+    elif share < BOTH_PARITIES_SHARE:
+        reason = f"the snare falls on every beat in {share:.0%} of the song, below {BOTH_PARITIES_SHARE:.0%}"
+    else:
+        reason = f"the snare falls on every beat in {share:.0%} of the song: a backbeat at {doubled:.1f} BPM"
+    return DoubleTimeCheck(
+        windows=int(windows.size),
+        both_parities_share=share,
+        snare_with_kick=with_kick,
+        doubled_bpm=doubled,
+        double=doubled <= MAX_DOUBLED_BPM
+        and windows.size >= DOUBLE_TIME_MIN_WINDOWS
+        and with_kick <= SNARE_WITH_KICK_LIMIT
+        and share >= BOTH_PARITIES_SHARE,
+        reason=reason,
     )
 
 

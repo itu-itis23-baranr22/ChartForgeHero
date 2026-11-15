@@ -386,6 +386,8 @@ def evaluate_song(
         "time_signature": tempo.meter.label if tempo.meter else None,
         "human_time_signatures": [f"{n}/{d}" for n, d in song.signatures],
         "meter_confidence": round(tempo.bar_confidence, 2),
+        "beat_split_in_two": bool(tempo.double_time and tempo.double_time.double),
+        "snare_on_every_beat_share": tempo.double_time and round(tempo.double_time.both_parities_share, 3),
     }
     result.update(tempo_metrics(tempo.tempo_map, song.beats, song.bars, duration))
     if charted:

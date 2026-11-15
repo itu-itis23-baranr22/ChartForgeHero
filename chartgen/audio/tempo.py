@@ -14,8 +14,10 @@ was a median 6 ms off. So the two problems are solved separately:
    bring the song's onsets measurably closer to the grid, or it is merged away again: in
    a sparse intro the tracker can lock onto an off-beat pattern, and no event should be
    spent following that.
-4. ``chartgen.audio.meter`` checks that the grid's beats are not half a beat off the kick, then
-   decides how the beats group into bars and where they begin.
+4. ``chartgen.audio.meter`` checks that the grid's beats are not half a beat off the kick, and
+   whether the snare says each beat is two of the song's beats: the search in step 1 stops at
+   :data:`MAX_BPM`, so a faster song is found at half its tempo and its beat is then split in two.
+   Then it decides how the beats group into bars and where they begin.
 
 ``--bpm`` replaces steps 1-3 for the tempo (method ``override``), not for phase or bars.
 
@@ -38,7 +40,14 @@ from scipy.ndimage import median_filter
 from scipy.signal import find_peaks
 
 from chartgen.audio.io import ANALYSIS_SAMPLERATE
-from chartgen.audio.meter import BeatPhaseCheck, MeterResult, check_beat_phase, detect_meter
+from chartgen.audio.meter import (
+    BeatPhaseCheck,
+    DoubleTimeCheck,
+    MeterResult,
+    check_beat_phase,
+    check_double_time,
+    detect_meter,
+)
 from chartgen.audio.onsets import ENVELOPE_LATENCY_S, HOP_LENGTH, onset_envelope
 from chartgen.core.timing import DEFAULT_RESOLUTION, TempoEvent, TempoMap, TimeSignatureEvent
 
@@ -49,8 +58,9 @@ MIN_ANALYSIS_SECONDS = 5.0
 
 MIN_BPM = 60.0
 MAX_BPM = 160.0
-"""Faster songs come out at half speed, which leaves note timing intact and avoids the
-far more common mistake of reading a slow song's eighth notes as its beat."""
+"""Faster songs come out at half speed here, which avoids the far more common mistake of reading a
+slow song's eighth notes as its beat. Whether such a beat is really two beats is then left to the
+snare (:func:`chartgen.audio.meter.check_double_time`)."""
 _BPM_STEP = 0.05
 _FFT_SIZE = 1 << 22
 HARMONIC_WEIGHTS = {1: 1.0, 2: 1.0, 3: 0.5, 4: 0.5}
@@ -183,6 +193,8 @@ class TempoAnalysis:
     """The whole-song estimate, also reported when ``--bpm`` overrides it."""
     beat_phase: BeatPhaseCheck | None = None
     """What the kick says about the grid's beats. None without a drum stem."""
+    double_time: DoubleTimeCheck | None = None
+    """What the snare says about splitting each beat in two. None without drums or with ``--bpm``."""
     lead_in_end_s: float = 0.0
     """Where the song's onsets begin to fit the grid, if an opening before that does not."""
     lead_in_on_grid: float = 1.0
@@ -1008,6 +1020,21 @@ def _half_beat_later(
     )
 
 
+def _split_beats(choice: GridChoice, check: DoubleTimeCheck) -> GridChoice:
+    """Make each beat two: every segment keeps its start and halves its period, so every beat that was
+    on the grid stays there and a new one falls halfway between each two."""
+    segments = [
+        TempoSegment(item.first_beat * 2, item.last_beat * 2, item.start_s, item.period_s / 2.0)
+        for item in choice.segments
+    ]
+    return replace(
+        choice,
+        segments=segments,
+        bpm=choice.bpm * 2.0,
+        decision=f"{choice.decision}. Beat split in two, {check.reason}",
+    )
+
+
 def _fallback(strength: float) -> TempoAnalysis:
     log.warning("No clear pulse in the audio, falling back to %.0f BPM", FALLBACK_BPM)
     tempo_map = TempoMap([TempoEvent(0, FALLBACK_BPM)], [TimeSignatureEvent(0, 4, 4)])
@@ -1070,6 +1097,13 @@ def estimate_tempo_map(
         if beat_phase is not None and beat_phase.half_beat_off:
             choice = _half_beat_later(choice, beat_phase, kept, onsets, heights)
 
+    double_time = None
+    if drums is not None and bpm_override is None:
+        grid = tempo_map_from_segments(choice.segments)
+        double_time = check_double_time(grid, drums, mono, choice.bpm, samplerate)
+        if double_time is not None and double_time.double:
+            choice = _split_beats(choice, double_time)
+
     meter = detect_meter(
         tempo_map_from_segments(choice.segments),
         mono,
@@ -1093,6 +1127,7 @@ def estimate_tempo_map(
         meter=meter,
         estimated_bpm=base_bpm,
         beat_phase=beat_phase,
+        double_time=double_time,
         lead_in_end_s=choice.lead_in_end_s,
         lead_in_on_grid=choice.lead_in_on_grid,
         song_start_s=choice.song_start_s,

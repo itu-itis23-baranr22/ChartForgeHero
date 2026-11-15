@@ -1,10 +1,14 @@
 # Proje durumu
 
-Faz D kapandı (D.3 bu commit'te). A'dan D'ye bütün fazlar tamamlandı; sıradaki iş için proje sahibinin kararı bekleniyor. Şartname ve alınan kararlar `docs/SPEC.md` dosyasında.
+A'dan D'ye bütün fazlar tamamlandı. Şimdi yeni insan chart'larıyla ayar yapılıyor (0-5. adımlar, aşağıda "Referanslarla ayar"). Şartname ve alınan kararlar `docs/SPEC.md` dosyasında.
 
 ## Şu anki adım
 
-**Faz D kapandı: D.3 (star power) bu commit'te. Yeni bir adım planlanmadı; proje sahibinin sıradaki iş için kararını bekliyor.**
+**Referanslarla ayar: 0. ve 1. adım (tempo oktavı ve ölçü fazı) bu commit'te kapandı; sıradaki 2. adım (gitar Expert recall'ı, aşağıda).** Proje sahibi LastResort'u kulakla ~181 buldu (eşik %65'te kalıyor); sustain artışı 3. adıma bırakıldı, 3. adıma kadar `Songs`'a hiçbir şey kopyalanmıyor. LastResort'un üç sabit test değeri proje sahibinin onayıyla güncellendi.
+
+**`-Full` (2026-11-15):** proje sahibinin kendi PowerShell penceresinde geçti: 1039 test, 633 sn, 9 klasör validator'dan geçti.
+
+Önceki durum: Faz D `c322249`'da kapandı (D.3, star power).
 
 **`-Full` (2026-11-15):** proje sahibinin kendi PowerShell penceresinde geçti: 1022 test, 600 sn (check 605 sn), 5 gerçek şarkının her biri bir kez yüklendi, 8 klasör validator'dan geçti (yeniden derlenen dört şarkı star power'lı). Californication star power testi, gitar ve bas hash'leri, davul F1 alt sınırları ve gerçek Demucs testleri dahil. Bu koşuda tepe bellek ölçülmedi.
 
@@ -28,7 +32,7 @@ Faz D kapandı (D.3 bu commit'te). A'dan D'ye bütün fazlar tamamlandı; sırad
 
 **Oyundaki şarkılar** (`Documents\Clone Hero\Songs`): `Don Omar - Danza Kuduro`, `Fly Project - Toca Toca`, `Davul Testi - LastResort`, `Yerel Test - Şarkı Testi` (D.3 sürümü, star power'lı); `Tempo Test - LastResort otomatik` (eski gitar tempo testi); `SP Deneyi - Davul` (davul star power deneyi). Önceki kopyalar `outputs\_songs_backup\<tarih>\` altında.
 
-**Sınır:** bütün ayarlar ve ölçümler tek insan chart'ından (Californication, `train`); `references/test` boş. Ayrıntı: "Bilinen sınırlar ve açık konular".
+**Sınır:** D fazına kadarki ayarlar tek insan chart'ından (Californication). 2026-11-15'ten beri 12 referans var (8 `train`, 4 `test`); ayarlar yalnızca `train`'de yapılıyor. Ayrıntı: "Referanslarla ayar" ve "Bilinen sınırlar ve açık konular".
 
 ## İleride (özet)
 
@@ -40,8 +44,8 @@ Proje sahibinin "şimdilik değil" dedikleri ve önerilip uygulanmayanlar. Ayrı
 - **Şarkı sözü:** konuşma tanıma ve hizalama, yeni ve ağır bağımlılık.
 - **Testlerde `pyin` paylaşımı:** gerçek şarkı testlerinin zamanının çoğu; üretim koduna dokunur.
 - **Üretim build'inde `OPENBLAS_NUM_THREADS=4`:** build'in commit payını ~0,75 GB düşürür, çıktı aynı; önce süre ve tepe bellek ölçülmeli.
-- **Test referansları:** `references/test`'e insan chart'ları; önce ölçülür, hiçbir ayar yapılmaz.
 - **Keys doğrulaması:** piyanosu baskın bir şarkıyla oyunda ve `evaluate`'te.
+- **FFmpeg kaynaklı Ogg dosyaları için ses yükleyicide yedek çözüm** (proje sahibinin isteği, 2026-11-15, uygulanmadı): libsndfile 1.2.2, FFmpeg (Lavf60) ile kodlanmış bazı Opus dosyalarını "malformed" diye reddediyor. Dosyalar sağlam (bütün Ogg sayfalarının CRC'si doğru); birkaç sayfanın granülü içindeki paketlerin süresiyle en çok 10 ms tutmuyor, hata birikmiyor. Üç referansta görüldü (Green Day - 1981, Green Day - Holiday, Sum 41 - Fat Lip); kopyalarında granüller paketlerden yeniden yazıldı, ses paketlerine dokunulmadı. Kullanıcının kendi `.ogg`/`.opus` girdilerinde de aynı sorun çıkabilir: yükleyici bu hatada granülleri bellekte düzelterek ya da başka bir çözücüyle (yeni bağımlılık, önce sürüm ve gerekçe) yeniden denemeli.
 
 ## Önceki adımlardan notlar
 
@@ -66,6 +70,31 @@ Proje sahibi Danza'nın güncel bas Hard'ını çaldı: ritim rahat, sekizlik no
 Proje sahibi Danza'nın bas Expert'ini çaldı: senkron iyi, 37-38 sn'deki hayalet notalar rahatsız etmiyor. Seviye kuralı kapalı kalıyor.
 
 Proje sahibi Toca'nın bas Easy ve Hard'ını çaldı: vuruşlar ve zamanlama iyi, tekdüzelik rahatsız etmiyor, turuncu doğal geliyor. "Turuncu = tek perde" uyarısı yumuşak kalıyor: reggaeton'da tekrarlı bas için bu doğal.
+
+## Referanslarla ayar (2026-11-15)
+
+**Referanslar.** Proje sahibi `Desktop\clone hero songs`'a 11 `.sng` koydu (orijinallere hiç yazılmadı). 8'i okunuyordu. Üçünün (Green Day - 1981, Green Day - Holiday, Sum 41 - Fat Lip) Opus sesini libsndfile reddediyordu: dosyalar sağlam, birkaç Ogg sayfasının granülü paketlerle en çok 10 ms tutmuyor. Proje sahibinin onayıyla yalnızca kopyalarında granüller paketlerden yeniden yazıldı (ses paketleri aynı; okunabilen baş kısımlar örnek örnek aynı çözülüyor). Bölme (onaylandı): `train` Californication, Scar Tissue, Parallel Universe, Dani California, First Date, In Too Deep, Holiday, Fat Lip; `test` Otherside, The Kids Aren't Alright, We Will Rock You, 1981. Parallel Universe'ün davulu okunmuyor (disco flip), Fat Lip'te yalnızca Expert var, We Will Rock You'da bas ve davul dört seviyede aynı. `references\` git dışında.
+
+**Ayarsız ölçüm** (mevcut kodla, 1118 sn): `outputs\_experiments\referans_degerlendirme_2026-11-15\` (`report.json`, gruplu tablolar `ozet.md`, teşhis betikleri). Özet: tempo oktav hatası (160 BPM üstü üç şarkı yarı tempoda), gitar Expert recall'ı düşük (`train` 0,54; kaçırılan notaların hepsinde zarf tepesi var, onları uyarlamalı eşik ve vokal süzgeci eliyor), turuncu neredeyse yok (`register_span` ve `lane_shares` Californication'dan), sustain fazla, davulda mavi zil fazla ve crash yok, Easy'de kick+hi-hat konumunda kick kalıyor, bas Hard ve Medium seyrek.
+
+**Plan (proje sahibi onayladı, 2026-11-15):** 0. referans testi yalnızca Californication; 1. tempo oktavı ve ölçü fazı; 2. gitar Expert recall'ı (eşik ve vokal süzgeci); 3. gitar şerit dağılımı ve sustain; 4. davul (Easy/Medium gem seçimi, hi-hat/ride, crash); 5. alt seviye oranları (gitar Hard; bas yalnızca Hard ve Medium, bas Expert'e dokunulmaz; proje sahibi Danza ve Toca'yı tekrar çalacak, beğenmezse geri alınır). Sonra (5. adımdan sonra, birlikte): **öncelikli** bölümler, çünkü 1. adımdan beri hızlı şarkılarda fazla bölüyor (Kids 10 insan bölümüne karşı 31; proje sahibi: en kısa bölüm ve pencere uzunluğu ölçü yerine saniyeyle ya da 150 BPM ilkesiyle sınırlanmalı); star power aralığı (insan ~8-10 ölçü); preview. Kurallar: ayar yalnızca `train`'de; test her adımın sonunda, ayarlar dondurulduktan sonra bir kez ölçülür, gördükten sonra o adımda değişiklik yok; mevcut test alt sınırları kesin, başka bir Californication metriği 0,02'den fazla düşerse önce sorulur; asıl hedef `train` ortalamasının, özellikle RHCP dışının yükselmesi. Raporlar: `train` hepsi / RHCP / RHCP dışı, test hepsi / Queen ve 1981 hariç, ortalama ve medyan.
+
+**0. adım:** `test_real_references_when_available` artık yalnızca Californication'ı değerlendiriyor (geçici bir `train\` klasörüne bağlı kopya; stem önbelleği içerikle anahtarlı). Önceden bütün `references\`'ı değerlendiriyor ve Californication'a göre konmuş bas alt sınırlarını her bölmede arıyordu. Tek başına 103 sn'de geçti.
+
+**1. adım: tempo oktavı ve ölçü fazı** (SPEC 41).
+- Tempo araması 160 BPM'de duruyor; daha hızlı şarkı önce yarı tempoda bulunuyor. Sonra snare karar veriyor (`audio/meter.py`, `check_double_time`): davul sınıflandırıcısının snare'leri sekizlik ızgaraya konuyor, 8 vuruşluk pencerelerde snare'in hem tek hem çift vuruşlara düşüp düşmediği sayılıyor. Doğru tempoda backbeat tek pariteye düşer (2 ve 4), yarı tempoda her vuruşa. Vuruş ikiye bölünüyor: pencerelerin en az %65'i iki paritede, en az 8 pencere, snare'lerin en çok %60'ı kick'le birlikte (fazlası kick'in snare bandına sızması, Toca gibi), bölünmüş tempo en çok 230 BPM. `--bpm` hiç bölünmüyor. Eski vuruşların hepsi ızgarada kalıyor; ölçü fazını bölünmüş haritada `detect_meter` buluyor.
+- Ölçüm (bugünkü haritayla, "iki paritede" payı): doğru tempolu 6 `train` şarkısı 0-0,12, Fat Lip 0,48; First Date (insan 191, bulunan 95,6) 0,83; Zombiler (proje sahibi ~183 duyuyor) 0,86; LastResort 0,70; Şarkı Testi 0,50; Toca 1,0 ama snare'lerin %74'ü kick'le (ve 252 BPM tavanın üstünde). Betikler `outputs\_experiments\adim1_tempo\`.
+- **150 BPM alt sınırı** (`core/timing.py`, `FLOOR_BPM`, `seconds_floor`): vuruşla sayılan bir kural, 150 BPM'deki süresinden azına izin vermiyor. Davul seviyelerinde aralık (`min_gap_s`: Hard 0,10, Medium 0,20, Easy 0,20 sn; `train` insanlarının hepsinin altında), Expert sustain (`MIN_SUSTAIN_S` 0,30 sn) ve seviyelerin sustain eşiği. Bunlar olmadan bölünmüş tempo Easy davula sekizlik sokuyor, First Date'in gitar Expert sustain'i %18'den %46'ya çıkıyordu (insan %1). 150 BPM ve altında hiçbir şey değişmiyor. Bas Hard'ın aralık kuralına dokunulmadı: o zaten "0,25 sn ya da yarım vuruş" (B3.2 kararı) ve First Date'in insan bas Hard'ı sekizlikleri tutuyor.
+- **`train` sonucu** (`train_karsilastirma.md`): yalnızca First Date değişti, diğer 7 şarkı birebir aynı. First Date: 191,2 BPM; beats <35 ms 0,49 → 0,98; bars 0,00 → 1,00; ölçü güveni -0,33 → 8,72; davul konum F1 0,848 → 0,873 (Hard 0,816 → 0,830, Medium 0,869 → 0,876, Easy 0,867 → 0,873); bas Hard 0,687 → 0,772, Easy 0,135 → 0,811; gitar F1 aynı (0,534; recall 2. adımda); gitar sustain Expert %18 → %24 (insan %1), Easy %39 → %48; bölüm F1 0,583 → 0,538; preview 44 → 100 sn uzak. RHCP dışı bars agree ortalaması 0,62 → 0,87, medyanı 0,74 → 1,00.
+- **Proje sahibinin şarkıları** (`derlemeler\`): Danza, Toca ve Şarkı Testi'nin `notes.chart`'ı ve `song.ini`'si `Songs`'taki hâlleriyle bayt bayt aynı. Zombiler 91,6 → 183,2 BPM (ölçü güveni 1,02 → 1,89), gitar otomatik HOPO %14 → %0, davul Easy en kısa aralık 0,25 sn. LastResort 90,6 → 181,1 BPM (ölçü güveni 1,9 → 12,1, bölümlerin %100'ü aynı fazı seçiyor), gitar otomatik HOPO %16 → %0; ama gitar sustain Expert %23 → %40, Easy %19 → %74 (Zombiler Easy %21 → %35): yarı tempo sustain eşiklerini saniyede iki kat uzun tutuyor ve distortion çınlamasını sustain sanma hatasını örtüyordu (3. adımın konusu).
+- **Ek bulgu (2. adım için):** Zombiler'de vokal süzgeci gitarın 490 notasını siliyor (eski derleme; yenide 482). Gitar Expert'in 254 konumda kalmasının ana nedeni bu. Proje sahibinin kararı: 2. adımın öncelikli konusu, Zombiler orada gerçek dışı örnek olarak raporlanır.
+- **Proje sahibinin kararları (2026-11-15):** LastResort'un bugünkü click'inde trampet her click'te geliyor, yani ~181 doğru; eşik %65'te kalıyor. Şarkı Testi dinlenmedi. Sustain artışı 3. adımda, geçici çözüm yok; 3. adıma kadar `Songs`'a hiçbir şey kopyalanmıyor.
+- **Test seti** (ayarlar dondurulduktan sonra bir kez; `test_karsilastirma.md`): 1981 185,0 BPM (insan 185,0), Kids 199,5 (199,3), ikisinde de "iki paritede" payı 1,0; Otherside ve We Will Rock You bölünmedi, değişmedi. Önce → sonra, ortalama/medyan, test hepsi | Queen ve 1981 hariç: bars agree 0,49/0,49 → 0,96/0,96 | 0,50 → 0,94; beats <35 ms 0,68/0,65 → 0,92/0,94 | 0,71 → 0,94; gitar Expert F1 0,586/0,605 → 0,578/0,588 | 0,714 → 0,702; gitar Easy F1 0,284/0,243 → 0,381/0,438 | 0,409 → 0,575; bas Expert F1 0,737/0,818 → 0,719/0,792 | 0,818 → 0,804; bas Easy F1 0,353/0,389 → 0,549/0,589 | 0,318 → 0,653; davul Expert konum F1 0,798/0,866 → 0,794/0,858 | 0,888 → 0,888; davul Easy 0,806/0,846 → 0,818/0,857 | 0,846 → 0,857; bölüm F1 0,468/0,457 → 0,433/0,507 | 0,658 → 0,513 (Kids 0,778 → 0,488: 10 insan bölümüne karşı 31); gitar Expert sustain payı 0,20/0,19 → 0,26/0,30.
+- **Yan etki, nedeni bulundu, 1. adımda düzeltilmedi:** bölünen şarkılarda bas Expert F1 0,03-0,04 düşüyor (First Date 0,892 → 0,859 `train`'de, 1981 0,859 → 0,816, Kids 0,796 → 0,768), gitar Expert 0,01-0,02. Bölünmüş haritanın 16'lık ızgarası 191 BPM'de 78 ms aralıklı; geç gelen onset'ler (ör. insan 41,715, onset 41,782) yanlış 16'lığa oturuyor (41,814), yarı tempoda 157 ms'lik ızgarada yerinde kalıyordu (`bas_dusus.py`: yerleşimden sonra recall 0,883 → 0,851). Düşüş First Date'te test ölçümünden önce de görünüyordu ama test ölçüldükten sonra fark edildi; kural gereği 1. adım değiştirilmedi. Öneri: 150 BPM ilkesini oturtma ızgarasına da uygulamak (16'lık 0,1 sn'den kısaysa sekizliğe oturt), bu yarı tempodaki yerleşimi aynen geri getirir. Proje sahibi bunu 2. adımın ilk maddesi yaptı.
+- **Sabit test değerleri** (proje sahibi onayladı ve güncellendi; 3 test, LastResort; testlerde eski değerler ve "tempo kulakla doğrulandı, yeni hâli henüz çalınmadı" yorumu duruyor; tempo testine "vuruş ikiye bölündü" denetimi eklendi): gitar hash'i `f0c93106…a3d84f` → `d3a9782f…4c0e14`, bas hash'i `d7a7fee5…5643302f` → `d2c687a2…c881017`, `test_last_resort_real_grid_did_not_move` tempo olayları `(0, 81.812), (192, 85.622), (1728, 90.051), (5376, 90.597)` → `(0, 156.654), (192, 171.244), (3456, 180.102), (10752, 181.194)` (sonrakiler tam iki katı; girişe giden ilk parça yeniden hesaplanıyor). Danza, Toca ve Şarkı Testi'nin dört hash testi değişmeden geçti.
+- **Testler:** yeni `tests/test_double_time.py` (16 test: snare kuralı, kick sızıntısı, tavan, az snare, sessiz davul, uçtan uca 190 BPM, 95 BPM'nin kalması, `--bpm`, davulsuz, davul alt sınırları, 150 BPM'de değişmezlik, `select_positions` alt sınırı, sustain alt sınırları); `test_drum_difficulty.py`'ye `min_gap_s` denetimi ve değerleri. Gerçek şarkı dışı bütün testler geçti (1018 test, 318 sn). `-Full` çalışmadı: LastResort bölünürse onun gitar ve bas hash'i ile `test_last_resort_real_grid_did_not_move` değişecek (proje sahibinin cevabından sonra güncellenir).
+
+**2. adım: gitar Expert recall'ı (proje sahibi onayladı, 2026-11-15).** (a) Oturtma ızgarası: 150 BPM ilkesi, 16'lık 0,1 sn'den kısaysa sekizliğe oturt; `train`'de insan chart'ında gerçek 16'lık olan notaların (Holiday, Dani California, Parallel Universe gibi) korunduğu raporlanacak, kural yalnızca 16'lığın 0,1 sn'den kısa olduğu hızlı şarkılarda devreye girmeli. (b) Uyarlamalı eşik (MAD ve yerel oran yoğun bölümlerde gerçek notaları eliyor). (c) Vokal süzgecinin gerçek gitar notalarını silmesi (Zombiler 490 nota; `train`'de Dani, Parallel Universe, Scar Tissue %9-13). Kabul: `train` recall belirgin artar, precision en çok 0,03 düşer. Zombiler gerçek dışı örnek olarak raporlanır.
 
 ## Faz D planı (onaylandı, 2026-11-11)
 
@@ -907,7 +936,7 @@ Pre-commit hook 39–80 sn sürüyor (hızlı testler + validator, makine yükü
 ## Bilinen sınırlar ve açık konular
 
 - **Keys gerçek veriyle doğrulanmadı:** piyanosu baskın bir şarkı bulunduğunda keys oyunda ve `evaluate` ile doğrulanacak.
-- **Tek referans şarkı:** ölçümler ve yumuşak hedefler yalnızca Californication'a dayanıyor, `references/test` boş. Yeni referanslar `test`'e konur, önce ölçülür, hiçbir ayar yapılmaz, sonra proje sahibine sorulur.
+- **Referans sayısı:** 12 insan chart'ı (8 `train`, 4 `test`), `train`'in yarısı RHCP. Yumuşak hedeflerin çoğu hâlâ Californication'dan; 2-5. adımlar onları `train`'den yeniden belirleyecek. Test yalnızca ölçülür.
 - **Expert yeşil-sarı şerit sapması:** yeşil %10 / 25, sarı %30 / 19, ikisi de ±10 dışında ve yalnızca uyarıyor. Expert ayar taramasında ±10'a giren bir ayar bulunamadı, çalınmış sürümü değiştirmemek için Expert'e dokunulmadı.
 - **Hard akor oranı %42 / %58:** şerit düzeltmesi yalnızca freti değiştirdiği için bu oranı etkilemedi. Expert'te de oran insandan düşük (%50 / 59).
 - **Distortion akor eşiği geçici önlem:** medyana bağlı eşik devreye girince terminalde ve `analysis.json`'da uyarıyor. Sert distortion'da akor doğruluğu ölçülmedi. `basic-pitch` eklenmedi: Python 3.11'e kadar destekliyor ve TensorFlow istiyor.
@@ -919,6 +948,7 @@ Pre-commit hook 39–80 sn sürüyor (hızlı testler + validator, makine yükü
 - **Davul star power açılışı oyunda doğrulanmadı:** fill (`S 64`) yazılmıyor; deney hazır (D.3).
 - **Star power'da seyrek ifade:** gitarda bazı ifadeler Easy'de tek nota tutuyor (Californication 1, LastResort 1, Şarkı Testi 1); uyarı veriyor.
 - **Davul Expert'te flam:** 37-40 ms arayla iki konum kalabiliyor (C.1'in 35 ms birleştirme sınırının hemen üstü). Alt seviyelerde aralık kuralı bunları ayırıyor.
+- **Tek ölçülük ölçü değişimleri bulunmuyor** (proje sahibinin kararı, 2026-11-15): Parallel Universe'ün insan chart'ındaki tek 6/4 ölçü (girişte, 4,03-6,97 sn) 6/4 olarak bulunmuyor; tempo haritası başa bir 2/4 ölçü koyup 4/4'e geçiyor, o ölçünün başını 994 ms ıskalıyor, hemen sonraki ölçüde faz geri geliyor (4/4 ölçülerin 141'inden 137'si tutuyor). Fat Lip'in insan chart'ında 4/8 ölçüler var; tempo doğru (98 BPM) ama ölçü çizgilerinin %49'u tutuyor.
 
 ## Bekleyen kararlar ve ön tercihler
 

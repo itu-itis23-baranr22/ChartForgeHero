@@ -14,6 +14,17 @@ DEFAULT_RESOLUTION = 192
 BPM_DECIMALS = 3
 """Precision kept for tempos, matching the integer BPM x 1000 stored in .chart files."""
 
+FLOOR_BPM = 150.0
+"""A rule counted in beats never allows less time than it would at this tempo. Faster songs have short
+beats: once a song found at half its tempo has its beat split in two (SPEC 41), half a beat between drum
+positions or three quarters of a beat of sustain would come to half the time they used to. At 150 BPM
+or slower such a floor changes nothing."""
+
+
+def seconds_floor(beats: float) -> float:
+    """How long ``beats`` last at :data:`FLOOR_BPM`: the least time a rule of that many beats allows."""
+    return beats * 60.0 / FLOOR_BPM
+
 
 @dataclass(frozen=True, slots=True)
 class TempoEvent:

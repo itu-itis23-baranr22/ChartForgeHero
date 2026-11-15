@@ -880,7 +880,9 @@ def test_the_configured_limit_costs_the_human_bass_chart_at_most_0_005(real_song
 @pytest.mark.parametrize(
     "real_song,sha256",
     [
-        ("LastResort.wav", "f0c93106e922560ef6b1db3a7ec04bfdb1db17968f6dac409898314e94a3d84f"),
+        # Since reference tuning step 1 (SPEC 41) LastResort is charted at 181 BPM, its beat split in two:
+        # the owner checked the tempo by ear but has not played this version yet. Before: f0c93106...a3d84f.
+        ("LastResort.wav", "d3a9782fd4a68e9bc1f3a140bec571a8948fb26840b8fb583d78b76cae4c0e14"),
         ("../cloneH/audio.mp3", "fa099c6ccb0a29634dacba71a6556ef99785b821ea118f7fdc70946b8b9f6deb"),
     ],
     indirect=["real_song"],
@@ -908,7 +910,9 @@ def test_the_guitar_the_owner_played_stays_byte_for_byte(real_song, sha256):
     [
         ("DanzaKuduro.mp3", "84a128a053dbf0ccd7cc8ad15b9619da933f796477714351669bf41ac6913388"),
         ("TocaToca.mp3", "e6d75583a6845026fdef56ccf86ad37ae294e6b934639d48952bc05660fb1311"),
-        ("LastResort.wav", "d7a7fee514ebff4f4a8fbdd5611f15b5c7efae9925d107a96d4ab08a5643302f"),
+        # At 181 BPM since reference tuning step 1 (SPEC 41); the owner checked the tempo by ear but has not
+        # played this version yet. Before: d7a7fee5...5643302f.
+        ("LastResort.wav", "d2c687a23efd53dd5b55c6b9377bcd0b78e92794dc36c78eb39f18f02c881017"),
         ("../cloneH/audio.mp3", "f0d024f7bb9c8d2eca16b63060aea2e27ca922cba2c03f3d282746fb1ab61a32"),
     ],
     indirect=["real_song"],
