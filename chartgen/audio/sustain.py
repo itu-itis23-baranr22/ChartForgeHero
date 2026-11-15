@@ -71,3 +71,36 @@ def note_durations(
                 break
         durations[index] = (end - start) / per_second
     return durations
+
+
+REATTACK_MIN_GAP_S = 0.10
+"""A re-attack closer than this to the note's own onset is that onset heard twice."""
+
+
+def cut_at_reattacks(
+    times: np.ndarray,
+    durations: np.ndarray,
+    attacks: np.ndarray,
+    min_gap_s: float = REATTACK_MIN_GAP_S,
+) -> np.ndarray:
+    """Return ``durations`` with each note ended at the next re-attack of the stem, if one comes first.
+
+    A sustain should mean the instrument holds the note. When the charted onsets miss the next strum,
+    the ring time runs on through it, because a distorted guitar never falls far below its peak before
+    then, and the note becomes a false sustain. ``attacks`` are onsets heard under a looser threshold
+    than the charted ones, so they include strums the chart leaves out.
+
+    Args:
+        times: Note start times.
+        durations: How long each note rings, as :func:`note_durations` returns it.
+        attacks: Onset times of the same stem, sorted.
+        min_gap_s: Attacks closer than this after a note's start are ignored.
+    """
+    cut = np.array(durations, dtype=np.float64, copy=True)
+    if attacks.size == 0:
+        return cut
+    for index, time in enumerate(times):
+        later = int(np.searchsorted(attacks, time + min_gap_s, side="right"))
+        if later < attacks.size:
+            cut[index] = min(cut[index], float(attacks[later] - time))
+    return cut

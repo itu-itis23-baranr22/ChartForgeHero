@@ -24,3 +24,8 @@ level_window_s = 0.15
 # Where the stem's staying power is measured, from the onset.
 sustain_start_s = 0.07
 sustain_end_s = 0.35
+
+# Warn, in the terminal and in analysis.json, when the filter removes more than this share of a stem's
+# notes. On the eight train references it removed 0.2 to 2.9%; one of the owner's songs lost 26%, far
+# outside what the references can vouch for. Only a warning: nothing else changes.
+warn_removed_share = 0.05

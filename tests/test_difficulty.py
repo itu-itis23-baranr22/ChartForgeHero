@@ -393,10 +393,12 @@ def test_the_rules_are_listed_for_the_report():
         ((3, 4), MEDIUM, (1, 2)),
         ((2, 4), MEDIUM, (0, 2)),
         ((4,), MEDIUM, (3,)),
-        ((3,), MEDIUM, (2,)),
+        # Blue keeps its fret on Medium since reference tuning step 3 (it went to yellow, (2,)).
+        ((3,), MEDIUM, (3,)),
         # Easy keeps the lowest note, moved into green, red and yellow.
         ((0, 1, 3), EASY, (0,)),
-        ((1, 2, 4), EASY, (1,)),
+        # Red goes to green on Easy since reference tuning step 3 (it went to red, (1,)).
+        ((1, 2, 4), EASY, (0,)),
         ((2, 3, 4), EASY, (1,)),
         ((3, 4), EASY, (2,)),
         ((4,), EASY, (2,)),
@@ -886,8 +888,8 @@ def test_viterbi_never_silently_gives_up_when_no_shape_is_left():
     "change",
     [
         in_section("hard", "lane_map = [0, 1, 2, 3, 4]", "lane_map = [0, 1, 2]"),
-        in_section("medium", "lane_map = [0, 1, 1, 2, 3]", "lane_map = [0, 1, 1, 2, 4]"),
-        in_section("easy", "lane_map = [0, 1, 1, 2, 2]", "lane_map = [2, 1, 1, 0, 0]"),
+        in_section("medium", "lane_map = [0, 1, 2, 3, 3]", "lane_map = [0, 1, 2, 3, 4]"),
+        in_section("easy", "lane_map = [0, 0, 1, 2, 2]", "lane_map = [2, 1, 1, 0, 0]"),
         in_section("hard", "position_ratio = 0.67", "position_ratio = 0.2"),
         in_section("hard", "position_ratio = 0.67", "position_ratio = 1.5"),
         in_section("hard", "fidelity = 8.0", "fidelity = -1.0"),
@@ -899,8 +901,8 @@ def test_viterbi_never_silently_gives_up_when_no_shape_is_left():
         in_section("hard", "chord_lane_map = [0, 0, 0, 1, 2]", "chord_lane_map = [0, 0, 0, 1]"),
         in_section("medium", "chord_lane_map = [0, 0, 0, 1, 2]", "chord_lane_map = [0, 0, 0, 1, 4]"),
         in_section("hard", "chord_fidelity = 1.5", "chord_fidelity = -1.5"),
-        in_section("hard", "lane_shares = [0.318, 0.287, 0.223, 0.110, 0.062]", "lane_shares = [0.5, 0.2]"),
-        in_section("hard", "lane_shares = [0.318, 0.287, 0.223, 0.110, 0.062]", "lane_shares = [0.9, 0.9, 0.0, 0.0, 0.0]"),
+        in_section("hard", "lane_shares = [0.208, 0.229, 0.246, 0.207, 0.110]", "lane_shares = [0.5, 0.2]"),
+        in_section("hard", "lane_shares = [0.208, 0.229, 0.246, 0.207, 0.110]", "lane_shares = [0.9, 0.9, 0.0, 0.0, 0.0]"),
         in_section("lane_targets", "tolerance = 0.10", "tolerance = -0.10"),
         in_section("expert", "lane_shares", "unknown_setting = 1\nlane_shares"),
         in_section("hard.soft_targets", "chord_share = [0.40, 0.70]", "chord_share = [0.70, 0.40]"),

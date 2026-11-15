@@ -527,8 +527,9 @@ def _level_table(title: str, levels: dict[str, dict[str, dict[str, object]]]) ->
         orange = levels[name].get("orange_pitches")
         if orange and orange["notes"]:
             pitches = ", ".join(f"{pitch} {count}" for pitch, count in orange["pitches"].items())
-            warning = "; orange is one pitch" if orange["one_pitch"] else ""
-            lines.append(f"{name} orange notes by pitch: {pitches}{warning}")
+            counted = orange.get("counted", "pitch")
+            warning = f"; orange is one {counted}" if orange["one_pitch"] else ""
+            lines.append(f"{name} orange notes by {counted}: {pitches}{warning}")
         missed = levels[name].get("missed_targets") or {}
         if missed:
             lines.append(

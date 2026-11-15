@@ -671,6 +671,9 @@ class OrangePitches:
     unknown: int = 0
     """Orange notes whose pitch could not be read. They do not count towards the shares."""
     limit: float = 1.0
+    kind: str = "pitch"
+    """What is counted: the note's pitch (bass), or the spectral center of a note or chord rounded
+    to a semitone (guitar), which is not the note played."""
 
     @property
     def notes(self) -> int:
@@ -692,13 +695,22 @@ class OrangePitches:
             "top_pitch_share": round(self.top_share, 3),
             "max_single_pitch_share": self.limit,
             "one_pitch": self.is_one_pitch,
+            "counted": self.kind,
         }
 
 
 def count_orange_pitches(
-    track: Track, positions: Sequence[Position], limit: float
+    track: Track,
+    positions: Sequence[Position],
+    limit: float,
+    semitone_offset: int = 0,
+    kind: str = "pitch",
 ) -> OrangePitches:
-    """Count the pitches of ``track``'s orange notes, read from the Expert positions at their ticks."""
+    """Count the pitches of ``track``'s orange notes, read from the Expert positions at their ticks.
+
+    ``semitone_offset`` turns the positions' pitch scale into MIDI numbers for the names, and ``kind``
+    says what the numbers are.
+    """
     pitch_at = {position.tick: position.pitch for position in positions}
     counts: dict[str, int] = {}
     unknown = 0
@@ -709,11 +721,12 @@ def count_orange_pitches(
         if math.isnan(pitch):
             unknown += 1
             continue
-        number = int(pitch)
+        # Bass pitches are whole semitones already; a spectral center is rounded to the nearest.
+        number = int(round(pitch)) + semitone_offset
         name = f"{_NOTE_NAMES[number % 12]}{number // 12 - 1}"
         counts[name] = counts.get(name, 0) + 1
     ordered = tuple(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
-    return OrangePitches(ordered, unknown, limit)
+    return OrangePitches(ordered, unknown, limit, kind)
 
 
 # ---------------------------------------------------------------- the hard rules

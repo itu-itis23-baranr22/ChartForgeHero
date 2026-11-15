@@ -9,6 +9,7 @@ import numpy as np
 
 from chartgen.audio.drum_hits import DrumHitConfig, detect_drum_hits
 from chartgen.audio.onsets import OnsetConfig
+from chartgen.audio.pitch import PitchConfig
 from chartgen.audio.quiet_notes import QuietNoteLimits, load_limits
 from chartgen.chart.charter import ChartedTrack, build_expert_track
 from chartgen.chart.difficulty import (
@@ -62,6 +63,24 @@ within 70 ms, and the local threshold rejected 15 to 54% of them. Chosen on trai
 recall 0.540 to 0.721, precision 0.849 to 0.822, F1 0.643 to 0.762 (Californication 0.794 to 0.801)."""
 ONSET_SETTINGS: Mapping[Instrument, OnsetConfig] = {Instrument.GUITAR: GUITAR_ONSETS}
 """Instruments not listed use :class:`OnsetConfig` as it is."""
+GUITAR_PITCH = replace(PitchConfig(), raw_repeat_percentile=14.0)
+"""Guitar calls a note a repeat only if its plain spectrum is also alike enough (reference tuning step 3,
+SPEC 43). On distorted guitar the log spectra of different chords are as alike as a chord played again,
+so the fixed 0.95 made the contour flat on 74% of the lane changes of the human charts outside RHCP, and
+the chart stood still. Chosen on train as the lightest setting that brings direction when the human moves
+back above where it was before step 2 (0.315): 0.269 to 0.318, holding where the human holds 0.844 to
+0.830 (the owner allows 0.03 less); Californication unchanged. Keys keep the default."""
+PITCH_SETTINGS: Mapping[Instrument, PitchConfig] = {Instrument.GUITAR: GUITAR_PITCH}
+"""Instruments not listed use :class:`PitchConfig` as it is. Bass reads its pitch elsewhere."""
+GUITAR_REATTACKS = replace(OnsetConfig(), threshold_mad_k=1.0, local_ratio=1.1)
+"""How guitar hears re-attacks that end a sustain, charted or not (reference tuning step 3, SPEC 43). The
+12 dB release never fires on a distorted guitar before the next onset, so every note with room after it
+was sustained, including those whose next strum the chart missed: 13.3% sustained on train against the
+humans' 8.7%. With this, 9.2%, sustain F1 0.358 to 0.382. Bass and keys keep their ring times."""
+REATTACK_SETTINGS: Mapping[Instrument, OnsetConfig] = {Instrument.GUITAR: GUITAR_REATTACKS}
+"""Instruments listed here end a sustain at the next re-attack; others only at their release."""
+ORANGE_CONTOUR_OFFSET = 36
+"""Guitar's contour counts semitones above C2 (MIDI 36), :attr:`PitchConfig.fmin_hz`."""
 
 
 def settings_for(instrument: Instrument) -> tuple[DifficultyConfig, FretWeights]:
@@ -76,6 +95,7 @@ def settings_for(instrument: Instrument) -> tuple[DifficultyConfig, FretWeights]
     if instrument is Instrument.KEYS:
         config = replace(
             config,
+            max_orange_pitch_share=None,
             expert_targets=SoftTargets(),
             levels={
                 level: replace(settings, soft_targets=SoftTargets())
@@ -90,6 +110,15 @@ def _orange_of(
 ) -> OrangePitches | None:
     if config.max_orange_pitch_share is None:
         return None
+    if track.instrument is Instrument.GUITAR:
+        # Guitar's "pitch" is the spectral center of a note or chord, not the note played.
+        return count_orange_pitches(
+            track,
+            positions,
+            config.max_orange_pitch_share,
+            semitone_offset=ORANGE_CONTOUR_OFFSET,
+            kind="spectral center",
+        )
     return count_orange_pitches(track, positions, config.max_orange_pitch_share)
 
 
@@ -152,10 +181,12 @@ def build_tracks_for(
         tempo_map,
         duration_s,
         onset_config=ONSET_SETTINGS.get(instrument),
+        pitch_config=PITCH_SETTINGS.get(instrument),
         weights=weights,
         vocals=vocals if instrument in VOCAL_BLEED_CHECKED else None,
         not_before_s=not_before_s,
         quiet_limits=(quiet_limits or load_limits()) if instrument in QUIET_NOTES_CHECKED else None,
+        reattack_config=REATTACK_SETTINGS.get(instrument),
     )
     if not expert.track.notes:
         return []

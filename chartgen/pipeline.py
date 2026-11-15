@@ -23,6 +23,7 @@ from chartgen.audio.presence import StemPresence, analyze_presence
 from chartgen.audio.separation import STEM_NAMES, Separator, StemSet, separate_with_cache
 from chartgen.audio.sections import SectionAnalysis, find_sections
 from chartgen.audio.tempo import DEFAULT_MAX_BEAT_DRIFT_S, TempoAnalysis, estimate_tempo_map
+from chartgen.audio.vocal_bleed import load_thresholds, removed_share
 from chartgen.chart.charter import ChartedTrack
 from chartgen.chart.difficulty import HARD_RULES, HardRuleViolation
 from chartgen.chart.drum_charter import DRUM_HARD_RULES, UNVERIFIED_GEMS, UNVERIFIED_PIECES, DrumChart
@@ -193,6 +194,14 @@ def _report_track(instrument: Instrument, item: ChartedTrack, warnings: list[str
             len(removed),
             ", ".join(f"{note.time_s:.1f}" for note in removed),
         )
+        limits = load_thresholds()
+        if limits.removes_too_many(item.bleed):
+            warnings.append(
+                f"{instrument.value}: the vocal-bleed filter removed {len(removed)} of "
+                f"{len(item.bleed)} notes ({removed_share(item.bleed):.0%}), more than "
+                f"{limits.warn_removed_share:.0%}. On the reference songs it removed at most 3%, so some "
+                f"of these may be real notes under the singer."
+            )
     for note in item.bleed:
         if note.vocal_dominant:
             log.debug(
@@ -305,14 +314,15 @@ def _report_orange(instrument: Instrument, item: ChartedTrack, warnings: list[st
     if orange is None or orange.notes == 0:
         return
     log.info(
-        "    %s/%s: orange notes by pitch: %s",
+        "    %s/%s: orange notes by %s: %s",
         instrument.value,
         level,
+        orange.kind,
         ", ".join(f"{name} {count}" for name, count in orange.counts),
     )
     if orange.is_one_pitch:
         warnings.append(
-            f"{instrument.value}/{level}: orange is one pitch: {orange.counts[0][0]} is "
+            f"{instrument.value}/{level}: orange is one {orange.kind}: {orange.counts[0][0]} is "
             f"{orange.top_share:.0%} of its {orange.notes} orange notes (limit {orange.limit:.0%})"
         )
 
@@ -538,8 +548,13 @@ def _analysis(
                 "used": round(item.chord_limit, 3),
                 "temporary_distortion_limit_in_force": item.chord_limit_adjusted,
             }
+            bleed_limits = load_thresholds()
             entry["vocal_bleed"] = {
                 "removed_count": sum(note.removed for note in item.bleed),
+                "judged_count": len(item.bleed),
+                "removed_share": round(removed_share(item.bleed), 4),
+                "warn_removed_share": bleed_limits.warn_removed_share,
+                "removes_more_than_usual": bleed_limits.removes_too_many(item.bleed),
                 "vocal_dominant_notes": [
                     {
                         "time_s": round(note.time_s, 3),

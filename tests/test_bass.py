@@ -384,10 +384,14 @@ def test_the_bass_file_cannot_weaken_a_hard_rule(tmp_path, old, new, message):
 
 
 GUITAR_CONFIG_SHA256 = {
-    "chart/fret_weights.toml": "01a75c2aa14fbb26d55363ff9ebd13b8ed611474bf88f5015591ee3376bab023",
-    "chart/difficulty.toml": "30d3bf5456f61e292d1ec66208034751703de23b8f94e1fe378f99250b1f61c8",
+    # Guitar's own tuning changed these two (reference tuning step 3, SPEC 43): register span and lane prior;
+    # Medium and Easy lane maps, train-based soft targets, the orange check. Before: 01a75c2a...bab023 and
+    # 30d3bf54...b1f61c8.
+    "chart/fret_weights.toml": "18b26bcfa9369e2af3399b3c0fe066b60d9009ef1fe78ad934dafc89d864c9eb",
+    "chart/difficulty.toml": "587c38ca24b334cbdcc4b5aede00dbc35d2731f3d0d2a4122d5de3f8d0417406",
     # Guitar's own tuning changed it (reference tuning step 2, new limits 12 dB / -17 dB). Before: 2dd061dd...a2e33.
-    "audio/vocal_bleed.toml": "4d0fac69ef0985e486b436d39152325430328d1eaec372aae59698b0dc0de398",
+    # Step 3 added the warning limit warn_removed_share; the limits stay. Before: 4d0fac69...0de398.
+    "audio/vocal_bleed.toml": "c00fd42477099888419baec9e8a4b252c3d1ec8e5187d72a86f229933251470b",
 }
 
 
@@ -417,7 +421,9 @@ def test_each_instrument_reads_its_own_files():
     assert guitar_weights == load_weights()
     assert bass_weights == load_weights(BASS_WEIGHTS_PATH)
     assert guitar_weights != bass_weights
-    assert guitar_config.max_orange_pitch_share is None, "a guitar's notes have no pitch to read"
+    # Since reference tuning step 3 guitar is checked too, on its notes' spectral center (it was None:
+    # "a guitar's notes have no pitch to read").
+    assert guitar_config.max_orange_pitch_share == 0.70
     assert bass_config.max_orange_pitch_share == 0.70
 
 
@@ -885,10 +891,13 @@ def test_the_configured_limit_costs_the_human_bass_chart_at_most_0_005(real_song
         # the owner checked the tempo by ear but has not played this version yet. Before: f0c93106...a3d84f.
         # Reference tuning step 2 (SPEC 42) changed it again: eighth-note grid where a sixteenth is shorter
         # than 0.1 s, guitar's own onset settings, new vocal-bleed limits. Not played yet. Before: d3a9782f...4c0e14.
-        ("LastResort.wav", "f43b6e8d7476481bd17a12fd0b0d7a403cad9f2a4237c641941e2e0d6d21b761"),
+        # Reference tuning step 3 (SPEC 43): repeat rule, register and lane prior, Medium and Easy lane maps,
+        # sustains ended at re-attacks; same positions. Not played yet. Before: f43b6e8d...d21b761.
+        ("LastResort.wav", "737bc3b817d3c39fb5dd2bcbd0717e894312f4985539e15484ce4c48f597ac6f"),
         # Reference tuning step 2 (SPEC 42): guitar's own onset settings and new vocal-bleed limits. The owner
         # played the version before it, not this one. Before: fa099c6c...9f6deb.
-        ("../cloneH/audio.mp3", "a43fdd09204887a2c484163f756482ab378758ac749a68dc7bd8e606250b0c94"),
+        # Reference tuning step 3 (SPEC 43), as above; same positions. Not played yet. Before: a43fdd09...250b0c94.
+        ("../cloneH/audio.mp3", "0350be9ab24f863f187d13eb47fe0ce8028b945472645c5d503c1c5aa9e429c5"),
     ],
     indirect=["real_song"],
     scope="session",

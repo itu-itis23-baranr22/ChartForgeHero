@@ -18,7 +18,7 @@ from chartgen.audio.pitch import (
     contour_with_repeats,
 )
 from chartgen.audio.quiet_notes import QuietNote, QuietNoteLimits, levels_below_median
-from chartgen.audio.sustain import SustainConfig, note_durations
+from chartgen.audio.sustain import SustainConfig, cut_at_reattacks, note_durations
 from chartgen.audio.vocal_bleed import BleedThresholds, NoteBleed, analyze_bleed
 from chartgen.chart.difficulty import (
     SINGLE_NOTE_INSTRUMENTS,
@@ -151,13 +151,15 @@ def build_expert_track(
     bleed_thresholds: BleedThresholds | None = None,
     not_before_s: float = 0.0,
     quiet_limits: QuietNoteLimits | None = None,
+    reattack_config: OnsetConfig | None = None,
 ) -> ChartedTrack:
     """Build an Expert track from a mono stem. No onsets gives a track without notes.
 
     With ``vocals``, notes that look like the singer leaking into this stem are removed. Nothing
     lands before ``not_before_s``, where an opening that is not part of the song ends. With
     ``quiet_limits``, notes far below the stem's median note are reported, and removed if the rule
-    is in force.
+    is in force. With ``reattack_config``, a note's ring time also ends at the next onset that this
+    looser setting hears in the stem, charted or not (:func:`cut_at_reattacks`).
     """
     onsets = detect_onsets(mono, samplerate, onset_config)
     keep = onsets.times < duration_s - END_MARGIN_S
@@ -207,6 +209,9 @@ def build_expert_track(
                 )
 
     durations = note_durations(mono, times, next_times, samplerate, sustain_config)
+    if reattack_config is not None:
+        attacks = detect_onsets(mono, samplerate, reattack_config).times
+        durations = cut_at_reattacks(times, durations, attacks)
     lengths = _sustain_ticks(ticks, durations, tempo_map)
     placed = tempo_map.seconds_at(ticks.astype(np.float64))
 
@@ -219,7 +224,7 @@ def build_expert_track(
         shapes = map_notes(inputs, weights, single_notes_only(len(inputs)))
     else:
         pitches = analyze_pitches(mono, times, next_times, samplerate, pitch_config)
-        contour = contour_with_repeats(pitches, cfg.repeat_similarity)
+        contour = contour_with_repeats(pitches, cfg.repeat_similarity, cfg.raw_repeat_percentile)
         inputs = [
             NoteInput(float(time), float(value), pitch.voices)
             for time, value, pitch in zip(placed, contour, pitches)

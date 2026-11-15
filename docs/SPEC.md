@@ -242,6 +242,20 @@ Decisions made since it was written are listed first and take precedence.
    over the stem and the stem 17 dB under its usual level (it was 3 dB and 8 dB, chosen on one song). Chosen on
    train as the best mean F1 at no more than 0.03 of lost precision: recall 0.540 to 0.721, precision 0.849 to
    0.822, F1 0.643 to 0.762.
+43. **Guitar lanes, direction and sustains (reference tuning, step 3, 2026-11-15).** (a) A guitar note is a
+   repeat of the one before only if its log spectrum is at least 0.95 alike (as before) and its plain spectrum
+   at least as alike as the song's own 14th percentile (`instruments.GUITAR_PITCH`); on distorted guitar every
+   log spectrum looked alike and the chart stood still where the humans change lanes. (b) The fret mapper's
+   register spans frets 0 to 3.5 and its lane prior is the train human Expert shares, weight 1.0
+   (`fret_weights.toml`, shared with keys), so a phrase's top reaches orange. Guitar's orange is checked like
+   bass's: more than 70% on one spectral center (rounded to a semitone, not the note played) warns. (c) Medium
+   `lane_map` [0,1,2,3,3] and Easy [0,0,1,2,2]; the lane and sustain soft targets of `difficulty.toml` come from
+   the train human charts. (d) A guitar sustain ends at the next re-attack of the stem, heard with onsets at MAD
+   1.0 and local ratio 1.1, charted or not (`instruments.GUITAR_REATTACKS`); bass and keys keep their ring
+   times. Positions do not move. The vocal-bleed filter keeps its limits and warns when it removes more than 5%
+   of a stem's notes (train: 0.2-2.9%). Train means: direction when the human moves 0.269 to 0.316, holding
+   where the human holds 0.844 to 0.832, orange 0.008 to 0.097 (human 0.097), worst Expert lane gap 0.161 to
+   0.139, sustained share 0.133 to 0.092 (human 0.087), sustain F1 0.358 to 0.382.
 
 ## Phase B1 targets (one reference song so far)
 

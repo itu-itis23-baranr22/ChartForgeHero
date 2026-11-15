@@ -15,16 +15,20 @@ repeat = 2.5
 magnitude = 1.0
 semitones_per_lane = 1.5
 # Within a phrase, higher notes should sit further up the neck, between these two frets.
-# Charts lean toward the lower frets rather than spreading evenly.
-register = 0.6
-register_span = [0.5, 3.0]
+# Reference tuning step 3 (SPEC 43): with the span ending at 3.0, even a phrase's highest note aimed at
+# blue, and orange was 0.8% of guitar Expert against 9.7% in the eight train human charts. Ending it at
+# 3.5 lets a phrase's top reach orange; starting at 0 lets its bottom reach green (12.6% against 20.6%).
+register = 1.0
+register_span = [0.0, 3.5]
 # Moving the hand costs more the less time there is.
 speed = 0.02
 # Chord size should match how many voices were heard.
 voices = 2.5
-# Prefer frets the way charts do: orange is rare.
-lane_prior = 2.0
-lane_shares = [0.26, 0.24, 0.22, 0.22, 0.06]
+# Prefer frets the way charts do: the mean lane shares of the train human Expert charts (they were
+# Californication's alone). A weaker pull than before, so the register can reach orange.
+# Together with the span: orange 0.008 to 0.097, the worst lane gap 0.161 to 0.139 (train mean).
+lane_prior = 1.0
+lane_shares = [0.206, 0.236, 0.237, 0.225, 0.097]
 # The same pitch within a phrase should land on the same fret on the second pass.
 consistency = 0.5
 # A silence this long starts a new phrase.

@@ -46,6 +46,11 @@ class PitchConfig:
     """This far above the chord limit, the note counts as three voices."""
     repeat_similarity: float = 0.95
     """Spectra at least this similar are taken to be the same note or chord played again."""
+    raw_repeat_percentile: float | None = None
+    """If set, a repeat also needs the plain spectra (:attr:`NotePitch.raw_similarity`) at least as alike
+    as this percentile of the song's own note-to-note values. On distorted guitar every log spectrum looks
+    like the last, so ``repeat_similarity`` alone called nearly every chord change a repeat; the
+    least alike plain spectra are where the chord changes. None keeps the log rule alone."""
 
 
 @dataclass(frozen=True)
@@ -57,6 +62,9 @@ class NotePitch:
     flatness: float
     voices: int
     """Estimated number of pitches sounding: 1 to 3."""
+    raw_similarity: float = 0.0
+    """The same as ``similarity`` on the plain spectrum, without the log compression, so the loudest
+    partials count most. 0 for the first note after silence."""
 
     @property
     def is_known(self) -> bool:
@@ -117,6 +125,7 @@ def analyze_pitches(
 
     results: list[NotePitch] = []
     previous: np.ndarray | None = None
+    previous_profile: np.ndarray | None = None
     for time, next_time in zip(times, next_times):
         first = min(int((time + _ATTACK_SKIP_S) * frames_per_second), frame_total - 1)
         stop = max(min(time + _WINDOW_S, next_time), time + _ATTACK_SKIP_S + _MIN_WINDOW_S)
@@ -125,19 +134,18 @@ def analyze_pitches(
         total = float(profile.sum())
         if total < _SILENT:
             results.append(unknown)
-            previous = None
+            previous = previous_profile = None
             continue
 
         flatness = float(np.exp(np.mean(np.log(profile + 1e-9))) / (profile.mean() + 1e-9))
         shape = np.log1p(100.0 * profile / profile.max())
         contour = float(np.dot(shape, positions) / shape.sum())
-        similarity = 0.0
-        if previous is not None:
-            similarity = float(
-                np.dot(shape, previous) / (np.linalg.norm(shape) * np.linalg.norm(previous) + 1e-9)
-            )
-        previous = shape
-        results.append(NotePitch(contour, similarity, flatness, 1))
+        similarity = raw_similarity = 0.0
+        if previous is not None and previous_profile is not None:
+            similarity = _cosine(shape, previous)
+            raw_similarity = _cosine(profile, previous_profile)
+        previous, previous_profile = shape, profile
+        results.append(NotePitch(contour, similarity, flatness, 1, raw_similarity))
 
     known = [note.flatness for note in results if note.is_known]
     if not known:
@@ -152,17 +160,43 @@ def analyze_pitches(
     ]
 
 
+def _cosine(a: np.ndarray, b: np.ndarray) -> float:
+    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
+
+
 def contour_with_repeats(
-    pitches: list[NotePitch], repeat_similarity: float | None = None
+    pitches: list[NotePitch],
+    repeat_similarity: float | None = None,
+    raw_percentile: float | None = None,
 ) -> np.ndarray:
     """Return a contour in which a repeated note has exactly the previous note's value.
 
     The center of mass never quite repeats, so a riff's repeated notes would otherwise look
     like tiny steps up and down.
+
+    Args:
+        pitches: The notes, in order.
+        repeat_similarity: How alike two log spectra must be; by default ``PitchConfig``'s.
+        raw_percentile: If set, a repeat also needs the plain spectra at least as alike as this
+            percentile of the song's own values (see :attr:`PitchConfig.raw_repeat_percentile`).
     """
     threshold = PitchConfig.repeat_similarity if repeat_similarity is None else repeat_similarity
+    raw_limit = -np.inf
+    if raw_percentile is not None:
+        raw = [
+            pitch.raw_similarity
+            for before, pitch in zip(pitches, pitches[1:])
+            if before.is_known and pitch.is_known
+        ]
+        if raw:
+            raw_limit = float(np.percentile(raw, raw_percentile))
     values = np.array([pitch.contour for pitch in pitches], dtype=np.float64)
     for index in range(1, len(pitches)):
-        if pitches[index].similarity >= threshold and np.isfinite(values[index - 1]):
+        pitch = pitches[index]
+        if (
+            pitch.similarity >= threshold
+            and pitch.raw_similarity >= raw_limit
+            and np.isfinite(values[index - 1])
+        ):
             values[index] = values[index - 1]
     return values

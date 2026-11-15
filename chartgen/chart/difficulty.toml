@@ -33,26 +33,35 @@ phrase_end = 0.2
 #   one gets a force flag, which makes it a strum.
 #
 # [*.soft_targets] are [low, high] ranges. Outside one, a build warns in the terminal and in
-# analysis.json but does not fail, and neither do the tests. They come from one calm song, so they
-# are to be set again once test references exist.
+# analysis.json but does not fail, and neither do the tests. They came from one calm song; since
+# reference tuning step 3 (SPEC 43) lane_shares and sustain_share come from the eight train human
+# charts: lane_shares their mean, sustain_share their whole range (style decides it: the punk songs
+# sustain 1-2% of Medium and Easy, the RHCP songs 9-20%).
 #
 # auto_hopo_share counts notes that the game would turn into HOPOs by itself, before any force flag.
 # It depends more on style than on quality: fast chords cannot be HOPOs and fast single notes can.
 # In the one song measured the human guitar has 0.9% on Expert and the human bass 12.3%.
 #
-# lane_shares is how often each fret appears in the human chart measured so far, and each one may
-# stray by this much. chartgen evaluate uses the same limit against the human chart of each song.
+# lane_shares is how often each fret appears in the train human charts, and each one may stray by
+# this much. chartgen evaluate uses the same limit against the human chart of each song.
 [lane_targets]
 tolerance = 0.10
 
+# Orange that is nearly always one spectral center (a note or chord's, rounded to a semitone; not the
+# note played) marks one sound rather than the top of the melody, so more than this share warns. In
+# the train human charts, read with our contour at their orange notes, the commonest one is 31% of
+# orange on average. Keys do not use it.
+[orange_pitches]
+max_single_pitch_share = 0.70
+
 [expert]
-lane_shares = [0.246, 0.223, 0.192, 0.291, 0.048]
+lane_shares = [0.206, 0.236, 0.237, 0.225, 0.097]
 
 [expert.soft_targets]
 auto_hopo_share = [0.0, 0.05]
 
 [hard]
-lane_shares = [0.318, 0.287, 0.223, 0.110, 0.062]
+lane_shares = [0.208, 0.229, 0.246, 0.207, 0.110]
 position_ratio = 0.67
 min_gap_s = 0.15
 top_lane = 4
@@ -72,15 +81,17 @@ orange_share = [0.0, 0.10]
 on_beat_share = [0.50, 1.0]
 sixteenth_share = [0.0, 0.05]
 min_gap_s = [0.15, inf]
-sustain_share = [0.09, 0.29]
+sustain_share = [0.0, 0.33]
 auto_hopo_share = [0.0, 0.03]
 
 [medium]
-lane_shares = [0.309, 0.285, 0.275, 0.129, 0.002]
+lane_shares = [0.205, 0.298, 0.300, 0.196, 0.002]
 position_ratio = 0.44
 min_gap_s = 0.30
 top_lane = 3
-lane_map = [0, 1, 1, 2, 3]
+# Since reference tuning step 3: Expert's yellow and blue keep their frets (they moved down to red and
+# yellow), so Medium uses blue as the train humans do (19.6%; it was 2.7%). Worst lane gap 0.147 to 0.119.
+lane_map = [0, 1, 2, 3, 3]
 chord_lane_map = [0, 0, 0, 1, 2]
 fidelity = 3.0
 chord_fidelity = 1.5
@@ -93,15 +104,17 @@ chord_share = [0.40, 0.70]
 on_beat_share = [0.70, 1.0]
 sixteenth_share = [0.0, 0.05]
 min_gap_s = [0.30, inf]
-sustain_share = [0.06, 0.26]
+sustain_share = [0.0, 0.16]
 auto_hopo_share = [0.0, 0.01]
 
 [easy]
-lane_shares = [0.339, 0.339, 0.306, 0.012, 0.004]
+lane_shares = [0.326, 0.384, 0.284, 0.003, 0.003]
 position_ratio = 0.28
 min_gap_s = 0.50
 top_lane = 2
-lane_map = [0, 1, 1, 2, 2]
+# Since reference tuning step 3: red goes to green (it went to red), as green is the train humans'
+# second fret on Easy (32.6%; ours had 25%). Worst lane gap 0.139 to 0.105.
+lane_map = [0, 0, 1, 2, 2]
 fidelity = 0.5
 min_sustain_beats = 1.0
 keep_auto_hopos = false
@@ -116,5 +129,5 @@ blue_share = [0.0, 0.05]
 on_beat_share = [0.65, 1.0]
 sixteenth_share = [0.0, 0.05]
 min_gap_s = [0.50, inf]
-sustain_share = [0.10, 0.30]
+sustain_share = [0.0, 0.21]
 auto_hopo_share = [0.0, 0.01]

@@ -8,6 +8,7 @@ and removed if it looks like such a trace. Thresholds live in ``vocal_bleed.toml
 from __future__ import annotations
 
 import tomllib
+from collections.abc import Sequence
 from dataclasses import dataclass, fields
 from pathlib import Path
 
@@ -29,6 +30,17 @@ class BleedThresholds:
     level_window_s: float
     sustain_start_s: float
     sustain_end_s: float
+    warn_removed_share: float
+    """Removing more than this share of a stem's notes is reported as a warning; it removes nothing."""
+
+    def removes_too_many(self, notes: Sequence[NoteBleed]) -> bool:
+        """Whether ``notes``, every note the filter judged, lost more than ``warn_removed_share``."""
+        return bool(notes) and removed_share(notes) > self.warn_removed_share
+
+
+def removed_share(notes: Sequence[NoteBleed]) -> float:
+    """The share of the judged notes that the filter removed."""
+    return sum(note.removed for note in notes) / len(notes) if notes else 0.0
 
 
 def load_thresholds(path: Path = THRESHOLDS_PATH) -> BleedThresholds:
@@ -46,6 +58,8 @@ def load_thresholds(path: Path = THRESHOLDS_PATH) -> BleedThresholds:
         raise ValueError(f"{path.name}: max_stem_sustain and level_window_s are out of range")
     if not 0 <= values["sustain_start_s"] < values["sustain_end_s"]:
         raise ValueError(f"{path.name}: sustain_start_s must come before sustain_end_s")
+    if not 0 < values["warn_removed_share"] <= 1:
+        raise ValueError(f"{path.name}: warn_removed_share must be above 0 and at most 1")
     return BleedThresholds(**{key: float(value) for key, value in values.items()})
 
 
