@@ -82,11 +82,20 @@ class ChartedTrack:
 
 
 def _quantize(times: np.ndarray, tempo_map: TempoMap) -> np.ndarray:
-    """Return integer ticks, on the sixteenth-note grid wherever that is close enough."""
+    """Return integer ticks, on the sixteenth-note grid wherever that is close enough.
+
+    Where a sixteenth lasts less than it does at 150 BPM (:func:`seconds_floor`, 0.1 s), the grid is the
+    eighth note instead. Sixteenths 78 ms apart (191 BPM) are so close that an onset a few tens of
+    milliseconds late lands on the wrong one: after the beat of First Date was split in two (SPEC 41),
+    its bass Expert F1 fell from 0.892 to 0.859 for that reason alone. An onset far from every eighth
+    keeps its own time, as it always did.
+    """
     if times.size == 0:
         return np.empty(0, dtype=np.int64)
     exact = tempo_map.ticks_at(times)
-    grid = tempo_map.resolution // GRID_DIVISOR
+    sixteenth = tempo_map.resolution // GRID_DIVISOR
+    lasts = tempo_map.seconds_at(exact + sixteenth) - tempo_map.seconds_at(exact)
+    grid = np.where(lasts >= seconds_floor(1.0 / GRID_DIVISOR) - 1e-6, sixteenth, 2 * sixteenth)
     snapped = np.round(exact / grid) * grid
     close = np.abs(tempo_map.seconds_at(snapped) - times) <= SNAP_TOLERANCE_S
     return np.where(close, snapped, np.round(exact)).astype(np.int64)

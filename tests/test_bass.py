@@ -386,7 +386,8 @@ def test_the_bass_file_cannot_weaken_a_hard_rule(tmp_path, old, new, message):
 GUITAR_CONFIG_SHA256 = {
     "chart/fret_weights.toml": "01a75c2aa14fbb26d55363ff9ebd13b8ed611474bf88f5015591ee3376bab023",
     "chart/difficulty.toml": "30d3bf5456f61e292d1ec66208034751703de23b8f94e1fe378f99250b1f61c8",
-    "audio/vocal_bleed.toml": "2dd061dd4341c0d750f203cfd9d3e106d3cf563cae43652b64665f073aca2e33",
+    # Guitar's own tuning changed it (reference tuning step 2, new limits 12 dB / -17 dB). Before: 2dd061dd...a2e33.
+    "audio/vocal_bleed.toml": "4d0fac69ef0985e486b436d39152325430328d1eaec372aae59698b0dc0de398",
 }
 
 
@@ -882,8 +883,12 @@ def test_the_configured_limit_costs_the_human_bass_chart_at_most_0_005(real_song
     [
         # Since reference tuning step 1 (SPEC 41) LastResort is charted at 181 BPM, its beat split in two:
         # the owner checked the tempo by ear but has not played this version yet. Before: f0c93106...a3d84f.
-        ("LastResort.wav", "d3a9782fd4a68e9bc1f3a140bec571a8948fb26840b8fb583d78b76cae4c0e14"),
-        ("../cloneH/audio.mp3", "fa099c6ccb0a29634dacba71a6556ef99785b821ea118f7fdc70946b8b9f6deb"),
+        # Reference tuning step 2 (SPEC 42) changed it again: eighth-note grid where a sixteenth is shorter
+        # than 0.1 s, guitar's own onset settings, new vocal-bleed limits. Not played yet. Before: d3a9782f...4c0e14.
+        ("LastResort.wav", "f43b6e8d7476481bd17a12fd0b0d7a403cad9f2a4237c641941e2e0d6d21b761"),
+        # Reference tuning step 2 (SPEC 42): guitar's own onset settings and new vocal-bleed limits. The owner
+        # played the version before it, not this one. Before: fa099c6c...9f6deb.
+        ("../cloneH/audio.mp3", "a43fdd09204887a2c484163f756482ab378758ac749a68dc7bd8e606250b0c94"),
     ],
     indirect=["real_song"],
     scope="session",
@@ -912,7 +917,9 @@ def test_the_guitar_the_owner_played_stays_byte_for_byte(real_song, sha256):
         ("TocaToca.mp3", "e6d75583a6845026fdef56ccf86ad37ae294e6b934639d48952bc05660fb1311"),
         # At 181 BPM since reference tuning step 1 (SPEC 41); the owner checked the tempo by ear but has not
         # played this version yet. Before: d7a7fee5...5643302f.
-        ("LastResort.wav", "d2c687a23efd53dd5b55c6b9377bcd0b78e92794dc36c78eb39f18f02c881017"),
+        # Reference tuning step 2 (SPEC 42): only the eighth-note grid where a sixteenth is shorter than 0.1 s,
+        # which brings back the placement of the half-tempo map. Not played yet. Before: d2c687a2...c881017.
+        ("LastResort.wav", "4d1f34ac914a26c8004930104d9ea0332fca68832813276965fef4672f30cc42"),
         ("../cloneH/audio.mp3", "f0d024f7bb9c8d2eca16b63060aea2e27ca922cba2c03f3d282746fb1ab61a32"),
     ],
     indirect=["real_song"],

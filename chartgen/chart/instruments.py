@@ -8,6 +8,7 @@ from dataclasses import replace
 import numpy as np
 
 from chartgen.audio.drum_hits import DrumHitConfig, detect_drum_hits
+from chartgen.audio.onsets import OnsetConfig
 from chartgen.audio.quiet_notes import QuietNoteLimits, load_limits
 from chartgen.chart.charter import ChartedTrack, build_expert_track
 from chartgen.chart.difficulty import (
@@ -52,6 +53,15 @@ VOCAL_BLEED_CHECKED = frozenset({Instrument.GUITAR, Instrument.KEYS})
 real, and on one song it removed 153 of 674 notes. Keys simply follow guitar: nothing was measured."""
 QUIET_NOTES_CHECKED = frozenset({Instrument.BASS})
 """Where the kick can leak in. Whether anything is removed is set in ``quiet_notes.toml``."""
+GUITAR_ONSETS = replace(OnsetConfig(), threshold_mad_k=2.5, local_ratio=1.5)
+"""Guitar hears onsets with a lower local threshold than the defaults (3.0 and 1.75), which bass and keys
+keep. A strummed, distorted guitar keeps its spectral flux high between attacks, so in dense passages the
+defaults rejected most real notes: on the train references every missed human note had an envelope peak
+within 70 ms, and the local threshold rejected 15 to 54% of them. Chosen on train (reference tuning step
+2) as the best mean F1 that costs at most 0.03 of precision: with the vocal-bleed limits of that step,
+recall 0.540 to 0.721, precision 0.849 to 0.822, F1 0.643 to 0.762 (Californication 0.794 to 0.801)."""
+ONSET_SETTINGS: Mapping[Instrument, OnsetConfig] = {Instrument.GUITAR: GUITAR_ONSETS}
+"""Instruments not listed use :class:`OnsetConfig` as it is."""
 
 
 def settings_for(instrument: Instrument) -> tuple[DifficultyConfig, FretWeights]:
@@ -141,6 +151,7 @@ def build_tracks_for(
         mono,
         tempo_map,
         duration_s,
+        onset_config=ONSET_SETTINGS.get(instrument),
         weights=weights,
         vocals=vocals if instrument in VOCAL_BLEED_CHECKED else None,
         not_before_s=not_before_s,

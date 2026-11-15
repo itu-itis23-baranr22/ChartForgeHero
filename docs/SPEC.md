@@ -234,6 +234,14 @@ Decisions made since it was written are listed first and take precedence.
    floor in beats (`min_gap_s` in `chart/drum_difficulty.toml`: Hard 0.10, Medium 0.20, Easy 0.20), below
    every human value in train and without effect at 150 BPM or slower; otherwise a split tempo would let
    eighth notes into Easy.
+42. **Guitar Expert recall (reference tuning, step 2, 2026-11-15).** (a) Guitar, bass and keys onsets snap to
+   the eighth-note grid wherever a sixteenth lasts under 0.1 s (150 BPM, `seconds_floor`), so a late onset no
+   longer lands on the wrong sixteenth of a fast song; nothing changes at 150 BPM or slower. (b) Guitar hears
+   onsets with its own local threshold (`instruments.GUITAR_ONSETS`: MAD factor 2.5, local ratio 1.5, against
+   3.0 and 1.75 that bass and keys keep). (c) The vocal-bleed filter removes a note only with the vocals 12 dB
+   over the stem and the stem 17 dB under its usual level (it was 3 dB and 8 dB, chosen on one song). Chosen on
+   train as the best mean F1 at no more than 0.03 of lost precision: recall 0.540 to 0.721, precision 0.849 to
+   0.822, F1 0.643 to 0.762.
 
 ## Phase B1 targets (one reference song so far)
 

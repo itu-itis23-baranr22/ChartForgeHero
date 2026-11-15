@@ -4,13 +4,19 @@
 # case, so vocal loudness alone would be a disaster: at 6 dB it removed 69 real notes on the
 # reference song. What marks a leak is a stem that is both quiet and not staying.
 #
-# Set on the train reference. Measured there: 45 notes removed, 33 of them absent from the
-# human chart, and note F1 rose from 0.754 to 0.764. To be checked on test references, not tuned.
+# First set on Californication alone (3 dB, -8 dB). On the eight train references of the reference
+# tuning (step 2) those limits removed 587 guitar notes, 464 of which the human charts have: real
+# notes of a guitar mixed under the singer, in Parallel Universe 192 of 195. Of the removed notes, the
+# ones the humans lack are clearly quieter (stem at a median -15.5 dB against -10.2, vocals 11.3 dB
+# over the stem against 7.1), while a vocal onset at the same moment or alike spectra told the two
+# apart no better than chance. With the limits below, together with guitar's onset settings
+# (instruments.GUITAR_ONSETS), the filter removes 78 notes on train, 30 of them real, and on
+# Californication 2 instead of 31.
 
 # The vocals must be this much louder than the stem at the note.
-min_vocal_over_stem_db = 3.0
+min_vocal_over_stem_db = 12.0
 # The stem must be this far below its own usual loud level at the note.
-max_stem_level_db = -8.0
+max_stem_level_db = -17.0
 # After the note, the stem's level as a share of its usual loud level must not exceed this.
 max_stem_sustain = 0.6
 # Where the note's level is measured, from its onset.
