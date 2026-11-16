@@ -51,24 +51,33 @@ hit_strength = 0.2
 # Each floor is what min_gap_beats lasts at 150 BPM (FLOOR_BPM, SPEC 41), so nothing changes at 150 BPM
 # or slower, and each lies below every one of those human values.
 # [*.gem_weights]: added to a position's score by the gem that stays longest there. May be negative.
+# lone_kick_share: the share of the level above's lone kicks (positions with only the kick) that may stay,
+#   the best by score (reference tuning step 4, SPEC 44). A preference: 1.0 keeps them all, as before. The
+#   train human charts keep 46% of Expert's lone kicks on Hard and 2% on Medium and Easy; we kept them all,
+#   and lone kicks were 16% / 12% / 27% of our Hard / Medium / Easy positions against 8% / 0.5% / 12%. Lower
+#   shares cost position F1 (part of our lone kicks are a kick + hi-hat whose hi-hat Expert missed): these
+#   are the lowest that cost no more than 0.02 of it on train.
 #
 # [*.soft_targets] are [low, high] ranges, and gem_shares are the human's share of each gem, which
 # may stray by gem_tolerance. Outside one, a build warns in the terminal and in analysis.json, but
-# does not fail, and neither do the tests. They come from one rock song.
+# does not fail, and neither do the tests. Since reference tuning step 4 the gem_shares are the mean of the
+# train human charts with a drum chart (6 with every level); the other soft targets still come from one rock
+# song.
 
 [hard]
 position_ratio = 0.76
 min_gap_beats = 0.25
 min_gap_s = 0.10
+lone_kick_share = 0.75
 
 [hard.gem_shares]
-kick = 0.159
-red = 0.262
-yellow_cymbal = 0.228
-blue_cymbal = 0.315
-green_cymbal = 0.030
-yellow_tom = 0.006
-blue_tom = 0.0
+kick = 0.231
+red = 0.270
+yellow_cymbal = 0.221
+blue_cymbal = 0.145
+green_cymbal = 0.098
+yellow_tom = 0.008
+blue_tom = 0.028
 green_tom = 0.0
 
 [hard.soft_targets]
@@ -81,15 +90,16 @@ min_gap_beats = [0.25, inf]
 position_ratio = 0.64
 min_gap_beats = 0.5
 min_gap_s = 0.20
+lone_kick_share = 0.5
 
 [medium.gem_shares]
-kick = 0.169
-red = 0.177
-yellow_cymbal = 0.259
-blue_cymbal = 0.358
-green_cymbal = 0.034
+kick = 0.189
+red = 0.227
+yellow_cymbal = 0.268
+blue_cymbal = 0.160
+green_cymbal = 0.127
 yellow_tom = 0.003
-blue_tom = 0.0
+blue_tom = 0.026
 green_tom = 0.0
 
 [medium.soft_targets]
@@ -101,6 +111,7 @@ min_gap_beats = [0.5, inf]
 position_ratio = 0.54
 min_gap_beats = 0.5
 min_gap_s = 0.20
+lone_kick_share = 0.75
 # The human keeps the hi-hat with the snare in one Easy position out of six, the ride always.
 second_gem_from = ["red", "green_cymbal", "blue_cymbal"]
 
@@ -109,13 +120,13 @@ second_gem_from = ["red", "green_cymbal", "blue_cymbal"]
 yellow_cymbal = -0.3
 
 [easy.gem_shares]
-kick = 0.083
-red = 0.264
-yellow_cymbal = 0.068
-blue_cymbal = 0.533
-green_cymbal = 0.050
-yellow_tom = 0.002
-blue_tom = 0.0
+kick = 0.100
+red = 0.334
+yellow_cymbal = 0.113
+blue_cymbal = 0.229
+green_cymbal = 0.183
+yellow_tom = 0.005
+blue_tom = 0.036
 green_tom = 0.0
 
 [easy.soft_targets]

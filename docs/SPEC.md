@@ -256,6 +256,16 @@ Decisions made since it was written are listed first and take precedence.
    of a stem's notes (train: 0.2-2.9%). Train means: direction when the human moves 0.269 to 0.316, holding
    where the human holds 0.844 to 0.832, orange 0.008 to 0.097 (human 0.097), worst Expert lane gap 0.161 to
    0.139, sustained share 0.133 to 0.092 (human 0.087), sustain F1 0.358 to 0.382.
+44. **Drum cymbal kinds and lone kicks (reference tuning, step 4, 2026-11-16).** (a) A cymbal is also a hi-hat
+   when it comes with a kick, reaches 0.9 of the cymbals' strong hits and keeps less than 0.6 of its high band's
+   peak 0.09 s after it (`drum_hits.toml` `[cymbal_kinds]`); the crash rule stays as it was (with a kick, 0.9
+   strength, 0.3 of the peak after 0.6 s). A looser crash rule (0.65 kept at 0.09 s and 0.35 s before the next
+   cymbal, no kick) fell on a human crash for 55% of its crashes in train but 15% in the test set, and the owner
+   chose option B: a wrong green is worse than a missing crash; no accent crashes. Train: cymbal kind agreement
+   0.480 to 0.490, hi-hat/ride on the same lane 0.681 to 0.691. (b) Each lower level keeps only a share of the
+   level above's lone kicks, the best by score (`lone_kick_share`: Hard 0.75, Medium 0.5, Easy 0.75; a preference,
+   not a hard rule). (c) The lower levels' `gem_shares` soft targets are the train human means. Expert positions
+   do not move. Toms stay an open topic (owner, 2026-11-16).
 
 ## Phase B1 targets (one reference song so far)
 

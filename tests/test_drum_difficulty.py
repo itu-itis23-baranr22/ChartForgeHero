@@ -99,7 +99,9 @@ def broken_config(tmp_path, old: str, new: str):
         ("position_ratio = 0.54", "position_ratio = 0.9", "fall from Hard to Easy"),
         ("eighth = 0.6", "eighth = -0.6", "must not be negative"),
         ("[hard.soft_targets]\n", "[hard.soft_targets]\nfun = [0, 1]\n", "unknown soft targets"),
-        ("kick = 0.159", "kick = 0.5", "adding up to one"),
+        # Hard's kick share comes from train since reference tuning step 4 (it was 0.159, Californication's).
+        ("kick = 0.231", "kick = 0.5", "adding up to one"),
+        ("lone_kick_share = 0.5", "lone_kick_share = 1.5", "lone_kick_share"),
         ('"red",\n    "green_cymbal"', '"snare",\n    "green_cymbal"', "unknown gem"),
         ("protect_backbeat_snare = true\n", "", "expected keys"),
         ("min_gap_s = 0.20\n", "min_gap_s = -0.1\n", "not negative"),

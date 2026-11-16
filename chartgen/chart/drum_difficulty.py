@@ -95,6 +95,10 @@ class DrumLevelConfig:
     min_gap_s: float = 0.0
     """Positions are also never closer than this in seconds, however many beats apart: in a fast song
     the beat rule alone would let through what a player cannot keep up with."""
+    lone_kick_share: float = 1.0
+    """The share of the level above's lone kicks (positions holding only the kick) that may stay, the best
+    by score; the rest are no candidates. A preference, not a hard rule: 1.0 keeps them all. A lower score
+    alone does not do it, since the gap rule often leaves a lone kick alone in its slot."""
 
 
 @dataclass(frozen=True)
@@ -123,7 +127,10 @@ def _range(name: str, value: object, where: str) -> tuple[float, float]:
 def _load_level(name: str, level: Difficulty, values: Mapping[str, object], tolerance: float, file: str) -> DrumLevelConfig:
     where = f"{file} [{name}]"
     values = dict(values)
-    known = {"position_ratio", "min_gap_beats", "min_gap_s", "gem_weights", "gem_shares", "soft_targets", "second_gem_from"}
+    known = {
+        "position_ratio", "min_gap_beats", "min_gap_s", "gem_weights", "gem_shares", "soft_targets", "second_gem_from",
+        "lone_kick_share",
+    }
     unknown = set(values) - known
     if unknown:
         raise ValueError(f"{where}: unknown keys {sorted(unknown)}; the hard rules are not settings")
@@ -134,6 +141,9 @@ def _load_level(name: str, level: Difficulty, values: Mapping[str, object], tole
     floor = float(values.get("min_gap_s", 0.0))  # type: ignore[arg-type]
     if not 0 < ratio <= 1 or gap < 0 or floor < 0:
         raise ValueError(f"{where}: position_ratio must be in (0, 1], min_gap_beats and min_gap_s not negative")
+    lone_kicks = float(values.get("lone_kick_share", 1.0))  # type: ignore[arg-type]
+    if not 0 <= lone_kicks <= 1:
+        raise ValueError(f"{where}: lone_kick_share must be from 0 to 1")
     weights = {_gem(gem, where): float(weight) for gem, weight in dict(values.get("gem_weights", {})).items()}  # type: ignore[call-overload]
     second = frozenset(_gem(gem, where) for gem in values.get("second_gem_from", [gem.value for gem in DrumGem]))  # type: ignore[union-attr]
     if level in NO_KICK_WITH_A_PAD and DrumGem.KICK in second:
@@ -145,7 +155,7 @@ def _load_level(name: str, level: Difficulty, values: Mapping[str, object], tole
     unknown_targets = set(ranges) - _SOFT_TARGET_NAMES
     if unknown_targets:
         raise ValueError(f"{where}: unknown soft targets {sorted(unknown_targets)}")
-    return DrumLevelConfig(ratio, gap, weights, second, DrumSoftTargets(ranges, shares, tolerance), floor)
+    return DrumLevelConfig(ratio, gap, weights, second, DrumSoftTargets(ranges, shares, tolerance), floor, lone_kicks)
 
 
 def load_drum_config(path: Path = CONFIG_PATH) -> DrumDifficultyConfig:
@@ -320,6 +330,22 @@ def _gems_for(level: Difficulty, gems: Sequence[DrumGem], config: DrumDifficulty
     return tuple(sorted(kept, key=lambda gem: (gem.lane, gem.cymbal)))
 
 
+def _keep_lone_kicks(
+    ticks: np.ndarray, scores: np.ndarray, metric: list[str], upper: Mapping[int, tuple[DrumGem, ...]], share: float
+) -> tuple[np.ndarray, np.ndarray, list[str]]:
+    """Leave only the best ``share`` of the level above's lone kicks among the candidates, by score.
+
+    The human charts of train keep 46% of Expert's lone kicks on Hard and 2% on Medium and Easy.
+    """
+    lone = np.array([tuple(upper[int(tick)]) == (DrumGem.KICK,) for tick in ticks], dtype=bool)
+    if share >= 1.0 or not lone.any():
+        return ticks, scores, metric
+    best_first = np.flatnonzero(lone)[np.argsort(-scores[lone], kind="stable")]
+    keep = set(best_first[: int(round(share * best_first.size))].tolist())
+    stay = np.array([not lone[index] or index in keep for index in range(ticks.size)], dtype=bool)
+    return ticks[stay], scores[stay], [name for name, kept in zip(metric, stay) if kept]
+
+
 def _percentile_ranks(values: np.ndarray) -> np.ndarray:
     if values.size < 2:
         return np.ones(values.size)
@@ -374,6 +400,7 @@ def reduce_drums(
         scores += np.array(
             [settings.gem_weights.get(min(candidates[int(tick)], key=rank.__getitem__), 0.0) for tick in ticks]
         )
+        ticks, scores, metric = _keep_lone_kicks(ticks, scores, metric, upper, settings.lone_kick_share)
         protected = np.array(
             [
                 config.protect_backbeat_snare and name == "beat" and DrumGem.RED in candidates[int(tick)]

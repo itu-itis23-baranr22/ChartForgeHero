@@ -54,12 +54,22 @@ ratio = 0.25
 latency_s = 0.0
 
 [cymbal_kinds]
-# A cymbal whose high band falls below hihat_max_ring of its peak within ring_probe_s (or before the
-# next cymbal) is a hi-hat. Otherwise it is a ride, unless it is a crash: with a kick, at least
+# The ring is the high band's level ring_probe_s after the hit's peak (or just before the next cymbal),
+# as a share of that peak. A cymbal is a hi-hat if its ring falls below hihat_max_ring, or if it comes
+# with a kick, reaches hihat_with_kick_min_strength of the cymbals' strong hits and its ring falls below
+# hihat_with_kick_max_ring. Otherwise it is a ride, unless it is a crash: with a kick, at least
 # crash_min_strength of the cymbals' strong hits, and still at crash_min_ring after crash_probe_s.
-# The crash is not verified: the reference has 41 green cymbals.
+#
+# The hi-hat with the kick: reference tuning step 4 (SPEC 44), chosen on the 7 train references with a drum
+# chart: of the human's hi-hats, 58% are yellow (56% before), cymbal kind agreement 0.480 to 0.490, hi-hat
+# and ride on the same lane 0.681 to 0.691. A looser crash rule (a ring of 0.65 by the probe and 0.35 s
+# before the next cymbal, no kick needed) put 55% of its crashes on a human crash in train but 15% in the
+# test set, so the crash stays as it was (the owner's rule: a wrong green is worse than a missing one).
+# The crash is not verified: train's crashes are mostly not found by it (2% of them become green).
 ring_probe_s = 0.09
 hihat_max_ring = 0.4
+hihat_with_kick_max_ring = 0.6
+hihat_with_kick_min_strength = 0.9
 crash_probe_s = 0.6
 crash_min_ring = 0.3
 crash_min_strength = 0.9

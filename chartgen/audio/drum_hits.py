@@ -67,11 +67,15 @@ class CymbalKinds:
     """How long after the hit the ring is measured, or less if the next cymbal comes sooner."""
     hihat_max_ring: float
     """A cymbal whose high band falls below this share of its peak by the probe is a hi-hat."""
+    hihat_with_kick_max_ring: float
+    hihat_with_kick_min_strength: float
+    """So is one that comes with a kick, is at least this loud against the cymbals' strong hits, and falls
+    below ``hihat_with_kick_max_ring``: a hi-hat played with the kick rises over the wash of the kit."""
     crash_probe_s: float
     crash_min_ring: float
     """A crash still rings at this share of its peak this long after the hit..."""
     crash_min_strength: float
-    """...is this loud against the cymbals' strong hits, and comes with a kick."""
+    """...is this loud against the cymbals' strong hits, and comes with a kick. The rest are rides."""
 
 
 @dataclass(frozen=True)
@@ -164,9 +168,11 @@ def _check_ranges(config: DrumHitConfig, path: Path) -> None:
     kinds = config.cymbal_kinds
     if not 0 < kinds.ring_probe_s < kinds.crash_probe_s <= 2.0:
         raise ValueError(f"{path.name}: need 0 < ring_probe_s < crash_probe_s <= 2")
-    for key in ("hihat_max_ring", "crash_min_ring", "crash_min_strength"):
+    for key in ("hihat_max_ring", "hihat_with_kick_max_ring", "crash_min_ring", "crash_min_strength"):
         if not 0 < getattr(kinds, key) <= 1:
             raise ValueError(f"{path.name}: cymbal_kinds.{key} must be in (0, 1]")
+    if not kinds.hihat_with_kick_min_strength > 0:
+        raise ValueError(f"{path.name}: cymbal_kinds.hihat_with_kick_min_strength must be positive")
     tom = config.tom
     if not (0 < tom.body_low_hz < tom.body_high_hz and 0 < tom.noise_low_hz < tom.noise_high_hz <= nyquist):
         raise ValueError(f"{path.name}: [tom] bands are out of order")
@@ -433,12 +439,18 @@ def _drop_leaks(group: dict[str, _Found], cfg: DrumHitConfig, bands: _Bands) -> 
 def _cymbal_kind(
     hit: _Found, following: int | None, with_kick: bool, kinds: CymbalKinds, bands: _Bands
 ) -> DrumPiece:
-    """A hi-hat dies quickly; a crash is loud, rings on and comes with a kick; the rest is a ride."""
+    """A hi-hat dies quickly, or rises loud over the kit with the kick (reference tuning step 4, SPEC 44); a
+    crash is loud, rings on and comes with a kick; the rest is a ride."""
     fps = ANALYSIS_SAMPLERATE / HOP_LENGTH
     probe = int(kinds.ring_probe_s * fps)
     if following is not None:
         probe = max(1, min(probe, following - hit.frame - 1))
-    if _ring(bands.air, hit.frame, probe) < kinds.hihat_max_ring:
+    ring = _ring(bands.air, hit.frame, probe)
+    if ring < kinds.hihat_max_ring or (
+        with_kick
+        and hit.relative >= kinds.hihat_with_kick_min_strength
+        and ring < kinds.hihat_with_kick_max_ring
+    ):
         return DrumPiece.HI_HAT
     if (
         with_kick
