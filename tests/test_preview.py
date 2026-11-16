@@ -1,6 +1,7 @@
-"""Phase D, D.2: where the song list's preview starts. Four bars before the second start of the loudest
-part that comes back; otherwise the loudest 30 seconds on a bar line. Never in an opening, and the 30
-seconds fit in the song."""
+"""Phase D, D.2, and decision 48: where the song list's preview starts. On the bar line closest to 14 s
+before a start of the loudest part that comes back, its first start if that is at least 16 bars into the
+song, its second otherwise; without one, the loudest 30 seconds on a bar line. Never in an opening, and the
+30 seconds fit in the song."""
 
 import numpy as np
 import pytest
@@ -8,7 +9,9 @@ import pytest
 from chartgen.audio.io import ANALYSIS_SAMPLERATE
 from chartgen.audio.sections import FoundSection, SectionAnalysis
 from chartgen.chart.preview import (
+    FIRST_START_MIN_BARS,
     LOUDEST_WINDOW,
+    PREVIEW_LEAD_S,
     REPEATED_PART,
     PreviewChoice,
     PreviewRuleViolation,
@@ -29,17 +32,23 @@ def noise(seconds: float, level: float, seed: int) -> np.ndarray:
 
 
 def parts_song(
-    plan: str, loudness: dict[str, float], bars: int = 8, opening_bars: int = 0, opening_level: float = 0.0
+    plan: str,
+    loudness: dict[str, float],
+    bars: int = 8,
+    opening_bars: int = 0,
+    opening_level: float = 0.0,
+    bar_s: float = BAR_S,
 ) -> tuple[np.ndarray, SectionAnalysis, float]:
     """A song of ``plan``'s parts, ``bars`` bars each, each letter at its own level, after an optional
-    opening; and the sections a finder would give it. After an opening the first part is ``Song``'s."""
-    pieces = [noise(opening_bars * BAR_S, opening_level, 0)] if opening_bars else []
+    opening; and the sections a finder would give it. After an opening the first part is ``Song``'s.
+    Bars last ``bar_s`` (``TEMPO``'s by default)."""
+    pieces = [noise(opening_bars * bar_s, opening_level, 0)] if opening_bars else []
     parts, counts = [], {}
     for index, letter in enumerate(plan):
         bar = opening_bars + index * bars
         counts[letter] = counts.get(letter, 0) + 1
-        parts.append(FoundSection(bar * BAR_TICKS, bar * BAR_S, f"{letter}{counts[letter]}", letter, None if index == 0 else 0.3))
-        pieces.append(noise(bars * BAR_S, loudness[letter], index + 1))
+        parts.append(FoundSection(bar * BAR_TICKS, bar * bar_s, f"{letter}{counts[letter]}", letter, None if index == 0 else 0.3))
+        pieces.append(noise(bars * bar_s, loudness[letter], index + 1))
     mix = np.concatenate(pieces)
     duration = mix.size / SR
     if opening_bars:
@@ -56,19 +65,45 @@ def bar_of(choice: PreviewChoice) -> float:
 # ---------------------------------------------------------------- the part it leads into
 
 
-def test_the_preview_leads_into_the_second_start_of_the_loudest_part_that_comes_back():
-    mix, found, duration = parts_song("ABABC", {"A": 0.05, "B": 0.3, "C": 0.05})
+def test_the_settings_are_the_approved_ones():
+    assert (PREVIEW_LEAD_S, FIRST_START_MIN_BARS) == (14.0, 16)
+
+
+def test_the_preview_leads_into_the_first_start_of_the_loudest_part_that_comes_back():
+    # B1 starts 16 bars into the song; 14 s before it is 7 bars at 120 BPM.
+    mix, found, duration = parts_song("AABAB", {"A": 0.05, "B": 0.3})
     choice = choose_preview(found, mix, TEMPO, duration)
-    assert (choice.rule, choice.leads_into) == (REPEATED_PART, "B2")
-    assert bar_of(choice) == 24 - 4 and choice.start_s == pytest.approx(40.0)
+    assert (choice.rule, choice.leads_into, choice.lead_bars) == (REPEATED_PART, "B1", 7)
+    assert bar_of(choice) == 16 - 7 and choice.start_s == pytest.approx(18.0)
     assert list(choice.loudness_db) == ["B", "A"], "only parts that come back, loudest first"
     assert choice.moved_earlier_bars == 0 and not choice.too_short and choice.fallback_reason is None
 
 
+def test_a_first_start_early_in_the_song_gives_way_to_the_second():
+    # B1 starts 8 bars into the song, too early: the preview leads into B2 (bar 24) instead.
+    mix, found, duration = parts_song("ABABC", {"A": 0.05, "B": 0.3, "C": 0.05})
+    choice = choose_preview(found, mix, TEMPO, duration)
+    assert (choice.leads_into, choice.lead_bars) == ("B2", 7) and bar_of(choice) == 24 - 7
+    # One bar short of 16 is still too early.
+    mix, found, duration = parts_song("AAABABA", {"A": 0.05, "B": 0.3}, bars=5)
+    choice = choose_preview(found, mix, TEMPO, duration)
+    assert choice.leads_into == "B2" and bar_of(choice) == 25 - 7
+
+
+def test_the_lead_is_the_bar_line_closest_to_14_seconds_before():
+    # At 100 BPM a bar lasts 2.4 s: 14 s is 5.8 bars, so 6 bars (14.4 s) before B1 at bar 16.
+    tempo = TempoMap([TempoEvent(0, 100.0)], [TimeSignatureEvent(0, 4, 4)])
+    mix, found, duration = parts_song("AABAB", {"A": 0.05, "B": 0.3}, bar_s=2.4)
+    choice = choose_preview(found, mix, tempo, duration)
+    assert (choice.leads_into, choice.lead_bars) == ("B1", 6)
+    assert choice.start_s == pytest.approx((16 - 6) * 2.4)
+
+
 def test_a_louder_part_leads_and_the_quieter_one_is_passed_over():
+    # A is the first part, so its first start is not 16 bars into the song: A2.
     mix, found, duration = parts_song("ABABC", {"A": 0.3, "B": 0.05, "C": 0.05})
     choice = choose_preview(found, mix, TEMPO, duration)
-    assert choice.leads_into == "A2" and bar_of(choice) == 16 - 4
+    assert choice.leads_into == "A2" and bar_of(choice) == 16 - 7
 
 
 def test_a_loud_part_that_never_comes_back_is_not_chosen():
@@ -82,16 +117,16 @@ def test_the_part_song_starts_counts_as_the_first_of_its_letter():
     mix, found, duration = parts_song("ABAC", {"A": 0.2, "B": 0.05, "C": 0.05}, opening_bars=6, opening_level=0.01)
     song_tick = 6 * BAR_TICKS + 96
     choice = choose_preview(found, mix, TEMPO, duration, song_start_tick=song_tick)
-    assert choice.leads_into == "A2" and bar_of(choice) == 6 + 16 - 4
+    assert choice.leads_into == "A2" and bar_of(choice) == 6 + 16 - 7
 
 
 def test_near_the_end_it_moves_earlier_until_its_30_seconds_fit():
-    # B2 starts at 48 s of 64: four bars before it is 40 s, and 40 + 30 > 64. The last bar line that
-    # fits is 34 s, three bars earlier.
-    mix, found, duration = parts_song("ABAB", {"A": 0.05, "B": 0.3})
+    # B2 starts at 36 s of 48: 14 s before it is 22 s, and 22 + 30 > 48. The last bar line that fits is
+    # 18 s, two bars earlier, nine bars before B2.
+    mix, found, duration = parts_song("ABAB", {"A": 0.05, "B": 0.3}, bars=6)
     choice = choose_preview(found, mix, TEMPO, duration)
-    assert choice.leads_into == "B2" and choice.start_s == pytest.approx(34.0)
-    assert choice.moved_earlier_bars == 3 and choice.start_s + 30 <= duration
+    assert choice.leads_into == "B2" and choice.start_s == pytest.approx(18.0)
+    assert choice.moved_earlier_bars == 2 and choice.lead_bars == 9 and choice.start_s + 30 <= duration
 
 
 # ---------------------------------------------------------------- the loudest window

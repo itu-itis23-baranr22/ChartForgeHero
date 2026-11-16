@@ -22,6 +22,8 @@ from chartgen.evaluation.run import (
 from chartgen.evaluation.structure_metrics import (
     bar_lines_s,
     boundary_scores,
+    chorus_in_window,
+    is_chorus,
     match_within,
     naive_section_baselines,
     preview_comparison,
@@ -185,6 +187,28 @@ def test_the_preview_is_placed_in_the_human_sections():
     assert preview_comparison(100.0, None, sections) == {"mine_s": 100.0, "mine_section": "chorus"}
 
 
+def test_a_chorus_is_what_the_human_charts_call_one():
+    assert all(is_chorus(name) for name in ("chorus_1", "Chorus 2", "chorus", "chorus_2a"))
+    assert not any(
+        is_chorus(name) for name in ("prechorus_2", "Pre-Chorus 1", "postchorus_1", "Post-Chorus 2", "verse_1", "gtr_solo")
+    )
+
+
+def test_a_human_chorus_in_a_preview_counts_from_one_bar_before_it():
+    bars = np.arange(0.0, 200.0, 2.0)
+    sections = [(10.0, "verse_1"), (50.0, "prechorus_1"), (60.0, "chorus_1"), (120.0, "chorus_2")]
+    assert chorus_in_window(45.0, sections, bars) == 15.0
+    assert chorus_in_window(30.0, sections, bars) == 30.0 and chorus_in_window(29.0, sections, bars) is None
+    assert chorus_in_window(62.0, sections, bars) == -2.0, "a bar late, the preview still holds almost all of it"
+    assert chorus_in_window(62.5, sections, bars) is None
+    assert chorus_in_window(100.0, sections, bars) == 20.0
+    result = preview_comparison(45.0, 58.0, sections, bars)
+    assert (result["chorus_in_window_s"], result["human_chorus_in_window_s"], result["apart_s"]) == (15.0, 2.0, 13.0)
+    # Without a chorus in the human chart, or without its bar lines, nothing is said about one.
+    assert "chorus_in_window_s" not in preview_comparison(45.0, 58.0, [(10.0, "verse"), (40.0, "bridge")], bars)
+    assert "chorus_in_window_s" not in preview_comparison(45.0, 58.0, sections)
+
+
 # ---------------------------------------------------------------- in evaluate
 
 
@@ -205,21 +229,31 @@ def test_evaluate_reports_the_structure(tmp_path):
     assert (mine["guitar"]["phrases"], mine["guitar"]["median_length_bars"], mine["guitar"]["on_a_bar_line"]) == (1, 1.0, 1.0)
     assert mine["guitar"]["fewest_notes_inside"] >= 1
     assert structure["preview"]["human_s"] == pytest.approx(12.5)
+    assert {"chorus_in_window_s", "human_chorus_in_window_s", "lead_bars"} <= set(structure["preview"])
     text = format_report(report)
     assert "Structure of structured" in text and "best naive" in text and "star power, human: guitar 2" in text
     assert "star power, mine: guitar 1 (" in text
 
 
 @pytest.mark.parametrize(
-    "rule,leads_into,shown",
-    [("repeated part", "F2", "(prechorus_2, 4 bars before F2)"), ("loudest window", None, "(prechorus_2, loudest window)")],
+    "rule,leads_into,lead_bars,shown",
+    [
+        ("repeated part", "F1", 6, "(prechorus_2, 6 bars before F1)"),
+        ("loudest window", None, None, "(prechorus_2, loudest window)"),
+    ],
 )
-def test_the_preview_line_says_how_the_preview_was_chosen(rule, leads_into, shown):
+def test_the_preview_line_says_how_the_preview_was_chosen(rule, leads_into, lead_bars, shown):
     preview = {"mine_s": 174.6, "mine_section": "prechorus_2", "human_s": 174.4, "human_section": "prechorus_2",
-               "apart_s": 0.2, "rule": rule, "leads_into": leads_into}
+               "apart_s": 0.2, "rule": rule, "leads_into": leads_into, "lead_bars": lead_bars}
     structure = {"sections": {"human": [], "mine": []}, "star_power": {"human": {}, "mine": {}}, "preview": preview}
     lines = _structure_lines("S", {"structure": structure})
     assert f"preview: mine 174.6 s {shown}, human 174.4 s (prechorus_2): 0.2 s apart" in lines
+    # Decision 48: whether a human chorus starts in each preview.
+    preview.update({"chorus_in_window_s": 14.7, "human_chorus_in_window_s": None})
+    lines = _structure_lines("S", {"structure": structure})
+    assert any(
+        line.endswith("0.2 s apart; a human chorus 14.7 s into mine, no human chorus in the human's") for line in lines
+    )
 
 
 def test_the_structure_lines_hold_up_without_a_human_structure():
@@ -261,13 +295,14 @@ def test_californication_structure_is_read_and_measured(real_song):
     assert naive["best_naive"]["f1"] == pytest.approx(0.385, abs=0.001), "what D.1 has to beat, with room to spare"
     assert naive["every_4_bars"] == pytest.approx(0.25, abs=0.001)
     assert all(value["on_a_bar_line"] == 1.0 for value in structure["star_power"]["human"].values())
-    # D.2: four bars before F2 (chorus_2 in the human chart), as built. The loudest window was 285.1 s.
+    # Decision 48: six bars (the bar line closest to 14 s) before F1, chorus_1 in the human chart, as built.
+    # D.2 led into F2 at 174.61 s, 0.2 s from the human's; the loudest window was 285.1 s.
     preview = structure["preview"]
-    assert (preview["rule"], preview["leads_into"]) == ("repeated part", "F2")
-    assert preview["mine_s"] == pytest.approx(174.61, abs=0.05)
-    assert preview["mine_section"] == preview["human_section"] == "prechorus_2"
-    # The owner's acceptance criterion (2026-11-15): at most one bar from the human's preview, the bar
-    # of the human chart in which the human's preview starts.
-    bar = int(np.searchsorted(song.bars, song.preview_start_s, side="right")) - 1
-    one_bar_s = float(song.bars[bar + 1] - song.bars[bar])
-    assert abs(preview["mine_s"] - song.preview_start_s) <= one_bar_s
+    assert (preview["rule"], preview["leads_into"], preview["lead_bars"]) == ("repeated part", "F1", 6)
+    assert preview["mine_s"] == pytest.approx(80.44, abs=0.05)
+    assert (preview["mine_section"], preview["human_section"]) == ("prechorus_1", "prechorus_2")
+    # The owner's acceptance criterion (2026-11-16, it replaced "at most one bar from the human's preview",
+    # which held only for the rule tuned on this song): a human chorus starts in our 30 s, as one does in
+    # the human's. Here chorus_1, 14.7 s in; in the human's, chorus_2, 10.0 s in.
+    assert preview["chorus_in_window_s"] == pytest.approx(14.72, abs=0.05)
+    assert preview["human_chorus_in_window_s"] == pytest.approx(9.97, abs=0.05)

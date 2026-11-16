@@ -24,7 +24,7 @@ from chartgen.audio.tempo import TempoAnalysis, estimate_tempo_map
 from chartgen.chart.charter import ChartedTrack
 from chartgen.chart.difficulty import LANE_NAMES, LevelMeasures, load_config
 from chartgen.chart.instruments import STEM_FOR_INSTRUMENT, build_tracks_for
-from chartgen.chart.preview import LOUDEST_WINDOW, PREVIEW_LEAD_BARS, choose_preview
+from chartgen.chart.preview import LOUDEST_WINDOW, choose_preview
 from chartgen.chart.sections import section_search_start_s, song_section_tick, song_sections, song_start_s
 from chartgen.chart.star_power import place_star_power
 from chartgen.core.model import Difficulty, Instrument, Track
@@ -347,8 +347,8 @@ def compare_structure(
             tempo_map.seconds_at(np.array(ticks, dtype=np.float64)),
         )
     choice = choose_preview(found, mix, tempo_map, signals.duration_s, song_section_tick(tempo))
-    preview = preview_comparison(choice.start_s, song.preview_start_s, human)
-    preview.update({"rule": choice.rule, "leads_into": choice.leads_into})
+    preview = preview_comparison(choice.start_s, song.preview_start_s, human, np.asarray(song.bars, dtype=np.float64))
+    preview.update({"rule": choice.rule, "leads_into": choice.leads_into, "lead_bars": choice.lead_bars})
     sections["strongest_change"] = round(found.strongest_change, 3)
     return {"sections": sections, "star_power": star_power, "preview": preview}
 
@@ -632,18 +632,29 @@ def _structure_lines(name: str, song: dict[str, object]) -> list[str]:
         ]
         lines.append(f"star power, {source}: " + ("; ".join(parts) if parts else "none"))
     preview = structure["preview"]
-    led = f", {PREVIEW_LEAD_BARS} bars before {preview['leads_into']}" if preview.get("leads_into") else ""
+    led = f", {preview.get('lead_bars')} bars before {preview['leads_into']}" if preview.get("leads_into") else ""
     fallback = f", {preview['rule']}" if preview.get("rule") == LOUDEST_WINDOW else ""
     mine_text = f"mine {preview['mine_s']:.1f} s ({preview['mine_section'] or '-'}{led}{fallback})"
     if "human_s" in preview:
-        lines.append(
+        line = (
             f"preview: {mine_text}, human {preview['human_s']:.1f} s ({preview['human_section'] or '-'}): "
             f"{preview['apart_s']:.1f} s apart"
         )
     else:
-        lines.append(f"preview: {mine_text}; the human chart sets none")
+        line = f"preview: {mine_text}; the human chart sets none"
+    if "chorus_in_window_s" in preview:
+        line += "; " + _chorus_text("mine", preview["chorus_in_window_s"])
+        if "human_chorus_in_window_s" in preview:
+            line += ", " + _chorus_text("the human's", preview["human_chorus_in_window_s"])
+    lines.append(line)
     lines.append("")
     return lines
+
+
+
+def _chorus_text(whose: str, seconds_in: float | None) -> str:
+    """Where a human chorus starts in a preview's 30 seconds, as the preview line says it."""
+    return f"no human chorus in {whose}" if seconds_in is None else f"a human chorus {seconds_in:.1f} s into {whose}"
 
 
 _DRUM_SHOWN = (

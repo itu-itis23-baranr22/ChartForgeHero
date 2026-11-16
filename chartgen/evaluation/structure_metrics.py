@@ -3,14 +3,20 @@
 A section boundary matches a human one within one bar, measured on our tempo map; a whole bar off still
 counts. Two bars would be too lenient: on Californication a boundary every 4 bars scores F1 0.62 within two bars, against 0.38 at
 most within one. Naive boundaries every N bars are reported next to ours, as the reductions are.
+
+A preview is measured by whether a human chorus starts in its 30 seconds (decision 48), as one does in every
+train human chart's; the distance to the human's preview is reported next to it.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
+import re
+
 import numpy as np
 
+from chartgen.clonehero.package import PREVIEW_WINDOW_S
 from chartgen.core.timing import TempoMap
 
 NAIVE_EVERY_BARS = (4, 8, 16)
@@ -117,11 +123,38 @@ def section_at(time_s: float, sections: Sequence[tuple[float, str]]) -> str | No
     return name
 
 
+def is_chorus(name: str) -> bool:
+    """Whether a human section name is a chorus: ``chorus_2`` and ``Chorus 1``, not a pre- or post-chorus."""
+    letters = re.sub(r"[^a-z]", "", name.lower())
+    return "chorus" in letters and not letters.startswith(("pre", "post"))
+
+
+def chorus_in_window(
+    start_s: float, human_sections: Sequence[tuple[float, str]], bars_s: np.ndarray, window_s: float = PREVIEW_WINDOW_S
+) -> float | None:
+    """How many seconds into a preview from ``start_s`` the first human chorus starts, or None if none does.
+
+    A chorus that starts up to one bar (``bars_s``, the human chart's) before the preview still counts: the
+    preview then holds almost all of it. Negative values say so.
+    """
+    for time_s, name in sorted(human_sections):
+        if is_chorus(name) and start_s - _bar_lengths(bars_s, np.array([time_s]))[0] - 1e-6 <= time_s <= start_s + window_s:
+            return round(time_s - start_s, 2)
+    return None
+
+
 def preview_comparison(
-    mine_s: float, human_s: float | None, human_sections: Sequence[tuple[float, str]]
+    mine_s: float,
+    human_s: float | None,
+    human_sections: Sequence[tuple[float, str]],
+    human_bars_s: np.ndarray | None = None,
 ) -> dict[str, object]:
-    """Where our preview starts against the human's, and in which human section each lies."""
+    """Where our preview starts against the human's, in which human section each lies and, given the human
+    chart's bar lines, how far into each a human chorus starts."""
     result: dict[str, object] = {"mine_s": round(mine_s, 3), "mine_section": section_at(mine_s, human_sections)}
+    measured = human_bars_s is not None and any(is_chorus(name) for _, name in human_sections)
+    if measured:
+        result["chorus_in_window_s"] = chorus_in_window(mine_s, human_sections, human_bars_s)
     if human_s is not None:
         result.update(
             {
@@ -130,4 +163,6 @@ def preview_comparison(
                 "apart_s": round(abs(mine_s - human_s), 1),
             }
         )
+        if measured:
+            result["human_chorus_in_window_s"] = chorus_in_window(human_s, human_sections, human_bars_s)
     return result

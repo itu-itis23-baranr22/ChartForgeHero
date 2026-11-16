@@ -296,6 +296,19 @@ Decisions made since it was written are listed first and take precedence.
    11-12. Chosen on train (owner's criteria): our phrase count over the human's 0.83 to 1.00 on average, median
    gap 10 bars against 9. No floor in seconds (the owner: First Date's human spaces them 11 s). The hard rules
    and the validator are unchanged; `analysis.json` adds the gaps in bars, and a long gap warns in bars.
+48. **The preview leads into an early chorus (after reference tuning step 5, 2026-11-16).** It still leads into
+   a start of the loudest letter that comes back (decision 39), but into its first start when that is at
+   least 16 bars after the song's first part, its second otherwise, and on the bar line closest to 14 s
+   before it (halfway, the earlier). The eight train human charts start their previews early (seven of them
+   24 to 58 s after the first note) and a human chorus starts in every one of their 30 s, a median 12 s in;
+   decision 39's rule came from Californication alone and put most previews late in the song. Measured by
+   whether a human chorus (a section named `chorus`, not pre- or post-) starts in the 30 s, from one bar of
+   the human chart before it; the owner's criterion replaced "at most one bar from the human's" on
+   Californication. Chosen on train (owner's order: chorus hits, then median distance to the human's preview,
+   then where in the song): hits 6 to 7 of 8, median distance 34.1 to 17.4 s; the 16 bars sit in a plateau
+   (14 to 22 give the same), 14 s is the longest lead scanned (2 to 8 bars, 8 to 14 s). The loudest-window
+   fallback, the hard rules and the validator are unchanged; `analysis.json` adds `lead_s` and
+   `first_start_min_bars`, and `lead_bars` is now the song's own.
 
 ## Phase B1 targets (one reference song so far)
 

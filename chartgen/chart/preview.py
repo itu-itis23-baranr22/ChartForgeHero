@@ -1,10 +1,12 @@
-"""Where the song list's preview starts (decision 37, step D.2).
+"""Where the song list's preview starts (decision 39, step D.2; decision 48, after reference tuning).
 
-Four bars before the second start of the most energetic part that comes back: the preview runs into a
-part the listener has already heard once, as Californication's human chart does (ten seconds before its
-second chorus). The most energetic part is the letter that comes back whose bars are loudest in the mix
-on average. When no part comes back, or the song has no sections, the preview is the loudest 30 seconds
-of the song after any opening, moved to the nearest bar line.
+On the bar line closest to 14 seconds before a start of the most energetic part that comes back: its first
+start when that is at least 16 bars into the song, its second otherwise. The most energetic part is the
+letter that comes back whose bars are loudest in the mix on average; it is often the chorus. The eight train
+human charts start the preview early (seven of them 24 to 58 s after the first note) and a chorus begins in
+every one of their 30 seconds, a median 12 s in; usually the first chorus, the second when the first comes
+early. When no part comes back, or the song has no sections, the preview is the loudest 30 seconds of the
+song after any opening, moved to the nearest bar line.
 
 Hard rules, here in code (``check_preview``): the preview starts on a bar line, not in an opening that
 is not part of the song, and its 30 seconds fit in the song; only a song too short for that after its
@@ -23,8 +25,11 @@ from chartgen.audio.sections import FoundSection, SectionAnalysis
 from chartgen.clonehero.package import PREVIEW_WINDOW_S, best_preview_start_ms
 from chartgen.core.timing import TempoMap
 
-PREVIEW_LEAD_BARS = 4
-"""The preview starts this many bars before the part it leads into."""
+PREVIEW_LEAD_S = 14.0
+"""The preview starts on the bar line closest to this many seconds before the part it leads into."""
+FIRST_START_MIN_BARS = 16
+"""The preview leads into the first start of the loudest part that comes back when that start is at least
+this many bars after the song's first part, and into its second start otherwise."""
 REPEATED_PART = "repeated part"
 LOUDEST_WINDOW = "loudest window"
 _HOP = 512
@@ -50,6 +55,8 @@ class PreviewChoice:
     """How many bars the preview moved earlier so that its 30 seconds fit in the song."""
     too_short: bool
     """The song after any opening is shorter than the preview, which then starts with the song."""
+    lead_bars: int | None = None
+    """For ``REPEATED_PART``, how many bars before the part it leads into the preview starts."""
 
     @property
     def start_ms(self) -> int:
@@ -101,11 +108,17 @@ def choose_preview(
 
     parts = found.parts if found is not None else ()
     loudness = _letter_loudness(parts, mix, duration_s)
+    part_bar = None
     if loudness:
         letter = next(iter(loudness))
-        second = [part for part in parts if part.letter == letter][1]
-        target = max(int(np.searchsorted(bars, second.tick)) - PREVIEW_LEAD_BARS, allowed)
-        rule, leads_into, reason = REPEATED_PART, second.name, None
+        starts = [part for part in parts if part.letter == letter]
+        into_song = int(np.searchsorted(bars, starts[0].tick)) - int(np.searchsorted(bars, parts[0].tick))
+        part = starts[0] if into_song >= FIRST_START_MIN_BARS else starts[1]
+        part_bar = int(np.searchsorted(bars, part.tick))
+        # The closest bar line; halfway between two, the earlier one.
+        lead = int(np.argmin(np.abs(times[: part_bar + 1] - (times[part_bar] - PREVIEW_LEAD_S))))
+        target = max(lead, allowed)
+        rule, leads_into, reason = REPEATED_PART, part.name, None
     else:
         offset = int(round(times[allowed] * ANALYSIS_SAMPLERATE))
         loudest_s = times[allowed] + best_preview_start_ms(mix[offset:], ANALYSIS_SAMPLERATE, window_s) / 1000.0
@@ -122,6 +135,7 @@ def choose_preview(
         reason,
         max(0, target - latest),
         too_short,
+        None if part_bar is None else part_bar - index,
     )
     check_preview(choice, tempo_map, duration_s, song_start_tick, window_s)
     return choice

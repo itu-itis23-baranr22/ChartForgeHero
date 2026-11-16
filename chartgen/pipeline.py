@@ -28,7 +28,13 @@ from chartgen.chart.charter import ChartedTrack
 from chartgen.chart.difficulty import HARD_RULES, HardRuleViolation
 from chartgen.chart.drum_charter import DRUM_HARD_RULES, UNVERIFIED_GEMS, UNVERIFIED_PIECES, DrumChart
 from chartgen.chart.drum_difficulty import LEVEL_HARD_RULES
-from chartgen.chart.preview import LOUDEST_WINDOW, PREVIEW_LEAD_BARS, PreviewChoice, choose_preview
+from chartgen.chart.preview import (
+    FIRST_START_MIN_BARS,
+    LOUDEST_WINDOW,
+    PREVIEW_LEAD_S,
+    PreviewChoice,
+    choose_preview,
+)
 from chartgen.chart.sections import SONG_SECTION, section_search_start_s, song_section_tick, song_sections, song_start_s
 from chartgen.chart.star_power import HARD_RULES as STAR_POWER_HARD_RULES
 from chartgen.chart.star_power import DRUM_ACTIVATION_NOT_VERIFIED, StarPowerPlan, place_star_power
@@ -489,7 +495,7 @@ def _report_preview(preview: PreviewChoice, warnings: list[str]) -> None:
     else:
         letter = next(iter(preview.loudness_db))
         why = (
-            f"{PREVIEW_LEAD_BARS} bars before {preview.leads_into} ({letter} is the loudest part that comes back, "
+            f"{preview.lead_bars} bars before {preview.leads_into} ({letter} is the loudest part that comes back, "
             f"{preview.loudness_db[letter]:.1f} dB)"
         )
     if preview.moved_earlier_bars:
@@ -507,7 +513,9 @@ def _preview_analysis(preview: PreviewChoice) -> dict[str, object]:
         "tick": preview.tick,
         "rule": preview.rule,
         "leads_into": preview.leads_into,
-        "lead_bars": PREVIEW_LEAD_BARS,
+        "lead_bars": preview.lead_bars,
+        "lead_s": PREVIEW_LEAD_S,
+        "first_start_min_bars": FIRST_START_MIN_BARS,
         "loudness_db_of_parts_that_come_back": preview.loudness_db,
         "fallback_reason": preview.fallback_reason,
         "moved_earlier_bars": preview.moved_earlier_bars,

@@ -278,8 +278,9 @@ def test_a_build_writes_its_sections_and_says_how_it_found_them(tmp_path):
     assert [section["name"] for section in analysis["sections"]["written"]] == ["A1", "B1", "A2", "B2"]
     assert [section["letter"] for section in analysis["sections"]["found"]] == ["A", "B", "A", "B"]
     assert not any(warning.startswith("sections:") for warning in analysis["warnings"])
-    # D.2: B (with the voice and the hiss) is the louder part that comes back, so the preview leads into
-    # B2; four bars before it, its 30 s would run past the 64 s song, so it moves earlier to fit.
+    # D.2: B (with the voice and the hiss) is the louder part that comes back. B1 is only 8 bars into the
+    # song, so the preview leads into B2 (decision 48); 14 s before it, its 30 s would run past the end of
+    # the song, so it moves earlier to fit.
     preview = analysis["preview"]
     assert (preview["rule"], preview["leads_into"]) == ("repeated part", "B2")
     assert list(preview["loudness_db_of_parts_that_come_back"]) == ["B", "A"]
