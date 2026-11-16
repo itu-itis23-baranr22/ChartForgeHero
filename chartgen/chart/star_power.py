@@ -1,10 +1,11 @@
-"""Where star power goes (decision 40, step D.3).
+"""Where star power goes (decision 40, step D.3; counted in bars since SPEC 47).
 
-Every charted instrument gets star power phrases one bar long, about every 25 seconds, and the same
-phrases on all four of its levels, as Californication's human chart has them. The first phrase comes
-about 15 seconds after the song starts; each next one in the bar closest to 25 seconds after the last,
-within 20 to 30 seconds, among the bars that hold a note on every level. Bars with at least two notes on
-the easiest level come first. Each instrument is placed on its own notes.
+Every charted instrument gets star power phrases one bar long, about every ten bars, and the same phrases
+on all four of its levels. The train human charts space theirs 8 to 10 bars apart whatever the tempo (11 s
+at 191 BPM, 22 to 29 s at 97 BPM); a gap in seconds was right for one slow song only. The first phrase
+comes in the bar closest to nine bars after the song starts; each next one in the bar closest to ten bars
+after the last, within 7 to 13, among the bars that hold a note on every level. Bars with at least two
+notes on the easiest level come first. Each instrument is placed on its own notes.
 
 Hard rules, here in code (``check_star_power``) and in the validator: a phrase starts on a bar line,
 phrases do not overlap, every phrase holds a note on every level, and no phrase starts before the song
@@ -46,10 +47,10 @@ class StarPowerRuleViolation(ValueError):
 @dataclass(frozen=True)
 class StarPowerConfig:
     bars: int
-    first_after_s: float
-    gap_s: float
-    min_gap_s: float
-    max_gap_s: float
+    first_after_bars: int
+    gap_bars: int
+    min_gap_bars: int
+    max_gap_bars: int
     preferred_notes_on_easiest: int
     per_minute: tuple[float, float]
 
@@ -69,19 +70,21 @@ def load_star_power_config(path: Path = CONFIG_PATH) -> StarPowerConfig:
     with path.open("rb") as stream:
         values = tomllib.load(stream)
     _take(values, {"phrases", "soft_targets"}, path.name)
+    counts = ("first_after_bars", "gap_bars", "min_gap_bars", "max_gap_bars")
     phrases = _take(
-        dict(values["phrases"]),
-        {"bars", "first_after_s", "gap_s", "min_gap_s", "max_gap_s", "preferred_notes_on_easiest"},
-        f"{path.name} [phrases]",
+        dict(values["phrases"]), {"bars", *counts, "preferred_notes_on_easiest"}, f"{path.name} [phrases]"
     )
     soft = _take(dict(values["soft_targets"]), {"per_minute"}, f"{path.name} [soft_targets]")
     bars = int(phrases["bars"])
     if bars < 1 or bars != phrases["bars"]:
         raise ValueError(f"{path.name} [phrases]: bars must be a whole number of at least 1")
-    first, gap = float(phrases["first_after_s"]), float(phrases["gap_s"])
-    low, high = float(phrases["min_gap_s"]), float(phrases["max_gap_s"])
-    if first < 0 or not 0 < low <= gap <= high:
-        raise ValueError(f"{path.name} [phrases]: needs first_after_s >= 0 and 0 < min_gap_s <= gap_s <= max_gap_s")
+    if any(not isinstance(phrases[key], int) for key in counts):
+        raise ValueError(f"{path.name} [phrases]: {', '.join(counts)} are whole numbers of bars")
+    first, gap, low, high = (int(phrases[key]) for key in counts)
+    if first < 0 or not bars <= low <= gap <= high:
+        raise ValueError(
+            f"{path.name} [phrases]: needs first_after_bars >= 0 and bars <= min_gap_bars <= gap_bars <= max_gap_bars"
+        )
     preferred = int(phrases["preferred_notes_on_easiest"])
     if preferred < 1:
         raise ValueError(f"{path.name} [phrases]: preferred_notes_on_easiest must be at least 1")
@@ -99,6 +102,8 @@ class PlacedPhrase:
     end_s: float
     notes: tuple[int, ...]
     """Positions inside the phrase on each level, in the order of the tracks given."""
+    bar: int = 0
+    """Which bar of the song it starts on, counting from the first bar line."""
 
 
 @dataclass(frozen=True)
@@ -115,6 +120,11 @@ class StarPowerPlan:
     def gaps_s(self) -> list[float]:
         starts = [phrase.start_s for phrase in self.phrases]
         return [later - earlier for earlier, later in zip(starts, starts[1:])]
+
+    @property
+    def gaps_bars(self) -> list[int]:
+        bars = [phrase.bar for phrase in self.phrases]
+        return [later - earlier for earlier, later in zip(bars, bars[1:])]
 
     @property
     def per_minute(self) -> float | None:
@@ -135,12 +145,12 @@ class StarPowerPlan:
                 f"star power: {name}: {len(self.phrases)} phrases, {self.per_minute:.1f} per minute "
                 f"(wanted {low:g} to {high:g})"
             )
-        long_gaps = [gap for gap in self.gaps_s if gap > self.config.max_gap_s + 1e-6]
+        long_gaps = [gap for gap in self.gaps_bars if gap > self.config.max_gap_bars]
         if long_gaps:
             gaps = "1 gap" if len(long_gaps) == 1 else f"{len(long_gaps)} gaps"
             warnings.append(
-                f"star power: {name}: {gaps} longer than {self.config.max_gap_s:g} s "
-                f"(longest {max(long_gaps):.1f} s): no bar in between held a note on every level"
+                f"star power: {name}: {gaps} longer than {self.config.max_gap_bars} bars "
+                f"(longest {max(long_gaps)} bars): no bar in between held a note on every level"
             )
         sparse = sum(phrase.notes[-1] < self.config.preferred_notes_on_easiest for phrase in self.phrases)
         if sparse:
@@ -152,7 +162,7 @@ class StarPowerPlan:
         return warnings
 
     def as_dict(self) -> dict[str, object]:
-        gaps = self.gaps_s
+        gaps, gaps_bars = self.gaps_s, self.gaps_bars
         return {
             "phrases": [
                 {
@@ -169,6 +179,9 @@ class StarPowerPlan:
             "median_gap_s": round(float(np.median(gaps)), 1) if gaps else None,
             "shortest_gap_s": round(min(gaps), 1) if gaps else None,
             "longest_gap_s": round(max(gaps), 1) if gaps else None,
+            "median_gap_bars": float(np.median(gaps_bars)) if gaps_bars else None,
+            "shortest_gap_bars": min(gaps_bars) if gaps_bars else None,
+            "longest_gap_bars": max(gaps_bars) if gaps_bars else None,
             "bars_per_phrase": self.config.bars,
         }
 
@@ -207,39 +220,43 @@ def place_star_power(
     bars = tempo_map.bar_lines(duration_s)
     times = tempo_map.seconds_at(bars.astype(np.float64)) if bars.size else np.empty(0)
 
-    candidates: list[tuple[int, int, float, float, tuple[int, ...]]] = []
+    # (bar index, start tick, end tick, start s, end s, notes on each level)
+    candidates: list[tuple[int, int, int, float, float, tuple[int, ...]]] = []
     for index in range(bars.size - config.bars):
         start, end = int(bars[index]), int(bars[index + config.bars])
         if start < song_start_tick:
             continue
         notes = tuple(_inside(level, start, end) for level in positions)
         if min(notes) >= 1:
-            candidates.append((start, end, float(times[index]), float(times[index + config.bars]), notes))
+            candidates.append((index, start, end, float(times[index]), float(times[index + config.bars]), notes))
 
-    def preference(candidate, target_s: float) -> tuple[bool, float, float]:
-        return candidate[4][-1] < config.preferred_notes_on_easiest, abs(candidate[2] - target_s), candidate[2]
+    def preference(candidate, target: int) -> tuple[bool, int, int]:
+        return candidate[5][-1] < config.preferred_notes_on_easiest, abs(candidate[0] - target), candidate[0]
 
-    chosen: list[tuple[int, int, float, float, tuple[int, ...]]] = []
-    song_start_s = float(tempo_map.seconds_at(float(song_start_tick)))
-    target = song_start_s + config.first_after_s
-    low, high = song_start_s, target + (config.max_gap_s - config.gap_s)
+    chosen: list[tuple[int, int, int, float, float, tuple[int, ...]]] = []
+    first_bar = int(np.searchsorted(bars, song_start_tick, side="left"))
+    target = first_bar + config.first_after_bars
+    low, high = first_bar, target + (config.max_gap_bars - config.gap_bars)
     while True:
-        window = [item for item in candidates if low - 1e-6 <= item[2] <= high + 1e-6]
+        window = [item for item in candidates if low <= item[0] <= high]
         if window:
             pick = min(window, key=lambda item: preference(item, target))
         else:
-            later = [item for item in candidates if item[2] >= low - 1e-6]
+            later = [item for item in candidates if item[0] >= low]
             if not later:
                 break
             pick = later[0]
         chosen.append(pick)
-        target = pick[2] + config.gap_s
-        low, high = pick[2] + config.min_gap_s, pick[2] + config.max_gap_s
+        target = pick[0] + config.gap_bars
+        low, high = pick[0] + config.min_gap_bars, pick[0] + config.max_gap_bars
 
     plan = StarPowerPlan(
         instrument,
         levels,
-        tuple(PlacedPhrase(start, end - start, start_s, end_s, notes) for start, end, start_s, end_s, notes in chosen),
+        tuple(
+            PlacedPhrase(start, end - start, start_s, end_s, notes, index)
+            for index, start, end, start_s, end_s, notes in chosen
+        ),
         duration_s,
         config,
     )

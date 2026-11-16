@@ -1,5 +1,6 @@
 """Phase D, D.3: star power. Where phrases go, the hard rules in code and in the validator, a build, and
-Californication against its human chart."""
+Californication against its human chart. Since SPEC 47 the spacing is counted in bars: the first phrase about
+9 bars after the song starts, the next ones about 10 bars apart, 7 to 13."""
 
 import json
 from dataclasses import replace
@@ -43,18 +44,20 @@ def levels(expert: list[int], easy: list[int] | None = None, instrument=Instrume
 # ---------------------------------------------------------------- where phrases go
 
 
-def test_phrases_last_a_bar_about_every_twenty_five_seconds_the_same_on_every_level():
+def test_phrases_last_a_bar_about_every_ten_bars_the_same_on_every_level():
     plan = place_star_power(levels(beats(0, 120)), TEMPO, 120.0)
-    # The first goes to the bar closest to 15 s, the next to the bar closest to 25 s after the last; a tie
-    # goes to the earlier bar (14 s and 16 s, then 38 s and 40 s...).
-    assert [phrase.start_s for phrase in plan.phrases] == pytest.approx([14.0, 38.0, 62.0, 86.0, 110.0])
+    # At 120 BPM a bar is 2 s: the first goes to bar 9 (18 s), the next ones 10 bars after the last.
+    assert [phrase.start_s for phrase in plan.phrases] == pytest.approx([18.0, 38.0, 58.0, 78.0, 98.0, 118.0])
+    assert [phrase.bar for phrase in plan.phrases] == [9, 19, 29, 39, 49, 59]
+    assert plan.gaps_bars == [10] * 5
     assert all(phrase.length == BAR and phrase.tick % BAR == 0 for phrase in plan.phrases)
     assert all(phrase.notes == (4, 4, 4, 4) for phrase in plan.phrases), "four beats on each level"
     assert plan.star_power_phrases() == [StarPowerPhrase(phrase.tick, BAR) for phrase in plan.phrases]
-    assert plan.per_minute == pytest.approx(2.5)
+    assert plan.per_minute == pytest.approx(3.0)
     assert plan.soft_warnings() == []
     record = plan.as_dict()
-    assert (record["count"], record["median_gap_s"], record["bars_per_phrase"]) == (5, 24.0, 1)
+    assert (record["count"], record["median_gap_s"], record["median_gap_bars"], record["bars_per_phrase"]) == (6, 20.0, 10.0, 1)
+    assert (record["shortest_gap_bars"], record["longest_gap_bars"]) == (10, 10)
     assert record["phrases"][0]["notes_inside"] == {"expert": 4, "hard": 4, "medium": 4, "easy": 4}
 
 
@@ -68,8 +71,8 @@ def test_bars_with_two_notes_on_the_easiest_level_come_first():
     one_per_bar = list(range(0, 60 * BAR, BAR))
     easy = sorted(one_per_bar + [8 * BAR + RES])  # bar 8 (16 s) has two
     plan = place_star_power(levels(beats(0, 120), easy=easy), TEMPO, 120.0)
-    assert plan.phrases[0].start_s == pytest.approx(16.0), "16 s with two notes beats 14 s with one"
-    assert plan.phrases[1].start_s == pytest.approx(40.0), "then the closest bar again: 16 + 25 = 41"
+    assert plan.phrases[0].start_s == pytest.approx(16.0), "bar 8 with two notes beats bar 9 with one"
+    assert plan.phrases[1].start_s == pytest.approx(36.0), "then the closest bar again: bar 8 + 10 = 18"
     sparse = [warning for warning in plan.soft_warnings() if "fewer than 2 notes on Easy" in warning]
     assert sparse and not sparse[0].startswith("star power: guitar: 1 phrases"), "counted in plain words"
 
@@ -78,15 +81,15 @@ def test_a_long_gap_is_reported_not_filled_with_a_bar_that_lacks_notes():
     easy = beats(0, 20) + beats(70, 120)
     plan = place_star_power(levels(beats(0, 120), easy=easy), TEMPO, 120.0)
     assert not any(20.0 <= phrase.start_s < 70.0 for phrase in plan.phrases)
-    assert max(plan.gaps_s) > 30.0
-    assert "star power: guitar: 1 gap longer than 30 s (longest 56.0 s): no bar in between held a note on every level" in plan.soft_warnings()
+    assert plan.gaps_bars[0] == 26, "bar 9 (18 s) to bar 35 (70 s), the first bar Easy plays again"
+    assert "star power: guitar: 1 gap longer than 13 bars (longest 26 bars): no bar in between held a note on every level" in plan.soft_warnings()
 
 
 def test_no_phrase_starts_before_the_song_does():
     start = 10 * BAR  # 20 s, where Song is after an opening
     plan = place_star_power(levels(beats(0, 120)), TEMPO, 120.0, song_start_tick=start)
     assert plan.phrases[0].tick >= start
-    assert plan.phrases[0].start_s == pytest.approx(34.0), "15 s after the song starts: 34 s and 36 s tie"
+    assert plan.phrases[0].start_s == pytest.approx(38.0), "nine bars after the song starts: bar 19"
 
 
 def test_no_bar_that_every_level_plays_means_no_star_power_and_a_warning():
@@ -106,9 +109,9 @@ def test_a_phrase_lasts_one_bar_in_any_meter():
 
 
 def test_the_settings_choose_the_spacing_and_the_warnings():
-    config = replace(load_star_power_config(), gap_s=40.0, min_gap_s=35.0, max_gap_s=45.0, per_minute=(2.0, 3.0))
+    config = replace(load_star_power_config(), gap_bars=20, min_gap_bars=18, max_gap_bars=22, per_minute=(2.0, 3.0))
     plan = place_star_power(levels(beats(0, 120)), TEMPO, 120.0, config=config)
-    assert [phrase.start_s for phrase in plan.phrases] == pytest.approx([14.0, 54.0, 94.0])
+    assert [phrase.start_s for phrase in plan.phrases] == pytest.approx([18.0, 58.0, 98.0])
     assert any("1.5 per minute (wanted 2 to 3)" in warning for warning in plan.soft_warnings())
 
 
@@ -143,14 +146,20 @@ def test_four_hard_rules_are_named():
     "text,message",
     [
         ("[phrases]\nbars = 1\n", "expected keys"),
-        ("[phrases]\nbars = 0\nfirst_after_s = 15.0\ngap_s = 25.0\nmin_gap_s = 20.0\nmax_gap_s = 30.0\n"
-         "preferred_notes_on_easiest = 2\n[soft_targets]\nper_minute = [1.5, 3.0]\n", "bars must be"),
-        ("[phrases]\nbars = 1\nfirst_after_s = 15.0\ngap_s = 25.0\nmin_gap_s = 26.0\nmax_gap_s = 30.0\n"
-         "preferred_notes_on_easiest = 2\n[soft_targets]\nper_minute = [1.5, 3.0]\n", "min_gap_s <= gap_s"),
+        ("[phrases]\nbars = 0\nfirst_after_bars = 9\ngap_bars = 10\nmin_gap_bars = 7\nmax_gap_bars = 13\n"
+         "preferred_notes_on_easiest = 2\n[soft_targets]\nper_minute = [1.5, 4.5]\n", "bars must be"),
+        ("[phrases]\nbars = 1\nfirst_after_bars = 9\ngap_bars = 10\nmin_gap_bars = 11\nmax_gap_bars = 13\n"
+         "preferred_notes_on_easiest = 2\n[soft_targets]\nper_minute = [1.5, 4.5]\n", "min_gap_bars <= gap_bars"),
+        ("[phrases]\nbars = 2\nfirst_after_bars = 9\ngap_bars = 10\nmin_gap_bars = 1\nmax_gap_bars = 13\n"
+         "preferred_notes_on_easiest = 2\n[soft_targets]\nper_minute = [1.5, 4.5]\n", "bars <= min_gap_bars"),
+        ("[phrases]\nbars = 1\nfirst_after_bars = 9\ngap_bars = 10.5\nmin_gap_bars = 7\nmax_gap_bars = 13\n"
+         "preferred_notes_on_easiest = 2\n[soft_targets]\nper_minute = [1.5, 4.5]\n", "whole numbers of bars"),
         ("[phrases]\nbars = 1\nfirst_after_s = 15.0\ngap_s = 25.0\nmin_gap_s = 20.0\nmax_gap_s = 30.0\n"
-         "preferred_notes_on_easiest = 2\n[soft_targets]\nper_minute = [3.0, 1.5]\n", "low < high"),
-        ("[phrases]\nbars = 1\nfirst_after_s = 15.0\ngap_s = 25.0\nmin_gap_s = 20.0\nmax_gap_s = 30.0\n"
-         "preferred_notes_on_easiest = 2\nfills = true\n[soft_targets]\nper_minute = [1.5, 3.0]\n", "expected keys"),
+         "preferred_notes_on_easiest = 2\n[soft_targets]\nper_minute = [1.5, 3.0]\n", "expected keys"),
+        ("[phrases]\nbars = 1\nfirst_after_bars = 9\ngap_bars = 10\nmin_gap_bars = 7\nmax_gap_bars = 13\n"
+         "preferred_notes_on_easiest = 2\n[soft_targets]\nper_minute = [4.5, 1.5]\n", "low < high"),
+        ("[phrases]\nbars = 1\nfirst_after_bars = 9\ngap_bars = 10\nmin_gap_bars = 7\nmax_gap_bars = 13\n"
+         "preferred_notes_on_easiest = 2\nfills = true\n[soft_targets]\nper_minute = [1.5, 4.5]\n", "expected keys"),
     ],
 )
 def test_the_settings_file_refuses_what_it_does_not_know_or_cannot_use(tmp_path, text, message):
@@ -162,7 +171,10 @@ def test_the_settings_file_refuses_what_it_does_not_know_or_cannot_use(tmp_path,
 
 def test_the_shipped_settings_are_the_approved_ones():
     config = load_star_power_config()
-    assert (config.bars, config.min_gap_s, config.max_gap_s) == (1, 20.0, 30.0), "decision 40: one bar, every 20-30 s"
+    assert config.bars == 1, "decision 40: one bar"
+    # SPEC 47: counted in bars, from the train human charts. Before: every 25 s, 20 to 30 s, the first after 15 s.
+    assert (config.first_after_bars, config.gap_bars, config.min_gap_bars, config.max_gap_bars) == (9, 10, 7, 13)
+    assert config.per_minute == (1.5, 4.5)
 
 
 # ---------------------------------------------------------------- the validator
@@ -247,14 +259,16 @@ def test_a_build_gives_every_level_of_an_instrument_the_same_star_power(song_fil
 
 
 SPARSE_ON_EASY = {Instrument.GUITAR: 1, Instrument.BASS: 0, Instrument.DRUMS: 0}
-"""Phrases with fewer than two notes on Easy, at most, as measured on 2026-11-15 (guitar's 11th phrase holds
-one: no bar 20 to 30 s after the 10th had two). The human chart has two or more in every phrase."""
+"""Phrases with fewer than two notes on Easy, at most, as measured on 2026-11-15 (guitar's 11th phrase held
+one: no bar 20 to 30 s after the 10th had two; since SPEC 47 none). The human chart has two or more in every
+phrase."""
 
 
 @pytest.mark.real
 @pytest.mark.parametrize("real_song", [CALIFORNICATION], indirect=True)
 def test_californication_star_power_is_spaced_like_the_human_charts(real_song):
-    """Californication is train: the settings were chosen with its human chart in view."""
+    """Californication is train: the settings were chosen with its human chart in view (since SPEC 47 with all
+    eight train charts). The human spaces its phrases 9 to 12 bars apart (22 to 29 s)."""
     tempo = real_song.tempo
     human = {instrument: len(phrases) for instrument, phrases in real_song.reference.star_power.items()}
     config = load_star_power_config()
@@ -272,11 +286,12 @@ def test_californication_star_power_is_spaced_like_the_human_charts(real_song):
             )
         ]
         plans[instrument] = plan = place_star_power(tracks, tempo.tempo_map, real_song.stems.duration_s, song_section_tick(tempo))
-        print(instrument.value, len(plan.phrases), "phrases, human", human[instrument], "gaps", np.round(plan.gaps_s, 1).tolist(),
-              "easy notes", [phrase.notes[-1] for phrase in plan.phrases])
+        print(instrument.value, len(plan.phrases), "phrases, human", human[instrument], "gaps", plan.gaps_bars, "bars,",
+              np.round(plan.gaps_s, 1).tolist(), "s, easy notes", [phrase.notes[-1] for phrase in plan.phrases])
     for instrument, plan in plans.items():
         assert abs(len(plan.phrases) - human[instrument]) <= 2, instrument
         assert config.per_minute[0] <= plan.per_minute <= config.per_minute[1], instrument
-        assert all(config.min_gap_s - 1e-6 <= gap <= config.max_gap_s + 1e-6 for gap in plan.gaps_s), instrument
+        # SPEC 47, approved by the owner: the gaps in bars. Before: 20 to 30 s, the old rule itself.
+        assert all(config.min_gap_bars <= gap <= config.max_gap_bars for gap in plan.gaps_bars), instrument
         sparse = sum(phrase.notes[-1] < config.preferred_notes_on_easiest for phrase in plan.phrases)
         assert sparse <= SPARSE_ON_EASY[instrument], instrument

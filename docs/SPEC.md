@@ -287,6 +287,15 @@ Decisions made since it was written are listed first and take precedence.
    with their tempo maps doubled 0.581 to 0.682 (0.676 at their real tempo). Pairing from the map's first bar
    put First Date's boundaries a bar off (0.250). The hard rules (bar line, at least four bars, ASCII names) and
    the validator are unchanged; `analysis.json` records `bar_step`. At 150 BPM or slower nothing changes.
+47. **Star power counted in bars (after reference tuning step 5, 2026-11-16).** Phrases stay one bar long and
+   the same on every level of an instrument, but their spacing is counted in bar lines (`star_power.toml`):
+   the first in the bar closest to 9 bars after the song starts, each next one closest to 10 bars after the
+   last, within 7 to 13, among the bars that hold a note on every level (two or more on Easy first). The
+   eight train human charts space phrases 8 to 10 bars apart whatever the tempo (11 s at 191 BPM, 22 to 29 s at
+   97 BPM); 25 s (decision 40) came from Californication alone and left First Date with 6 phrases against
+   11-12. Chosen on train (owner's criteria): our phrase count over the human's 0.83 to 1.00 on average, median
+   gap 10 bars against 9. No floor in seconds (the owner: First Date's human spaces them 11 s). The hard rules
+   and the validator are unchanged; `analysis.json` adds the gaps in bars, and a long gap warns in bars.
 
 ## Phase B1 targets (one reference song so far)
 

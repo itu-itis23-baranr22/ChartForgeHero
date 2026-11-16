@@ -5,23 +5,28 @@
 # instrument, and none starts before the song does (before Song after an opening). Loading refuses any
 # key it does not know.
 #
-# Californication (train) is the one human chart with star power: 11-13 phrases on guitar, bass and
-# drums, one bar each, all on a bar line, the same span on every level, 20 to 30 s apart (median 22-29 s),
-# the first 10 to 28 s into the song, and at least two notes inside on Easy.
+# Since SPEC 47 (2026-11-16) the spacing is counted in bars, set on the eight train human charts: phrases one
+# bar long (median 1.0), 8 to 10 bars apart (median 9; Dani California 5-6, Fat Lip 5-8) whatever the tempo,
+# 11 s apart at 191 BPM and 22 to 29 s at 97 BPM; the first one a median 9 bars after the song starts; 1.9 to
+# 4.2 phrases a minute. Until then it was 25 s (20 to 30 s), from Californication alone, which left First Date
+# (191 BPM) with 6 phrases against the human's 11-12.
 
 [phrases]
 # How long a phrase is, in bars (decision 40).
 bars = 1
-# The first phrase goes about this long after the song starts, the next ones about gap_s apart.
-first_after_s = 15.0
-gap_s = 25.0
-# A phrase starts at least min_gap_s after the previous one, and at most max_gap_s when a bar there
-# holds a note on every level. A longer gap is reported.
-min_gap_s = 20.0
-max_gap_s = 30.0
+# The first phrase goes about first_after_bars after the song starts, the next ones about gap_bars apart:
+# a phrase starts at least min_gap_bars after the previous one, and at most max_gap_bars when a bar there
+# holds a note on every level. A longer gap is reported. Chosen on train from gap 7 to 11 bars, windows of
+# +-2 and +-3: 10 makes our phrase count the human's (mean ratio 0.83 to 1.00) with a median gap of 10 bars
+# against the human's 9; at 9 we placed 13% too many, since the humans leave some parts (an intro, a solo)
+# without any.
+first_after_bars = 9
+gap_bars = 10
+min_gap_bars = 7
+max_gap_bars = 13
 # Bars with at least this many notes on the instrument's easiest level come first.
 preferred_notes_on_easiest = 2
 
 [soft_targets]
-# Phrases per minute of the song; the build warns outside this range.
-per_minute = [1.5, 3.0]
+# Phrases per minute of the song; the build warns outside this range. The train humans: 1.9 to 4.2.
+per_minute = [1.5, 4.5]

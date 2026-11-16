@@ -450,9 +450,12 @@ def _place_star_power(
         warnings.extend(plan.soft_warnings())
         if not plan.phrases:
             continue
-        gaps = plan.gaps_s
+        gaps, gaps_bars = plan.gaps_s, plan.gaps_bars
         spacing = (
-            f", {min(gaps):.1f}-{max(gaps):.1f} s apart (median {float(np.median(gaps)):.1f} s)" if gaps else ""
+            f", {min(gaps_bars)}-{max(gaps_bars)} bars apart (median {float(np.median(gaps_bars)):g} bars, "
+            f"{float(np.median(gaps)):.1f} s)"
+            if gaps
+            else ""
         )
         fewest = min(phrase.notes[-1] for phrase in plan.phrases)
         unverified = "; activation without fills not verified in the game" if instrument is Instrument.DRUMS else ""
