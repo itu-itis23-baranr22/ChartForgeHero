@@ -34,7 +34,7 @@ from chartgen.chart.difficulty import (
 )
 from chartgen.core.drums import DrumGem
 from chartgen.core.model import Difficulty, Instrument, Track
-from chartgen.core.timing import TempoMap
+from chartgen.core.timing import FLOOR_BPM, TempoMap, seconds_floor
 
 CONFIG_PATH = Path(__file__).with_name("drum_difficulty.toml")
 
@@ -99,6 +99,10 @@ class DrumLevelConfig:
     """The share of the level above's lone kicks (positions holding only the kick) that may stay, the best
     by score; the rest are no candidates. A preference, not a hard rule: 1.0 keeps them all. A lower score
     alone does not do it, since the gap rule often leaves a lone kick alone in its slot."""
+    fast_kick_hihat_gap_beats: float | None = None
+    """Where the tempo is above :data:`FLOOR_BPM`, a kick that stands for an Expert kick + hi-hat stays only
+    if the level's previous kick is at least this many beats at FLOOR_BPM before it; otherwise the position
+    goes. None: no such rule. A preference, set on Easy only (reference tuning step 5, SPEC 45)."""
 
 
 @dataclass(frozen=True)
@@ -129,7 +133,7 @@ def _load_level(name: str, level: Difficulty, values: Mapping[str, object], tole
     values = dict(values)
     known = {
         "position_ratio", "min_gap_beats", "min_gap_s", "gem_weights", "gem_shares", "soft_targets", "second_gem_from",
-        "lone_kick_share",
+        "lone_kick_share", "fast_kick_hihat_gap_beats",
     }
     unknown = set(values) - known
     if unknown:
@@ -144,6 +148,9 @@ def _load_level(name: str, level: Difficulty, values: Mapping[str, object], tole
     lone_kicks = float(values.get("lone_kick_share", 1.0))  # type: ignore[arg-type]
     if not 0 <= lone_kicks <= 1:
         raise ValueError(f"{where}: lone_kick_share must be from 0 to 1")
+    fast_gap = values.get("fast_kick_hihat_gap_beats")
+    if fast_gap is not None and not float(fast_gap) > 0:  # type: ignore[arg-type]
+        raise ValueError(f"{where}: fast_kick_hihat_gap_beats must be positive")
     weights = {_gem(gem, where): float(weight) for gem, weight in dict(values.get("gem_weights", {})).items()}  # type: ignore[call-overload]
     second = frozenset(_gem(gem, where) for gem in values.get("second_gem_from", [gem.value for gem in DrumGem]))  # type: ignore[union-attr]
     if level in NO_KICK_WITH_A_PAD and DrumGem.KICK in second:
@@ -155,7 +162,10 @@ def _load_level(name: str, level: Difficulty, values: Mapping[str, object], tole
     unknown_targets = set(ranges) - _SOFT_TARGET_NAMES
     if unknown_targets:
         raise ValueError(f"{where}: unknown soft targets {sorted(unknown_targets)}")
-    return DrumLevelConfig(ratio, gap, weights, second, DrumSoftTargets(ranges, shares, tolerance), floor, lone_kicks)
+    return DrumLevelConfig(
+        ratio, gap, weights, second, DrumSoftTargets(ranges, shares, tolerance), floor, lone_kicks,
+        None if fast_gap is None else float(fast_gap),  # type: ignore[arg-type]
+    )
 
 
 def load_drum_config(path: Path = CONFIG_PATH) -> DrumDifficultyConfig:
@@ -346,6 +356,43 @@ def _keep_lone_kicks(
     return ticks[stay], scores[stay], [name for name, kept in zip(metric, stay) if kept]
 
 
+def _space_fast_kicks(
+    chosen: np.ndarray,
+    ticks: np.ndarray,
+    times: np.ndarray,
+    gems: Mapping[int, tuple[DrumGem, ...]],
+    expert: Mapping[int, tuple[DrumGem, ...]],
+    tempo_map: TempoMap,
+    gap_beats: float,
+) -> np.ndarray:
+    """Leave out the kicks that stand for an Expert kick + hi-hat, where the tempo is above FLOOR_BPM and the
+    previous kick that stays is closer than ``gap_beats`` would last at FLOOR_BPM (SPEC 45).
+
+    A rock beat at 183 BPM, kick + hi-hat on 1 and 3 and snare on 2 and 4, came down on Easy to kick, snare,
+    kick, snare on every beat, as fast as Expert's backbeat. The human Easy of the one fast train song (First
+    Date, 191 BPM) leaves out 59% of its kick + hi-hat positions. Snares, cymbals and lone kicks stay as
+    they are, and at FLOOR_BPM or slower nothing changes. ``chosen`` is in time order.
+    """
+    least = seconds_floor(gap_beats) - 1e-6  # a gap met exactly is met
+    starts = np.array([event.tick for event in tempo_map.tempos], dtype=np.int64)
+    bpms = [event.bpm for event in tempo_map.tempos]
+    keep: list[int] = []
+    last_kick = -math.inf
+    for index in chosen.tolist():
+        tick = int(ticks[index])
+        if DrumGem.KICK not in gems[tick]:
+            keep.append(index)
+            continue
+        fast = bpms[int(np.searchsorted(starts, tick, side="right")) - 1] > FLOOR_BPM
+        upper = expert.get(tick, ())
+        stands_for_hihat = DrumGem.KICK in upper and DrumGem.YELLOW_CYMBAL in upper
+        if fast and stands_for_hihat and times[index] - last_kick < least:
+            continue
+        keep.append(index)
+        last_kick = float(times[index])
+    return np.array(keep, dtype=np.int64)
+
+
 def _percentile_ranks(values: np.ndarray) -> np.ndarray:
     if values.size < 2:
         return np.ones(values.size)
@@ -359,6 +406,8 @@ class ReducedDrumLevel:
     soft_targets: tuple[SoftTargetResult, ...]
     protected: int
     """Positions kept whatever the target said: the snare on beats 2 and 4."""
+    fast_kicks_dropped: int = 0
+    """Positions left out by ``fast_kick_hihat_gap_beats``."""
 
 
 def reduce_drums(
@@ -379,6 +428,7 @@ def reduce_drums(
     strengths = strengths or {}
     resolution = tempo_map.resolution
     upper = gems_by_tick(expert)
+    expert_gems = upper
     expert_count = len(upper)
     weights = config.importance
     reduced: dict[Difficulty, ReducedDrumLevel] = {}
@@ -424,6 +474,13 @@ def reduce_drums(
             np.arange(ticks.size), times, scores, protected, target, math.inf, ticks=ticks, min_gap_ticks=gap,
             floor_s=floor,
         )
+        dropped = 0
+        if settings.fast_kick_hihat_gap_beats is not None and chosen.size:
+            spaced = _space_fast_kicks(
+                chosen, ticks, times, candidates, expert_gems, tempo_map, settings.fast_kick_hihat_gap_beats
+            )
+            dropped = int(chosen.size - spaced.size)
+            chosen = spaced
         kept = {int(ticks[index]): candidates[int(ticks[index])] for index in chosen}
         notes = [gem.note(tick) for tick, gems in kept.items() for gem in gems]
         track = Track(Instrument.DRUMS, level, notes)
@@ -434,6 +491,7 @@ def reduce_drums(
             measures,
             tuple(check_drum_soft_targets(measures, settings.soft_targets)),
             int(protected[chosen].sum()) if chosen.size else 0,
+            dropped,
         )
         upper = kept
     check_drum_levels(tracks, resolution)

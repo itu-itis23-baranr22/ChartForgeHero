@@ -33,6 +33,9 @@ auto_hopo_share = [0.07, 0.17]
 [hard]
 lane_shares = [0.245, 0.263, 0.160, 0.177, 0.154]
 position_ratio = 0.72
+# Reference tuning step 5 (SPEC 45) left Hard as it was. The best train setting (0.80 and 0.15-0.20 s) gained
+# 0.01 of note F1 but took Californication's Hard below its approved floor of 0.77; within the floor the gain
+# was 0.004, and 0.20 s would put gaps under the shortest the human uses in four train songs.
 min_gap_s = 0.25
 # Eighth notes may always stay. In a fast song 0.25 s is longer than an eighth note and thins the level
 # out: at 130 BPM an eighth note is 0.23 s. Up to 120 BPM, this changes nothing.
@@ -55,8 +58,13 @@ auto_hopo_share = [0.0, 0.03]
 # The human holds almost nothing on Medium and Easy, 1% against Hard's 29%. Only very long notes stay held.
 [medium]
 lane_shares = [0.324, 0.251, 0.248, 0.168, 0.009]
-position_ratio = 0.47
+# Reference tuning step 5 (SPEC 45): 0.47 to 0.50, and quarter notes may always stay, as eighth notes do on
+# Hard. Above 150 BPM a beat is shorter than 0.40 s, and the gap rule left First Date's Medium (191 BPM) 131
+# positions short of its target; its human Medium keeps one note a beat. Train Medium note F1 0.744 to 0.785
+# (First Date 0.559 to 0.825); Californication unchanged. Up to 150 BPM min_gap_beats changes nothing.
+position_ratio = 0.50
 min_gap_s = 0.40
+min_gap_beats = 1.0
 top_lane = 3
 lane_map = [0, 1, 1, 2, 3]
 fidelity = 0.5
@@ -64,9 +72,10 @@ min_sustain_beats = 4.0
 keep_auto_hopos = false
 
 [medium.soft_targets]
-position_ratio = [0.41, 0.53]
+position_ratio = [0.44, 0.56]
 busiest_lane_share = [0.0, 0.45]
-min_gap_s = [0.40, inf]
+# A quarter note at 200 BPM.
+min_gap_s = [0.30, inf]
 sustain_share = [0.0, 0.05]
 auto_hopo_share = [0.0, 0.01]
 

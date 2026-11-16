@@ -62,7 +62,10 @@ auto_hopo_share = [0.0, 0.05]
 
 [hard]
 lane_shares = [0.208, 0.229, 0.246, 0.207, 0.110]
-position_ratio = 0.67
+# Reference tuning step 5 (SPEC 45): 0.67 to 0.80, the best train Hard note F1 of a sweep from 0.67 to 0.90
+# (0.703 to 0.718; outside RHCP 0.701 to 0.727). Our Expert has 0.89 of the human's positions, so Hard now
+# has 0.98 of the human Hard's (0.84 before). Medium and Easy did not change. Keys use this file too.
+position_ratio = 0.80
 min_gap_s = 0.15
 top_lane = 4
 lane_map = [0, 1, 2, 3, 4]
@@ -75,7 +78,7 @@ keep_auto_hopos = true
 three_note_chords = false
 
 [hard.soft_targets]
-position_ratio = [0.60, 0.75]
+position_ratio = [0.73, 0.87]
 chord_share = [0.40, 0.70]
 orange_share = [0.0, 0.10]
 on_beat_share = [0.50, 1.0]

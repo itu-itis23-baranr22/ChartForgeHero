@@ -341,9 +341,10 @@ def test_sixteenth_notes_stay_apart_however_fast_the_song():
     assert np.diff(ticks[chosen]).min() >= 96
 
 
-def test_only_hard_on_bass_counts_beats_as_well_as_seconds():
+def test_bass_hard_and_medium_count_beats_as_well_as_seconds():
     assert load_config(BASS_CONFIG_PATH).levels[Difficulty.HARD].min_gap_beats == 0.5
-    assert load_config(BASS_CONFIG_PATH).levels[Difficulty.MEDIUM].min_gap_beats is None
+    # Reference tuning step 5 (SPEC 45): a quarter note may always stay on Medium. Before: None.
+    assert load_config(BASS_CONFIG_PATH).levels[Difficulty.MEDIUM].min_gap_beats == 1.0
     assert load_config(BASS_CONFIG_PATH).levels[Difficulty.EASY].min_gap_beats is None
     assert all(level.min_gap_beats is None for level in load_config().levels.values()), "not guitar"
 
@@ -388,7 +389,8 @@ GUITAR_CONFIG_SHA256 = {
     # Medium and Easy lane maps, train-based soft targets, the orange check. Before: 01a75c2a...bab023 and
     # 30d3bf54...b1f61c8.
     "chart/fret_weights.toml": "18b26bcfa9369e2af3399b3c0fe066b60d9009ef1fe78ad934dafc89d864c9eb",
-    "chart/difficulty.toml": "587c38ca24b334cbdcc4b5aede00dbc35d2731f3d0d2a4122d5de3f8d0417406",
+    # Reference tuning step 5 (SPEC 45): Hard position_ratio 0.67 to 0.80 and its soft target. Before: 587c38ca...417406.
+    "chart/difficulty.toml": "7683e6e2e469ae99c130820a5e26ded3831301a5c3ee46de866a6f45a6cbc510",
     # Guitar's own tuning changed it (reference tuning step 2, new limits 12 dB / -17 dB). Before: 2dd061dd...a2e33.
     # Step 3 added the warning limit warn_removed_share; the limits stay. Before: 4d0fac69...0de398.
     "audio/vocal_bleed.toml": "c00fd42477099888419baec9e8a4b252c3d1ec8e5187d72a86f229933251470b",
@@ -403,10 +405,13 @@ def test_tuning_bass_leaves_guitars_settings_alone(name):
 
 BASS_CONFIG_SHA256 = {
     "chart/bass_fret_weights.toml": "575dee8311a239f3f5f0e8b838e1ae49aa53dc736e8d27965f8533044c918fb1",
-    "chart/bass_difficulty.toml": "5fd616e5ad2ec9849bb92df8de1a0acb36ef90054224a0e375436340965be716",
+    # Reference tuning step 5 (SPEC 45): Medium position_ratio 0.47 to 0.50, min_gap_beats 1.0, its soft targets;
+    # a note on Hard, which stays as it was. Before: 5fd616e5...965be716.
+    "chart/bass_difficulty.toml": "10c5e5c3368d3ec207de89e6fa014c713e3d3d3c663974fa9c939a109da22844",
     "audio/quiet_notes.toml": "38268df1c07d1cf80888a9bfc4b35f188497c45e234dee3675f091a22e99c642",
 }
-"""As at 2e91ece. Drums have their own files and must leave these alone."""
+"""As at 2e91ece, but bass_difficulty.toml since reference tuning step 5. Drums have their own files and must
+leave these alone."""
 
 
 @pytest.mark.parametrize("name", BASS_CONFIG_SHA256)
@@ -893,11 +898,14 @@ def test_the_configured_limit_costs_the_human_bass_chart_at_most_0_005(real_song
         # than 0.1 s, guitar's own onset settings, new vocal-bleed limits. Not played yet. Before: d3a9782f...4c0e14.
         # Reference tuning step 3 (SPEC 43): repeat rule, register and lane prior, Medium and Easy lane maps,
         # sustains ended at re-attacks; same positions. Not played yet. Before: f43b6e8d...d21b761.
-        ("LastResort.wav", "737bc3b817d3c39fb5dd2bcbd0717e894312f4985539e15484ce4c48f597ac6f"),
+        # Reference tuning step 5 (SPEC 45): Hard keeps 0.80 of Expert, was 0.67; Expert, Medium and Easy are the
+        # same. Not played yet. Before: 737bc3b8...c48f597ac6f.
+        ("LastResort.wav", "1f9259b1ca6882d113eb91b7f773a3c0ae6bd4edce39c2510f26830b60d0469b"),
         # Reference tuning step 2 (SPEC 42): guitar's own onset settings and new vocal-bleed limits. The owner
         # played the version before it, not this one. Before: fa099c6c...9f6deb.
         # Reference tuning step 3 (SPEC 43), as above; same positions. Not played yet. Before: a43fdd09...250b0c94.
-        ("../cloneH/audio.mp3", "0350be9ab24f863f187d13eb47fe0ce8028b945472645c5d503c1c5aa9e429c5"),
+        # Reference tuning step 5 (SPEC 45), as above: only Hard. Not played yet. Before: 0350be9a...c1c5aa9e429c5.
+        ("../cloneH/audio.mp3", "4c1545f31b30e185f0d4b7cd7297cae8226a82fe1ccce5fa8825f8b359440faf"),
     ],
     indirect=["real_song"],
     scope="session",
@@ -922,20 +930,26 @@ def test_the_guitar_the_owner_played_stays_byte_for_byte(real_song, sha256):
 @pytest.mark.parametrize(
     "real_song,sha256",
     [
-        ("DanzaKuduro.mp3", "84a128a053dbf0ccd7cc8ad15b9619da933f796477714351669bf41ac6913388"),
-        ("TocaToca.mp3", "e6d75583a6845026fdef56ccf86ad37ae294e6b934639d48952bc05660fb1311"),
+        # Reference tuning step 5 (SPEC 45): Medium aims for 0.50 of Expert, was 0.47, and keeps quarter notes
+        # whatever their gap in seconds; Expert and Hard are the same, Easy follows Medium. The owner played the
+        # version before it and plays this one after the step. Before: 84a128a0...bf41ac6913388 and
+        # e6d75583...bc05660fb1311.
+        ("DanzaKuduro.mp3", "ee6482325b19c243587816c44dd36187c394366f289a1425113f650437f71fd9"),
+        ("TocaToca.mp3", "c297d4ae0f7eeec7542c46ce79747a65fffb4bff50bf9cf7ddf2387931fec087"),
         # At 181 BPM since reference tuning step 1 (SPEC 41); the owner checked the tempo by ear but has not
         # played this version yet. Before: d7a7fee5...5643302f.
         # Reference tuning step 2 (SPEC 42): only the eighth-note grid where a sixteenth is shorter than 0.1 s,
         # which brings back the placement of the half-tempo map. Not played yet. Before: d2c687a2...c881017.
-        ("LastResort.wav", "4d1f34ac914a26c8004930104d9ea0332fca68832813276965fef4672f30cc42"),
+        # Reference tuning step 5 (SPEC 45), as above: Medium 232 to 365 positions at 181 BPM. Not played yet.
+        # Before: 4d1f34ac...ef4672f30cc42.
+        ("LastResort.wav", "05dcee0412b5b23f4ea05ac151a7a7a03f1269f3de50d88bd6a2926f654c4205"),
         ("../cloneH/audio.mp3", "f0d024f7bb9c8d2eca16b63060aea2e27ca922cba2c03f3d282746fb1ab61a32"),
     ],
     indirect=["real_song"],
     scope="session",
 )
 def test_the_bass_stays_byte_for_byte(real_song, sha256):
-    """The hash covers [SyncTrack] and all four bass levels as they were at 2e91ece, before drums."""
+    """The hash covers [SyncTrack] and all four bass levels: at 2e91ece, before drums, and since as the comments say."""
     tempo = real_song.tempo
     charted = build_tracks_for(
         Instrument.BASS,

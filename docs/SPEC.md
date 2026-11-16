@@ -266,6 +266,18 @@ Decisions made since it was written are listed first and take precedence.
    level above's lone kicks, the best by score (`lone_kick_share`: Hard 0.75, Medium 0.5, Easy 0.75; a preference,
    not a hard rule). (c) The lower levels' `gem_shares` soft targets are the train human means. Expert positions
    do not move. Toms stay an open topic (owner, 2026-11-16).
+45. **Lower-level ratios and Easy drums in a fast song (reference tuning, step 5, 2026-11-16).** (a) Guitar Hard
+   keeps 0.80 of Expert's positions (was 0.67; `difficulty.toml`, which keys use too): the best train Hard note
+   F1 of a sweep up to 0.90, 0.703 to 0.718, and Hard's density 0.84 to 0.98 of the human Hard's. A score
+   floor on Hard added 0.006 and was left out. (b) Bass Medium keeps a quarter note whatever its gap in seconds
+   (`min_gap_beats = 1.0`, as Hard does eighth notes) and aims for 0.50 of Expert (was 0.47): train Medium note
+   F1 0.744 to 0.785, mostly First Date at 191 BPM. Bass Hard stays as it was: within Californication's
+   approved floor the best gain was 0.004. Bass Expert is untouched. (c) Easy drums: where the tempo is above
+   150 BPM (`FLOOR_BPM`), a kick that stands for an Expert kick + hi-hat stays only if the previous kick is at
+   least 2 beats at 150 BPM (0.8 s) before it, otherwise the position goes (`fast_kick_hihat_gap_beats`, a
+   principle chosen by the owner, not tuned: train has one fast song). Snares, cymbals and lone kicks stay; at
+   150 BPM or slower nothing changes. Playability rule (owner): no level's shortest gap falls under the
+   shortest the train humans use on that level.
 
 ## Phase B1 targets (one reference song so far)
 
