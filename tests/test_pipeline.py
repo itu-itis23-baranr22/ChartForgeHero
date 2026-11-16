@@ -123,7 +123,7 @@ def test_analysis_records_the_whole_build(song_file, tmp_path):
         "Validate",
     }
     assert set(analysis["sections"]) == {
-        "written", "found", "song_part", "strongest_change", "threshold", "after_opening", "seconds"
+        "written", "found", "song_part", "strongest_change", "threshold", "after_opening", "bar_step", "seconds"
     }
     assert analysis["sections"]["song_part"] is None, "no opening, so no part is written as Song"
 

@@ -278,6 +278,15 @@ Decisions made since it was written are listed first and take precedence.
    principle chosen by the owner, not tuned: train has one fast song). Snares, cymbals and lone kicks stay; at
    150 BPM or slower nothing changes. Playability rule (owner): no level's shortest gap falls under the
    shortest the train humans use on that level.
+46. **Sections in a fast song (after reference tuning step 5, 2026-11-16).** Where the median tempo of the
+   bars searched is above 150 BPM (`FLOOR_BPM`), section finding takes the bars two by two, paired from the first
+   bar that sounds (where the first section starts; at half tempo it would be a downbeat), so the kernel (8 bars)
+   and the shortest section (4 bars) do not halve in seconds once a fast song is found at its true tempo (SPEC
+   41). Owner's option B2, chosen on train against B1 (both counted in bars but never shorter in seconds than at
+   150 BPM, which cost First Date 0.083 of boundary F1): First Date 0.538 to 0.583; the seven slower train songs
+   with their tempo maps doubled 0.581 to 0.682 (0.676 at their real tempo). Pairing from the map's first bar
+   put First Date's boundaries a bar off (0.250). The hard rules (bar line, at least four bars, ASCII names) and
+   the validator are unchanged; `analysis.json` records `bar_step`. At 150 BPM or slower nothing changes.
 
 ## Phase B1 targets (one reference song so far)
 

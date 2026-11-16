@@ -13,6 +13,10 @@ Hard rules, here in code; ``sections.toml`` cannot loosen them:
 - after an opening that is not part of the song, the found sections start after ``Song``, at least four
   bars after it; nothing is placed in the opening;
 - a song whose texture hardly changes gets no section at all rather than forced ones.
+
+Above 150 BPM (``FLOOR_BPM``, SPEC 41) the bars are taken two by two, from the first bar that is not silent:
+a song found at its true fast tempo has bars half as long as at half tempo, and the kernel and the shortest
+section, counted in bars, would halve in seconds (SPEC 46).
 """
 
 from __future__ import annotations
@@ -28,7 +32,7 @@ import librosa
 import numpy as np
 
 from chartgen.audio.io import ANALYSIS_SAMPLERATE
-from chartgen.core.timing import TempoMap
+from chartgen.core.timing import FLOOR_BPM, TempoMap
 
 CONFIG_PATH = Path(__file__).with_name("sections.toml")
 MIN_SECTION_BARS = 4
@@ -134,6 +138,8 @@ class SectionAnalysis:
     song_part: FoundSection | None = None
     """After an opening, the part that ``Song`` starts (``A1``), from its first bar line: it is written
     as ``Song`` but lettered like any other part, so a later return of it is ``A2``."""
+    bar_step: int = 1
+    """How many of the map's bars count as one: 2 above 150 BPM, else 1."""
 
     @property
     def parts(self) -> tuple[FoundSection, ...]:
@@ -145,16 +151,23 @@ class SectionAnalysis:
         return bool(self.sections)
 
 
-def _bar_features(
-    mix: np.ndarray, pitched: np.ndarray, vocals: np.ndarray, bar_times: np.ndarray, weights: SectionWeights
-) -> tuple[np.ndarray, np.ndarray]:
-    """One row per bar: the weighted, standardised features, scaled to unit length. Also each bar's
-    loudness in dB."""
+def _frame_features(mix: np.ndarray, pitched: np.ndarray, vocals: np.ndarray) -> tuple[np.ndarray, ...]:
+    """Chroma of the pitched stems, MFCC and loudness of the mix, loudness of the vocals, frame by frame."""
     sr = ANALYSIS_SAMPLERATE
     chroma = librosa.feature.chroma_stft(y=pitched, sr=sr, hop_length=_HOP)
     mfcc = librosa.feature.mfcc(y=mix, sr=sr, hop_length=_HOP, n_mfcc=13)[1:]
     loudness = librosa.amplitude_to_db(librosa.feature.rms(y=mix, hop_length=_HOP), ref=1.0)
     voice = librosa.amplitude_to_db(librosa.feature.rms(y=vocals, hop_length=_HOP), ref=1.0)
+    return chroma, mfcc, loudness, voice
+
+
+def _bar_features(
+    frame_features: tuple[np.ndarray, ...], bar_times: np.ndarray, weights: SectionWeights
+) -> tuple[np.ndarray, np.ndarray]:
+    """One row per bar: the weighted, standardised features, scaled to unit length. Also each bar's
+    loudness in dB."""
+    sr = ANALYSIS_SAMPLERATE
+    chroma, mfcc, loudness, voice = frame_features
     frames = min(chroma.shape[1], mfcc.shape[1], loudness.shape[1], voice.shape[1])
     edges = np.append(librosa.time_to_frames(bar_times, sr=sr, hop_length=_HOP), frames).clip(0, frames)
 
@@ -181,6 +194,18 @@ def _bar_features(
     norms = np.linalg.norm(features, axis=1, keepdims=True)
     features = features / np.maximum(norms, _MIN_NORM)
     return features, per_bar(loudness[:, :frames])[0]
+
+
+def _median_bpm(tempo_map: TempoMap, ticks: np.ndarray) -> float:
+    """The tempo in force at the median bar line."""
+    starts = np.array([event.tick for event in tempo_map.tempos])
+    bpms = np.array([event.bpm for event in tempo_map.tempos])
+    return float(np.median(bpms[np.searchsorted(starts, ticks, side="right") - 1]))
+
+
+def _first_sounding(loudness: np.ndarray, config: SectionConfig) -> int:
+    """The first bar that is not silent: within ``silence_below_loud_db`` of the song's loud level."""
+    return int(np.argmax(loudness > np.percentile(loudness, 95) - config.silence_below_loud_db))
 
 
 def _novelty(similarity: np.ndarray, kernel_bars: int) -> np.ndarray:
@@ -253,9 +278,20 @@ def find_sections(
     minimum = config.min_section_bars
     if bar_ticks.size < 2 * minimum:
         return SectionAnalysis((), 0.0, config.novelty_threshold, after_opening, time.perf_counter() - started)
-    features, loudness = _bar_features(mix, pitched, vocals, bar_times, config.weights)
-    loud = np.percentile(loudness, 95)
-    first = int(np.argmax(loudness > loud - config.silence_below_loud_db))
+    frame_features = _frame_features(mix, pitched, vocals)
+    step = 1
+    if _median_bpm(tempo_map, bar_ticks) > FLOOR_BPM:
+        # Two bars count as one, paired from the first bar that sounds, where the first section starts: at
+        # half tempo that bar would be a downbeat. Pairing from the map's first bar instead put First Date's
+        # boundaries a bar off (train boundary F1 0.25).
+        _, loudness = _bar_features(frame_features, bar_times, config.weights)
+        step = 2
+        phase = _first_sounding(loudness, config) % 2
+        bar_ticks, bar_times = bar_ticks[phase::2], bar_times[phase::2]
+        if bar_ticks.size < 2 * minimum:
+            return SectionAnalysis((), 0.0, config.novelty_threshold, after_opening, time.perf_counter() - started, bar_step=step)
+    features, loudness = _bar_features(frame_features, bar_times, config.weights)
+    first = _first_sounding(loudness, config)
     similarity = features @ features.T
     novelty = _novelty(similarity, config.kernel_bars)
     # Only where a section could start: at the edges the checkerboard half looks at padding.
@@ -276,7 +312,9 @@ def find_sections(
             starts.append(index)
     starts.sort()
     if len(starts) == 1:
-        return SectionAnalysis((), strongest, config.novelty_threshold, after_opening, time.perf_counter() - started)
+        return SectionAnalysis(
+            (), strongest, config.novelty_threshold, after_opening, time.perf_counter() - started, bar_step=step
+        )
     segments = list(zip(starts, starts[1:] + [int(bar_ticks.size)]))
     letters = _letters(similarity, segments, config.same_part_similarity)
     counts: dict[str, int] = {}
@@ -297,7 +335,8 @@ def find_sections(
         else:
             sections.append(part)
     analysis = SectionAnalysis(
-        tuple(sections), strongest, config.novelty_threshold, after_opening, time.perf_counter() - started, song_part
+        tuple(sections), strongest, config.novelty_threshold, after_opening, time.perf_counter() - started, song_part,
+        step,
     )
     check_found_sections(analysis, tempo_map, duration_s, song_start_s, minimum)
     return analysis

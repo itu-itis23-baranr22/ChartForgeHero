@@ -114,6 +114,42 @@ def test_a_song_too_short_for_two_sections_gets_none():
     assert found_for(song("AB", bars=3)).sections == ()
 
 
+# ---------------------------------------------------------------- above 150 BPM (SPEC 46)
+
+
+def at(bpm: float) -> TempoMap:
+    return TempoMap([TempoEvent(0, bpm)], [TimeSignatureEvent(0, 4, 4)])
+
+
+def found_at(signals: dict[str, np.ndarray], bpm: float) -> SectionAnalysis:
+    duration = signals["mix"].size / SR
+    return find_sections(signals["mix"], signals["pitched"], signals["vocals"], at(bpm), duration)
+
+
+def test_a_song_read_at_twice_its_tempo_gets_the_same_sections():
+    """The same audio, its map at 240 BPM: bars of 1 s, taken two by two, are the 2 s bars of 120 BPM."""
+    slow, fast = found_for(song("ABAB")), found_at(song("ABAB"), 240.0)
+    assert (slow.bar_step, fast.bar_step) == (1, 2)
+    assert named(fast) == named(slow) == [("A1", 0.0), ("B1", 16.0), ("A2", 32.0), ("B2", 48.0)]
+
+
+def test_at_150_bpm_or_slower_bars_are_not_paired():
+    analysis = found_at(song("ABAB"), 150.0)
+    assert analysis.bar_step == 1
+    assert found_at(song("ABAB"), 151.0).bar_step == 2
+
+
+def test_pairs_start_at_the_first_bar_that_sounds():
+    # One silent bar at 240 BPM (1 s) before the song: pairing from the map's first bar would put every
+    # boundary a bar off, at 2 s, 18 s, 34 s and 50 s instead of 1 s, 17 s, 33 s and 49 s.
+    signals = song("ABAB")
+    silence = np.zeros(SR, dtype=np.float32)
+    padded = {key: np.concatenate([silence, value]) for key, value in signals.items()}
+    analysis = found_at(padded, 240.0)
+    assert analysis.bar_step == 2
+    assert named(analysis) == [("A1", 1.0), ("B1", 17.0), ("A2", 33.0), ("B2", 49.0)]
+
+
 # ---------------------------------------------------------------- the settings and the hard rules
 
 

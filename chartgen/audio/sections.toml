@@ -16,6 +16,11 @@ loudness = 0.5
 vocals = 0.5
 
 [boundaries]
+# kernel_bars and min_section_bars count bars, but above 150 BPM (FLOOR_BPM) the code takes the bars two by two,
+# from the first bar that sounds (SPEC 46): a song found at its true fast tempo has bars half as long, and the
+# kernel and the shortest section would halve in seconds. On train, with every tempo map doubled, the old way
+# found 19.7 sections a song against the human's 15.4 (boundary F1 0.581); pairs found 13.3 (0.682, against
+# 0.676 at the real tempo). First Date (191 BPM): 0.538 to 0.583. At 150 BPM or slower nothing changes.
 # Width of the checkerboard that compares the bars before a bar line with the bars after it. Eight
 # bars found the human boundaries best; twelve and sixteen missed short sections.
 kernel_bars = 8

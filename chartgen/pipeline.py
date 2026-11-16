@@ -404,6 +404,8 @@ def _report_sections(
 
     listed = ", ".join(f"{label(section)} {_clock(tempo.tempo_map.seconds_at(float(section.tick)))}" for section in sections)
     log.info("    sections: %s (%.1f s)", listed or "none", found.seconds)
+    if found.bar_step > 1:
+        log.info("    sections found on bars taken %d by %d: the song is above 150 BPM", found.bar_step, found.bar_step)
     if not found.found:
         only = " only Intro and Song," if sections else ""
         warnings.append(
@@ -427,6 +429,7 @@ def _sections_analysis(sections: list[Section], found: SectionAnalysis, tempo: T
         "strongest_change": round(found.strongest_change, 3),
         "threshold": found.threshold,
         "after_opening": found.after_opening,
+        "bar_step": found.bar_step,
         "seconds": round(found.seconds, 3),
     }
 
