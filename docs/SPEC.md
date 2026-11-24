@@ -298,6 +298,54 @@ Decisions made since it was written are listed first and take precedence.
    11-12. Chosen on train (owner's criteria): our phrase count over the human's 0.83 to 1.00 on average, median
    gap 10 bars against 9. No floor in seconds (the owner: First Date's human spaces them 11 s). The hard rules
    and the validator are unchanged; `analysis.json` adds the gaps in bars, and a long gap warns in bars.
+48. Used on the branch `preview-p1` (preview P1, not adopted); left free on main so that the numbers agree.
+49. **Web editor, Phase E (owner, 2026-11-24).** A generated song folder (`outputs\<Artist - Title>`) opens in
+   the browser to be seen, heard and corrected by hand, saved, and copied to the game. Local only: `chartgen
+   edit` serves it on 127.0.0.1, checks the Host and Origin headers, has no CORS, and takes writes only as
+   JSON with a custom header; nothing leaves the machine. FastAPI 0.162.2 and uvicorn 0.54.0 (with what they
+   pull in, opentelemetry-api included) are an optional `editor` extra, httpx 0.28.1 a `dev` one, so the
+   normal install does not change. The page is plain HTML and JavaScript modules, drawn on a canvas, with
+   the Web Audio API: no npm packages, no build step, no CDN. The editor never imports the model stack.
+50. **Edits happen on the server.** The open song is a `Chart` with an undo and a redo stack in Python; the page
+   draws, plays and sends operations (add, delete, move, fret, sustain, forced, tap, cymbal, paste), each one
+   an undo step. The model's own checks, the exporter and the validator are used as they are, and every
+   operation is tested with pytest. No format knowledge goes to JavaScript: the page gets JSON.
+51. **A `.chart` reader.** `chartgen/clonehero/chart_reader.py` turns a `.chart` back into a `Chart`, tokenised by
+   the validator's `parse_chart` and decoded with `chart_format`'s constants. It refuses an event the writer
+   never writes (for example `N 32`, solos, lyrics) instead of dropping it on save. Reading and writing again
+   gives the same bytes for every chart chartgen wrote.
+52. **Horizontal timeline for editing.** Lanes are rows and time runs left to right, with bar and beat lines,
+   tempo and time signature marks, section and star power bands and a waveform; the next level down can show
+   faintly. A vertical highway like the game's is at most a read-only preview later; the game stays the
+   final check.
+53. **Audio and sync.** One Web Audio source per stem, all started at the same audio-clock time, a gain per
+   stem (muting does not restart playback), speed 0.5x to 1x through the playback rate, so the pitch drops
+   (a pitch-keeping slow-down is an E.4 option). The metronome is scheduled on the audio clock from the tempo
+   map; a latency offset in ms works like the game's calibration. Measured: in an offline render the
+   metronome and a synthetic click stem land within 1 ms of the chart's beats at 1x and 0.5x, also with a
+   48 kHz context; live, the playhead stays within one frame of the audio clock.
+54. **Saving.** The model is written as `.chart` text and the whole folder is validated with it
+   (`validate_song_folder(folder, chart_text)`); a hard-rule error writes nothing and is shown. Otherwise the
+   old `notes.chart` is copied to `outputs\_editor_backups\<song>\<date_time>_notes.chart` and the new one
+   replaces it atomically. A file changed on disk since it was opened is not overwritten. `song.ini` gets new
+   `diff_*` values from `difficulty_tier`; no other field changes.
+55. **Hand edits are never lost silently (owner's option C).** A build records `notes_chart_sha256` in
+   `analysis.json`. `build --force` refuses a folder whose `notes.chart` no longer has that hash (an edit
+   from any tool) or that holds `chartgen_edits.json` (the editor's mark), and says why; `--discard-edits`
+   moves the old folder to `outputs\_edited_backup\` first. Each save also appends its operations to
+   `chartgen_edits.json`, so that replaying them on a new build could be added later. A folder built before
+   this has no hash and counts as unedited until the editor saves it.
+56. **Copying to the game.** Refused while `Clone Hero.exe` runs. The folder is validated, the copy in `Songs`
+   is backed up to `outputs\_songs_backup\<date>_editor\`, then only `notes.chart` and `song.ini` are copied
+   when the set of audio files is the same (the folder's own layout in `Songs` stays), or the whole folder
+   is replaced when it is not; the result is validated in `Songs`.
+57. **Testing the editor.** pytest in the usual tiers (reader round trip, operations, undo and redo, the API
+   through `TestClient`, saving, backups, the build's refusal); the round trip of every folder in `outputs\`
+   is `real`. JavaScript modules are tested with Node's built-in runner (`node --test`, no packages):
+   `check.ps1` runs them in the quick tier when Node is there and requires Node in `-Full`. Playwright
+   1.65.1 measures sync offline and opens the page as a smoke test. Out of scope: editing the tempo map.
+   Optional in E.4: editing sections, star power and the preview, the pitch-keeping slow-down, a highway
+   preview.
 
 ## Phase B1 targets (one reference song so far)
 
@@ -414,6 +462,10 @@ Viterbi mapping work on stem input.
 
 **Phase D: vocals and finishing touches.** vocals.ogg packaged; optional phrase/lyric events; section
 detection; star power placement.
+
+**Phase E: web editor (decisions 49-57).** E.0 the reader, the API and a read-only view; E.1 audio and
+sync; E.2 editing with undo; E.3 saving, the validator, backups and the protection of hand edits; E.4
+copying to `Songs` and comforts. Each part is approved before the next.
 
 ## Testing and debugging
 
