@@ -51,7 +51,9 @@ Decisions made since it was written are listed first and take precedence.
    commit (`git config core.hooksPath .githooks`): the quick tests and the validator, under a minute.
    Before each phase commit, `scripts/check.ps1 -Full` runs every test, with real Demucs and the
    reference songs, and the report says so. `scripts/check.ps1 -Mid` runs everything but the real
-   songs and references, for a check in between.
+   songs and references, for a check in between. A real test whose song or reference is not on the
+   machine skips and names the file; `-Full` passes `--require-real-files`, so such a skip fails the
+   run and the summary lists the missing files under "real files missing" (owner, 2026-11-24).
 15. **Separation is reproducible.** Demucs draws a random time shift for each pass, which made two
    caches of one song differ by up to 0.01 note F1. The shift is now seeded, and the cache key names
    the model, device kind, seed and shifts. A first build reads its stems back from the cache, so it

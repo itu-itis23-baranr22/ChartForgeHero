@@ -4,7 +4,8 @@
 #   scripts\check.ps1         the quick tests and the validator, under a minute: the pre-commit hook
 #   scripts\check.ps1 -Mid    every test but the real songs and references: heavy synthetic tests and
 #                             real Demucs on synthetic audio, about half of -Full
-#   scripts\check.ps1 -Full   every test, with real Demucs and the reference songs: before a phase commit
+#   scripts\check.ps1 -Full   every test, with real Demucs and the reference songs: before a phase commit;
+#                             fails, and lists the files, when a real song or reference is missing
 #
 # Enable the hook once per clone with:  git config core.hooksPath .githooks
 
@@ -29,23 +30,24 @@ $env:OPENBLAS_NUM_THREADS = '4'
 
 try {
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    $failure = 'check: FAILED, the tests did not pass'
 
     if ($Full) {
         Write-Output 'check: running every test, with real Demucs and the reference songs ...'
+        # Both folders are passed even when missing: each test then names the file it could not find, and
+        # --require-real-files fails the run on it. -Full never passes with a real song test skipped.
         $references = Join-Path $root 'references'
-        if (Test-Path $references) {
-            $env:CHARTGEN_REFERENCE_DIR = $references
-        } else {
-            Write-Output 'check: no references folder, so the reference test will be skipped'
-        }
         $music = Join-Path $HOME 'Desktop\musica'
-        if (Test-Path $music) {
-            $env:CHARTGEN_MUSIC_DIR = $music
-        } else {
-            Write-Output 'check: no music folder, so the real song tests will be skipped'
+        foreach ($folder in @($references, $music)) {
+            if (-not (Test-Path $folder)) {
+                Write-Output "check: $folder is not here, so the tests that need it will fail"
+            }
         }
+        $env:CHARTGEN_REFERENCE_DIR = $references
+        $env:CHARTGEN_MUSIC_DIR = $music
         # An empty -m overrides the "not slow and not real" default from pyproject.toml.
-        & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m '""'
+        & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m '""' --require-real-files
+        $failure = 'check: FAILED, a test did not pass or a real song file is missing (see "real files missing" above)'
     } elseif ($Mid) {
         Write-Output 'check: running every test but the real songs and references ...'
         & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m 'not real'
@@ -54,7 +56,7 @@ try {
         & $python -X utf8 -m pytest -q -x --tb=short -p no:cacheprovider -W ignore -m 'not slow and not heavy and not real'
     }
     if ($LASTEXITCODE -ne 0) {
-        Write-Output 'check: FAILED, the tests did not pass'
+        Write-Output $failure
         exit 1
     }
 

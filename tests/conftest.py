@@ -6,6 +6,7 @@ import gc
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import NoReturn
 
 import numpy as np
 import pytest
@@ -129,6 +130,45 @@ REFERENCE_ENV = "CHARTGEN_REFERENCE_DIR"
 CALIFORNICATION = "references/train:Californication"
 """The one song with a human chart. Other keys of :func:`real_song` are paths in ``CHARTGEN_MUSIC_DIR``."""
 
+MISSING = "real file missing: "
+"""Starts the reason of every skip for a song or reference that is not on this machine."""
+REQUIRE_REAL_FILES = "--require-real-files"
+"""Passed by ``scripts\\check.ps1 -Full``: a test skipped for a missing file fails the run."""
+
+
+def skip_missing(what: object) -> NoReturn:
+    """Skip a test whose song or reference is not on this machine, naming what is missing.
+
+    Under :data:`REQUIRE_REAL_FILES` such a skip fails the run, so a deleted song cannot pass ``-Full``
+    by skipping the tests that pin it.
+    """
+    pytest.skip(f"{MISSING}{what}")
+
+
+def music_file(file_name: str) -> Path:
+    """A song of the owner's in ``CHARTGEN_MUSIC_DIR``, or a skip naming the missing file."""
+    folder = os.environ.get(MUSIC_ENV)
+    if not folder:
+        skip_missing(f"{file_name} ({MUSIC_ENV} is not set)")
+    path = Path(folder) / file_name
+    if not path.is_file():
+        skip_missing(path)
+    return path
+
+
+def californication_reference() -> Path:
+    """The Californication reference under ``CHARTGEN_REFERENCE_DIR``, or a skip naming what is missing."""
+    from chartgen.evaluation.reference import find_references
+
+    folder = os.environ.get(REFERENCE_ENV)
+    if not folder:
+        skip_missing(f"Californication ({REFERENCE_ENV} is not set)")
+    train = Path(folder) / "train"
+    found = [path for path in find_references(train) if "Californication" in path.name]
+    if not found:
+        skip_missing(f"Californication in {train}")
+    return found[0]
+
 
 def _read_only(array: np.ndarray) -> np.ndarray:
     array.flags.writeable = False
@@ -145,26 +185,15 @@ class RealSong:
 
     def __init__(self, key: str) -> None:
         from chartgen.audio.io import load_audio
-        from chartgen.evaluation.reference import find_references, load_reference
+        from chartgen.evaluation.reference import load_reference
 
         self.key = key
         self.reference = None
         if key == CALIFORNICATION:
-            folder = os.environ.get(REFERENCE_ENV)
-            if not folder:
-                pytest.skip(f"{REFERENCE_ENV} is not set")
-            found = [path for path in find_references(Path(folder) / "train") if "Californication" in path.name]
-            if not found:
-                pytest.skip("Californication is not among the references")
-            self.reference = load_reference(found[0])
+            self.reference = load_reference(californication_reference())
             self.path, self.audio = self.reference.source, self.reference.audio
         else:
-            folder = os.environ.get(MUSIC_ENV)
-            if not folder:
-                pytest.skip(f"{MUSIC_ENV} is not set")
-            self.path = Path(folder) / key
-            if not self.path.is_file():
-                pytest.skip(f"{self.path} is not here")
+            self.path = music_file(key)
             self.audio = load_audio(self.path)
         _read_only(self.audio.samples)
         self._stems = None
@@ -239,8 +268,8 @@ def real_song(request: pytest.FixtureRequest) -> Iterator[RealSong]:
     The tests of one song run one after another (see :func:`pytest_collection_modifyitems`), and a song is
     torn down before the next one loads, so one song at most is in memory.
     """
-    _real_song_loads.append(request.param)
     song = RealSong(request.param)
+    _real_song_loads.append(request.param)
     yield song
     song.release()
 
@@ -272,7 +301,39 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     items[:] = rest + [item for group in songs.values() for item in group] + demucs
 
 
-def pytest_terminal_summary(terminalreporter) -> None:
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        REQUIRE_REAL_FILES,
+        action="store_true",
+        help="fail the run when a test is skipped because a real song or reference is missing",
+    )
+
+
+_missing_real_files: dict[str, list[str]] = {}
+"""Each file :func:`skip_missing` named, with the tests it skipped."""
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    if report.skipped and isinstance(report.longrepr, tuple) and MISSING in report.longrepr[2]:
+        what = report.longrepr[2].split(MISSING, 1)[1]
+        _missing_real_files.setdefault(what, []).append(report.nodeid)
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    """Under :data:`REQUIRE_REAL_FILES` a missing file fails a run that would otherwise pass."""
+    if _missing_real_files and session.config.getoption(REQUIRE_REAL_FILES):
+        if session.exitstatus in (pytest.ExitCode.OK, pytest.ExitCode.NO_TESTS_COLLECTED):
+            session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
+def pytest_terminal_summary(terminalreporter, config: pytest.Config) -> None:
+    if _missing_real_files:
+        required = config.getoption(REQUIRE_REAL_FILES)
+        terminalreporter.section("real files missing", red=required, yellow=not required, bold=True)
+        for what, tests in _missing_real_files.items():
+            terminalreporter.write_line(f"{what}: {len(tests)} test{'' if len(tests) == 1 else 's'} skipped")
+        if required:
+            terminalreporter.write_line(f"{REQUIRE_REAL_FILES}: so the run fails", red=True, bold=True)
     if not _real_song_loads:
         return
     twice = sorted({key for key in _real_song_loads if _real_song_loads.count(key) > 1})

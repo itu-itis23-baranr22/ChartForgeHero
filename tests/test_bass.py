@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import os
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -11,7 +10,7 @@ import librosa
 import numpy as np
 import pytest
 from conftest import SR as STEM_SR
-from conftest import CALIFORNICATION, FakeSeparator, click_times, clicks_at, song_stems, stereo
+from conftest import CALIFORNICATION, FakeSeparator, click_times, clicks_at, music_file, song_stems, stereo
 
 import chartgen
 import chartgen.pipeline
@@ -799,13 +798,6 @@ def test_a_reference_without_bass_keeps_its_report(tmp_path):
 # ---------------------------------------------------------------- real songs
 
 
-def music_folder() -> Path:
-    folder = os.environ.get("CHARTGEN_MUSIC_DIR")
-    if not folder:
-        pytest.skip("CHARTGEN_MUSIC_DIR is not set")
-    return Path(folder)
-
-
 @pytest.mark.real
 @pytest.mark.parametrize(
     "file_name,lead_in",
@@ -814,9 +806,7 @@ def music_folder() -> Path:
 def test_real_songs_without_a_guitar_build(tmp_path, file_name, lead_in):
     from chartgen.audio.separation import DemucsSeparator
 
-    path = music_folder() / file_name
-    if not path.is_file():
-        pytest.skip(f"{path} is not here")
+    path = music_file(file_name)
     result = build_song(
         BuildConfig(
             input_path=path,

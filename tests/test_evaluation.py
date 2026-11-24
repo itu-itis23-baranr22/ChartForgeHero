@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import soundfile as sf
-from conftest import SR, FakeSeparator, click_times, clicks_at, sine, stereo
+from conftest import SR, FakeSeparator, californication_reference, click_times, clicks_at, sine, stereo
 
 from chartgen.audio.separation import STEM_NAMES
 from chartgen.chart.fret_mapping import is_playable
@@ -602,15 +602,9 @@ def test_real_references_when_available(tmp_path):
     floor would be tuned on. The stem cache is keyed by the file's contents, so the linked copy finds
     the same stems.
     """
-    folder = os.environ.get("CHARTGEN_REFERENCE_DIR")
-    if not folder:
-        pytest.skip("CHARTGEN_REFERENCE_DIR is not set")
     from chartgen.audio.separation import DemucsSeparator
 
-    found = [path for path in find_references(Path(folder) / "train") if "Californication" in path.name]
-    if not found:
-        pytest.skip("Californication is not among the references")
-    source = found[0]
+    source = californication_reference()
     (tmp_path / "train").mkdir()
     target = tmp_path / "train" / source.name
     if source.is_file():
@@ -621,7 +615,7 @@ def test_real_references_when_available(tmp_path):
     else:
         shutil.copytree(source, target)
     report = evaluate_folder(tmp_path, DemucsSeparator(), Path(".cache/stems"))
-    assert list(report.songs) == [found[0].stem if source.is_file() else source.name]
+    assert list(report.songs) == [source.stem if source.is_file() else source.name]
     assert set(report.averages) == {"train"}
     for averages in report.averages.values():
         assert averages["bars_agreeing"] >= 0.8
