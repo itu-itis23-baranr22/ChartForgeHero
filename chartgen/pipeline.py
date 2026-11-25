@@ -54,6 +54,7 @@ from chartgen.clonehero.package import (
     plan_audio,
     write_audio_files,
 )
+from chartgen.clonehero.protection import ANALYSIS_FILE, HASH_KEY, dump_analysis, file_sha256, hand_edits
 from chartgen.clonehero.song_ini import SongIni, difficulty_tier, render_song_ini
 from chartgen.clonehero.validate import validate_song_folder
 from chartgen.core.model import Chart, Difficulty, Instrument, Section, SongMetadata, Track
@@ -61,7 +62,8 @@ from chartgen.errors import ChartValidationError, NoPlayableInstrumentError, Pac
 
 log = logging.getLogger(__name__)
 
-ANALYSIS_FILE = "analysis.json"
+EDITED_BACKUP_DIR = "_edited_backup"
+"""Where ``--discard-edits`` moves an edited folder, inside the output directory."""
 _BASE_STAGE_COUNT = 8
 
 
@@ -78,6 +80,9 @@ class BuildConfig:
     drum_ear_test: bool = False
     """Write one listening file per part of the kit into ``debug``."""
     max_beat_drift_ms: float = DEFAULT_MAX_BEAT_DRIFT_S * 1000.0
+    discard_edits: bool = False
+    """Replace the folder even when it holds hand edits, moving it to ``_edited_backup`` first (SPEC 55).
+    Implies ``force``."""
 
 
 @dataclass
@@ -703,12 +708,33 @@ def _analysis(
     }
 
 
-def _publish(temporary: Path, destination: Path, force: bool) -> None:
-    """Move the finished folder into place; a failed build leaves nothing behind."""
+class HandEditsError(PackagingError):
+    """The folder to replace holds hand edits, and a rebuild would lose them (SPEC 55)."""
+
+
+def _check_hand_edits(destination: Path, config: BuildConfig) -> None:
+    reason = hand_edits(destination) if destination.exists() else None
+    if reason and not config.discard_edits:
+        raise HandEditsError(
+            f"{destination} has hand edits ({reason}); a rebuild would lose them. Keep the folder, or use "
+            f"--discard-edits to move it to {config.output_dir / EDITED_BACKUP_DIR} and build anew"
+        )
+
+
+def _publish(temporary: Path, destination: Path, config: BuildConfig) -> None:
+    """Move the finished folder into place; a failed build leaves nothing behind. Hand edits are checked
+    again here, as the folder may have been edited while the build ran."""
     if destination.exists():
-        if not force:
+        if not (config.force or config.discard_edits):
             raise PackagingError(f"{destination} already exists; use --force to replace it")
-        shutil.rmtree(destination)
+        _check_hand_edits(destination, config)
+        if config.discard_edits and hand_edits(destination):
+            backup = config.output_dir / EDITED_BACKUP_DIR / f"{destination.name}_{time.strftime('%Y-%m-%d_%H%M%S')}"
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(destination, backup)
+            log.info("The edited folder was moved to %s", backup)
+        else:
+            shutil.rmtree(destination)
     os.replace(temporary, destination)
 
 
@@ -719,8 +745,9 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
         ChartgenError: On any expected failure. The output folder is then untouched.
     """
     destination = config.output_dir / folder_name(config.metadata.artist, config.metadata.name)
-    if destination.exists() and not config.force:
+    if destination.exists() and not (config.force or config.discard_edits):
         raise PackagingError(f"{destination} already exists; use --force to replace it")
+    _check_hand_edits(destination, config)
 
     stages = _Stages(_BASE_STAGE_COUNT + int(config.click_overlay) + int(config.drum_ear_test))
     warnings: list[str] = []
@@ -894,10 +921,10 @@ def build_song(config: BuildConfig, separator: Separator) -> BuildResult:
             _preview_analysis(preview),
             _star_power_analysis(star_power),
         )
-        (temporary / ANALYSIS_FILE).write_text(
-            json.dumps(analysis, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
-        _publish(temporary, destination, config.force)
+        # The chart's hash: a later edit by any tool shows as a different hash (SPEC 55).
+        analysis[HASH_KEY] = file_sha256(temporary / DotChartExporter.file_name)
+        (temporary / ANALYSIS_FILE).write_text(dump_analysis(analysis), encoding="utf-8")
+        _publish(temporary, destination, config)
     except BaseException:
         shutil.rmtree(temporary, ignore_errors=True)
         raise

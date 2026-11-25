@@ -57,14 +57,19 @@ button:focus-visible, select:focus-visible, input:focus-visible, .tl:focus-visib
 .tag { font-size: 12px; padding: 2px 8px; border: 1px solid var(--shell-ink-2); border-radius: 999px; color: var(--shell-ink-2); white-space: nowrap; }
 .tabs { display: flex; gap: 2px; }
 .tabs button { padding: 7px 13px; color: var(--shell-ink-2); }
-.tabs button:hover:not(:disabled) { color: var(--shell-ink); }
+.tabs button:hover:not(:disabled):not(.missing) { color: var(--shell-ink); }
 .tabs button[aria-selected="true"] { color: var(--shell-ink); background: var(--shell-2); border-color: var(--shell-line); }
 .seg { display: flex; border: 1px solid var(--shell-line); border-radius: 3px; }
 .seg button { padding: 7px 13px; color: var(--shell-ink-2); border-radius: 0; }
-.seg button:hover:not(:disabled) { color: var(--shell-ink); }
+.seg button:hover:not(:disabled):not(.missing) { color: var(--shell-ink); }
+/* An instrument or level the song lacks: passive like a disabled control, and it says why when clicked. */
+.tabs button.missing, .seg button.missing { opacity: 0.45; cursor: default; }
 .seg button[aria-pressed="true"] { background: var(--shell-ink); color: var(--shell); }
 .end { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--shell-ink-2); white-space: nowrap; }
 .theme { padding: 7px; color: var(--shell-ink-2); border-color: var(--shell-line); }
+.top .save { padding: 7px 18px; background: var(--shell-ink); color: var(--shell); font-weight: 600; border-color: var(--shell-ink); }
+.top .save:hover:not(:disabled) { background: var(--shell-ink-2); border-color: var(--shell-ink-2); }
+.top .save:disabled { background: none; color: var(--shell-ink-2); border-color: var(--shell-line); }
 .theme:hover { color: var(--shell-ink); }
 
 .tool { grid-column: 1 / -1; background: var(--panel); border-bottom: 1px solid var(--rule); display: flex; align-items: center; gap: 6px; padding: 0 20px; color: var(--ink-2); }
@@ -188,6 +193,16 @@ td.act { text-align: right; }
 .outdated .reload { padding: 6px 12px; border-color: var(--rule); color: var(--ink); white-space: nowrap; }
 .outdated .reload:hover { background: var(--panel); }
 .boot-failed { grid-template-columns: 1fr; }
+/* A draft from an earlier session to restore, or drafts set aside: under the header, until answered. */
+.draft-box { position: fixed; top: 110px; left: 50%; transform: translateX(-50%); z-index: 9; width: min(860px, calc(100vw - 32px));
+  display: grid; gap: 10px; padding: 14px 16px; background: var(--panel-2); border: 1px solid var(--rule); color: var(--ink); font-size: 15px; }
+.draft-box .row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
+.draft-box p { overflow-wrap: anywhere; }
+.draft-box .acts { display: flex; gap: 6px; }
+.draft-box button { padding: 6px 12px; border-color: var(--rule); color: var(--ink); white-space: nowrap; }
+.draft-box button:hover { background: var(--panel); }
+.draft-box .restore { background: var(--mark); color: var(--bg); border-color: var(--mark); font-weight: 600; }
+.draft-box .restore:hover { background: var(--ink); }
 .boot-failed h1 { font-size: 16px; font-weight: 600; }
 .boot-failed p { color: var(--ink-2); }
 

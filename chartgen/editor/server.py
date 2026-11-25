@@ -27,6 +27,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from chartgen.clonehero.validate import validate_song_folder
 from chartgen.editor.assets import PageAssets
 from chartgen.editor.ops import OpError
+from chartgen.editor.saving import DiskChangedError, SaveRefusedError
 from chartgen.editor.session import NothingToDoError, Sessions, StaleError
 from chartgen.editor.songs import (
     SongLibrary,
@@ -68,12 +69,13 @@ def writable(request: Request) -> None:
         raise WriteRefusedError("changes are taken from the editor's own page only")
 
 
-def create_app(library: SongLibrary, freeze_gc: bool = False, static: Path = STATIC) -> FastAPI:
+def create_app(library: SongLibrary, freeze_gc: bool = False, static: Path = STATIC, draft_delay_s: float = 1.0) -> FastAPI:
     """The editor's app. ``freeze_gc`` is for the ``chartgen edit`` process only (see ``Sessions``); ``static``
-    is the page's folder (tests give a changed copy)."""
+    is the page's folder (tests give a changed copy); ``draft_delay_s`` is how long after an edit its draft is
+    written."""
     app = FastAPI(title="chartgen editor", docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
-    sessions = Sessions(library, freeze_gc)
+    sessions = Sessions(library, freeze_gc, draft_delay_s)
     assets = PageAssets(static)
     app.state.sessions = sessions
     app.state.assets = assets
@@ -113,6 +115,14 @@ def create_app(library: SongLibrary, freeze_gc: bool = False, static: Path = STA
     async def stale(_: Request, error: StaleError) -> JSONResponse:
         return JSONResponse({"error": str(error), "stale": True}, status_code=409)
 
+    @app.exception_handler(SaveRefusedError)
+    async def save_refused(_: Request, error: SaveRefusedError) -> JSONResponse:
+        return JSONResponse({"error": str(error), "errors": error.errors}, status_code=422)
+
+    @app.exception_handler(DiskChangedError)
+    async def disk_changed(_: Request, error: DiskChangedError) -> JSONResponse:
+        return JSONResponse({"error": str(error), "disk_changed": True}, status_code=409)
+
     @app.exception_handler(WriteRefusedError)
     async def forbidden(_: Request, error: WriteRefusedError) -> JSONResponse:
         return JSONResponse({"error": f"Refused: {error}."}, status_code=403)
@@ -137,8 +147,10 @@ def create_app(library: SongLibrary, freeze_gc: bool = False, static: Path = STA
     def info(name: str) -> dict[str, object]:
         folder = library.folder(name)
         session = sessions.current(name)
-        text = session.chart_text()[1] if session is not None and session.has_history else None
-        return song_info(folder, text)
+        if session is not None and session.has_history:
+            _, text, ini = session.check_texts()
+            return song_info(folder, text, ini)
+        return song_info(folder)
 
     @app.get("/api/songs/{name}/audio/{file_name}")
     def audio(name: str, file_name: str) -> FileResponse:
@@ -158,9 +170,22 @@ def create_app(library: SongLibrary, freeze_gc: bool = False, static: Path = STA
 
     @app.post("/api/songs/{name}/validate", dependencies=[Depends(writable)])
     def validate(name: str) -> dict[str, object]:
-        """The live check: the session's chart as it would be saved, with the rest of the folder."""
-        version, text = session_of(name).chart_text()
-        return {"version": version, **validation_json(validate_song_folder(library.folder(name), text))}
+        """The live check: the session's chart and song.ini as a save would write them, with the rest of the
+        folder."""
+        version, text, ini = session_of(name).check_texts()
+        return {"version": version, **validation_json(validate_song_folder(library.folder(name), text, ini))}
+
+    @app.post("/api/songs/{name}/save", dependencies=[Depends(writable)])
+    def save(name: str, body: dict[str, Any] = Body(...)) -> dict[str, object]:
+        return session_of(name).save(body.get("version"))
+
+    @app.post("/api/songs/{name}/draft/restore", dependencies=[Depends(writable)])
+    def restore_draft(name: str, body: dict[str, Any] = Body(...)) -> dict[str, object]:
+        return session_of(name).restore_draft(body.get("version"))
+
+    @app.post("/api/songs/{name}/draft/discard", dependencies=[Depends(writable)])
+    def discard_draft(name: str, body: dict[str, Any] = Body(...)) -> dict[str, object]:
+        return session_of(name).discard_draft(body.get("version"))
 
     def page_file(name: str, request: Request) -> Response:
         """The page or one of its modules, its links versioned; a 304 when the browser has this version."""

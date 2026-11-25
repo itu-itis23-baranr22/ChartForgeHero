@@ -533,12 +533,12 @@ def read_song_ini(path: Path) -> tuple[dict[str, str], ValidationReport]:
     return _read_song_ini(path, report), report
 
 
-def _read_song_ini(path: Path, report: ValidationReport) -> dict[str, str]:
+def _read_song_ini(path: Path, report: ValidationReport, text: str | None = None) -> dict[str, str]:
     parser = configparser.ConfigParser(
         delimiters=("=",), comment_prefixes=(), interpolation=None, strict=False
     )
     try:
-        parser.read_string(path.read_text(encoding="utf-8-sig"))
+        parser.read_string(text if text is not None else path.read_text(encoding="utf-8-sig"))
     except (configparser.Error, UnicodeDecodeError) as error:
         report.errors.append(f"song.ini is unreadable: {error}")
         return {}
@@ -566,11 +566,14 @@ def _check_audio_lengths(folder: Path, report: ValidationReport) -> None:
         report.errors.append(f"audio files differ in length: {frames}")
 
 
-def validate_song_folder(folder: Path, chart_text: str | None = None) -> ValidationReport:
+def validate_song_folder(
+    folder: Path, chart_text: str | None = None, song_ini_text: str | None = None
+) -> ValidationReport:
     """Check that ``folder`` holds what Clone Hero needs to accept a song.
 
     With ``chart_text``, that chart is checked in place of the folder's ``notes.chart``, together with the
-    rest of the folder: the editor checks a chart before it is written (SPEC 54).
+    rest of the folder: the editor checks a chart before it is written (SPEC 54). ``song_ini_text`` likewise
+    stands in for the folder's ``song.ini`` (a save rewrites its ``diff_*`` values).
     """
     report = ValidationReport()
     if not folder.is_dir():
@@ -590,11 +593,11 @@ def validate_song_folder(folder: Path, chart_text: str | None = None) -> Validat
 
     ini_path = folder / "song.ini"
     ini: dict[str, str] = {}
-    if ini_path.is_file():
-        ini = _read_song_ini(ini_path, report)
+    if song_ini_text is not None or ini_path.is_file():
+        ini = _read_song_ini(ini_path, report, song_ini_text)
     else:
         report.errors.append("missing song.ini")
-    if ini_path.is_file() and ini:
+    if ini:
         for key in ("name", "artist"):
             if not ini.get(key, "").strip():
                 report.errors.append(f"song.ini has no {key}: Clone Hero would call it a bad song")

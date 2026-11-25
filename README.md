@@ -99,9 +99,8 @@ from the written chart. Each click should fall on that part, and the part should
 Opens the song folders in `outputs/` in your browser, on this machine only (127.0.0.1): the chart drawn
 over time, one instrument and level at a time with the level below it faint, bars, tempo changes,
 sections, star power and what the validator says, with the song's audio to play along, and lets you
-correct the notes. Saving to the song folder and copying to the game follow (phase E, `docs/SPEC.md`
-decisions 49-57): for now the edits live in the running editor and are lost when it stops. Use Chrome or
-Edge: the audio is Ogg Vorbis. After an update the page loads the new files by itself; a page that was
+correct and save the notes. Copying to the game follows (phase E, `docs/SPEC.md` decisions 49-57). Use
+Chrome or Edge: the audio is Ogg Vorbis. After an update the page loads the new files by itself; a page that was
 left open during the update says so and asks to be reloaded.
 
 ```
@@ -133,6 +132,21 @@ row. A sustain that an edit runs into the next note is cut to end on it. What th
 notes on one lane at one tick, a drum sustain, a cymbal on red) is refused with a message; what only breaks
 a rule of the validator (a chord on Easy, a Hard note Expert lacks) is allowed and shown at once under
 Problems, in plain words with its bar and beat.
+
+Saving: Save (or Ctrl+S) writes the chart to the song folder. A chart with an error under Problems is not
+saved: Save says how many and takes you there. Before writing, the folder's `notes.chart` and `song.ini`
+are copied to `outputs/_editor_backups/<song>/<date_time>_<file>` (every save keeps its own copies);
+`song.ini` changes only in its `diff_*` values. A `notes.chart` that changed on disk after you opened the
+song (a rebuild, another tool) is not overwritten. Unsaved edits are kept by the running editor and, a
+second after each edit, in a draft in `outputs/_editor_drafts/`: open the song again after the editor
+stopped and it offers to restore them. A draft made on a `notes.chart` that has changed since is never
+restored; it is set aside as `<song>.<date_time>.stale.json` and the page names the file.
+
+Rebuilding a song you edited: `build --force` refuses a folder with hand edits (saved in the editor, or a
+`notes.chart` changed by any tool) and says why; `--discard-edits` moves that folder to
+`outputs/_edited_backup/` and builds anew. `chartgen protect` lists which folders are protected;
+`chartgen protect --record --inputs <folders with the audio>` protects folders built before this check
+existed, but only those whose fresh build gives the same `notes.chart` byte for byte.
 
 ## Measuring against human charts
 

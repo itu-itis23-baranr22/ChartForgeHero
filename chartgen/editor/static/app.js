@@ -75,8 +75,8 @@ window.chartgenDebug = {
   frames: null, // an array to record every drawn playhead into, or null
 };
 
-function header(inner) {
-  return `<header class="top">${inner}<div class="end"><span class="mode"></span><button class="theme"></button></div></header>`;
+function header(inner, end = "") {
+  return `<header class="top">${inner}<div class="end"><span class="mode"></span>${end}<button class="theme"></button></div></header>`;
 }
 
 function wireHeader() {
@@ -114,6 +114,8 @@ function outdated(error) {
 
 function route() {
   closeAudio();
+  const drafts = document.getElementById("drafts");
+  if (drafts) drafts.remove();
   const match = location.hash.match(/^#\/song\/(.+)$/);
   if (match) openSong(decodeURIComponent(match[1]));
   else showList();
@@ -190,7 +192,7 @@ async function openSong(id) {
     // editing (E.2): the server holds the chart; the page keeps its version and what is selected
     edit: chart.edit, validation: info.validation, selection: new Set(), tool: stored("chartgen-tool") === "draw" ? "draw" : "select",
     grid: GRIDS.includes(grid) ? grid : 8, linked: true, clipboard: state.clipboard || null, queue: Promise.resolve(),
-    stale: false, notice: null, gesture: null,
+    stale: false, notice: null, gesture: null, saving: false, dismissed: new Set(),
   });
   state.difficulty = levelsOf(state.instrument)[0];
   document.title = `${chart.name} – chartgen editor`;
@@ -214,7 +216,7 @@ function belowLevel() {
 
 function renderSong() {
   const { chart, info } = state;
-  const tabs = INSTRUMENTS.map((i) => `<button role="tab" data-instrument="${i}" aria-selected="${i === state.instrument}" ${state.instruments.includes(i) ? "" : `disabled title="No ${TITLE[i].toLowerCase()} chart"`}>${TITLE[i]}</button>`).join("");
+  const tabs = INSTRUMENTS.map((i) => `<button role="tab" data-instrument="${i}" aria-selected="${i === state.instrument}"${state.instruments.includes(i) ? "" : missing(noChart(i))}>${TITLE[i]}</button>`).join("");
   const order = ["song", "guitar", "bass", "drums", "keys", "vocals"];
   const rank = (file) => { const i = order.indexOf(file.replace(/\.ogg$/, "")); return i < 0 ? order.length : i; };
   const audio = [...info.audio].sort((a, b) => rank(a.file) - rank(b.file));
@@ -230,7 +232,8 @@ function renderSong() {
   const grids = GRIDS.map((g) => `<option value="${g}"${g === state.grid ? " selected" : ""}>1/${g}</option>`).join("");
   root.innerHTML = header(`<div class="brand"><a class="back" href="#/" title="All songs" aria-label="All songs">${icon("back")}</a>chartgen</div>
       <div class="song-title"><b>${esc(chart.name)}</b><span>${esc(chart.artist)}</span></div>
-      <nav class="tabs" role="tablist" aria-label="Instrument">${tabs}</nav><div class="seg" role="group" aria-label="Level"></div>`) +
+      <nav class="tabs" role="tablist" aria-label="Instrument">${tabs}</nav><div class="seg" role="group" aria-label="Level"></div>`,
+    '<button class="save" disabled>Save</button>') +
     `<div class="tool">
       <span class="tools" role="group" aria-label="Tool">
         <button data-tool="select" title="Select (V): click a note, Shift or Ctrl to add, drag a box; drag notes to move them">${icon("select")}Select <kbd>V</kbd></button>
@@ -255,13 +258,17 @@ function renderSong() {
       <label class="ctl" title="Draws the playhead this much later than the audio clock. Raise it when the line runs ahead of what you hear (Bluetooth headphones: 150 to 250 ms)">Latency<span class="lat"><input class="latency" type="number" min="-300" max="500" step="5" value="${state.latency}"><span>ms</span></span></label>
       <div class="stems" role="group" aria-label="Stems">${stems}</div></footer>`;
   wireHeader();
-  root.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => setInstrument(b.dataset.instrument)));
+  root.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => {
+    if (b.classList.contains("missing")) setNotice(noChart(b.dataset.instrument), "info");
+    else setInstrument(b.dataset.instrument);
+  }));
   root.querySelectorAll("[data-zoom]").forEach((b) => b.addEventListener("click", () => zoomBy(b.dataset.zoom)));
   root.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => setTool(b.dataset.tool)));
   root.querySelector(".grid").addEventListener("change", (e) => {
     state.grid = Number(e.target.value);
     store("chartgen-grid", state.grid);
   });
+  root.querySelector(".top .save").addEventListener("click", saveChart);
   root.querySelector(".undo").addEventListener("click", () => history("undo"));
   root.querySelector(".redo").addEventListener("click", () => history("redo"));
   root.querySelector(".linked").addEventListener("click", () => {
@@ -287,6 +294,7 @@ function renderSong() {
   renderEditState();
   showTrack();
   scheduleValidation();
+  renderDraftBox();
   new ResizeObserver(() => {
     timeline.resize(scroller.clientWidth, scroller.clientHeight);
     layoutLanes();
@@ -302,6 +310,19 @@ function startZoom() {
   const gaps = times.slice(1).map((t, i) => t - times[i]).filter((g) => g > 0).sort((x, y) => x - y);
   const median = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0.25;
   return clampZoom(Math.min(320, Math.max(120, 30 / median)));
+}
+
+/** "This song has no Hard guitar chart.": what a missing instrument or level says on hover and on a click. */
+function noChart(instrument, level = null) {
+  return `This song has no ${level ? `${TITLE[level]} ` : ""}${TITLE[instrument].toLowerCase()} chart.`;
+}
+
+/**
+ * The attributes of a tab or level the song lacks: shown passive like a disabled control, but it still takes a
+ * hover and a click to say why, instead of doing nothing silently (owner, 2026-11-25).
+ */
+function missing(words) {
+  return ` class="missing" aria-disabled="true" title="${esc(words)}"`;
 }
 
 function setInstrument(instrument) {
@@ -323,8 +344,11 @@ function showTrack() {
   const levels = levelsOf(state.instrument);
   root.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.instrument === state.instrument)));
   const seg = root.querySelector(".seg");
-  seg.innerHTML = LEVELS.map((l) => `<button data-level="${l}" aria-pressed="${l === state.difficulty}" ${levels.includes(l) ? "" : "disabled"}>${TITLE[l]}</button>`).join("");
-  seg.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => setLevel(b.dataset.level)));
+  seg.innerHTML = LEVELS.map((l) => `<button data-level="${l}" aria-pressed="${l === state.difficulty}"${levels.includes(l) ? "" : missing(noChart(state.instrument, l))}>${TITLE[l]}</button>`).join("");
+  seg.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+    if (b.classList.contains("missing")) setNotice(noChart(state.instrument, b.dataset.level), "info");
+    else setLevel(b.dataset.level);
+  }));
   const below = belowLevel();
   const timeline = state.timeline;
   timeline.setTrack(state.instrument, trackOf(state.instrument, state.difficulty), below ? trackOf(state.instrument, below) : null);
@@ -679,7 +703,15 @@ function renderEditState() {
   const mode = root.querySelector(".mode");
   if (mode && edit) {
     mode.textContent = unsavedLabel(edit.unsaved);
-    mode.title = "Edits are kept while chartgen edit runs; saving them to the song folder comes next (E.3)";
+    mode.title = edit.unsaved
+      ? "Kept while chartgen edit runs and in a draft beside the songs; Save writes them to the song folder"
+      : "The chart is as it is in the song folder";
+  }
+  const save = root.querySelector(".top .save");
+  if (save && edit) {
+    save.disabled = !edit.unsaved || state.stale || state.saving;
+    save.textContent = state.saving ? "Saving…" : "Save";
+    save.title = edit.unsaved ? "Save to the song folder (Ctrl+S); the files before are backed up" : "Nothing to save";
   }
   root.querySelectorAll("[data-tool]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tool === state.tool)));
   const undo = root.querySelector(".tool .undo");
@@ -760,6 +792,7 @@ function applyAnswer(out, select, said) {
   renderEditState();
   renderInspector();
   scheduleValidation();
+  renderDraftBox();
 }
 
 function failed(error) {
@@ -856,6 +889,11 @@ function toggleFlag(flag, bit) {
 /** The editing keys: anywhere but in a text field, a select or a slider. */
 document.addEventListener("keydown", (e) => {
   if (!state.timeline || !state.edit || state.gesture) return;
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "s") {
+    e.preventDefault(); // never the browser's own "save page"
+    saveChart();
+    return;
+  }
   if (e.target.matches && e.target.matches("input, select, textarea")) return;
   const key = e.key.toLowerCase();
   const ctrl = e.ctrlKey || e.metaKey;
@@ -895,13 +933,121 @@ document.addEventListener("keydown", (e) => {
   action();
 });
 
-/** Leaving the page with unsaved edits asks first: they live only in the running editor until E.3. */
-window.addEventListener("beforeunload", (e) => {
-  if (state.timeline && state.edit && state.edit.unsaved > 0) {
-    e.preventDefault();
-    e.returnValue = "";
+// ---------------------------------------------------------------- saving and drafts (E.3)
+// Unsaved edits survive closing the page: the server keeps them, and writes a draft beside the songs a second
+// after each edit, so the page no longer asks before it is closed.
+
+/** Problems in view, its heading focused: where a refused save sends the user (owner's decision 4). */
+function showProblems() {
+  const box = root.querySelector(".problems");
+  if (!box) return;
+  const title = box.querySelector("h2");
+  title.tabIndex = -1;
+  box.scrollIntoView({ block: "start" });
+  title.focus({ preventScroll: true });
+}
+
+function saveChart() {
+  if (!state.edit || !state.edit.unsaved || state.stale || state.saving) return;
+  const errors = state.validation.errors.length;
+  if (errors) {
+    setNotice(`The chart has ${plural(errors, "error")}: fix ${errors === 1 ? "it" : "them"} before saving (see Problems).`, "bad");
+    showProblems();
+    return;
   }
-});
+  const id = state.id;
+  state.saving = true;
+  renderEditState();
+  state.queue = state.queue.then(async () => {
+    try {
+      const out = await api.save(id, state.edit.version);
+      if (state.id !== id) return;
+      state.edit = out.edit;
+      setNotice(out.message, "info");
+    } catch (error) {
+      if (state.id !== id) return;
+      if (error.errors) {
+        setNotice(error.message, "bad");
+        scheduleValidation();
+        showProblems();
+      } else if (error.diskChanged) {
+        setNotice(error.message, "bad");
+      } else {
+        failed(error);
+      }
+    } finally {
+      if (state.id === id) {
+        state.saving = false;
+        renderEditState();
+        renderDraftBox();
+      }
+    }
+  });
+}
+
+function stamp(iso) {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "an earlier session";
+  const two = (n) => String(n).padStart(2, "0");
+  return `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())} ${two(at.getHours())}:${two(at.getMinutes())}`;
+}
+
+/**
+ * The box under the header: a draft from an earlier session to restore or discard, and drafts that were set
+ * aside (stale, or not restored before editing), with the path of each (owner's decision 1).
+ */
+function renderDraftBox() {
+  let box = document.getElementById("drafts");
+  const edit = state.edit;
+  const aside = edit ? (edit.set_aside || []).filter((a) => !state.dismissed.has(a.path)) : [];
+  if (!state.timeline || !edit || (!edit.draft && !aside.length)) {
+    if (box) box.remove();
+    return;
+  }
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "drafts";
+    box.className = "draft-box";
+    box.setAttribute("role", "status");
+    document.body.prepend(box);
+  }
+  let html = "";
+  if (edit.draft) {
+    html += `<div class="row"><p><b>${plural(edit.draft.unsaved, "unsaved edit")}</b> of this song from ${esc(stamp(edit.draft.saved_at))} ${edit.draft.unsaved === 1 ? "was" : "were"} kept in a draft.</p>
+      <span class="acts"><button class="restore">Restore</button><button class="discard">Discard</button></span></div>`;
+  }
+  for (const a of aside) {
+    html += `<div class="row"><p>${esc(a.message)}</p><span class="acts"><button class="dismiss" data-path="${esc(a.path)}">Dismiss</button></span></div>`;
+  }
+  box.innerHTML = html;
+  const restore = box.querySelector(".restore");
+  if (restore) restore.addEventListener("click", () => draftAction("restoreDraft"));
+  const discard = box.querySelector(".discard");
+  if (discard) discard.addEventListener("click", () => draftAction("discardDraft"));
+  box.querySelectorAll(".dismiss").forEach((b) => b.addEventListener("click", () => {
+    state.dismissed.add(b.dataset.path);
+    renderDraftBox();
+  }));
+}
+
+function draftAction(which) {
+  const id = state.id;
+  state.queue = state.queue.then(async () => {
+    try {
+      const out = await api[which](id, state.edit.version);
+      if (state.id !== id) return;
+      if (which === "restoreDraft") applyAnswer(out, false, `Restored: ${plural(out.edit.unsaved, "unsaved edit")}`);
+      else {
+        state.edit = out.edit;
+        setNotice("The draft was discarded.", "info");
+        renderEditState();
+      }
+    } catch (error) {
+      if (state.id === id) failed(error);
+    }
+    if (state.id === id) renderDraftBox();
+  });
+}
 
 function showClock(seconds) {
   const tick = Math.round(state.tempo.ticksAt(seconds));

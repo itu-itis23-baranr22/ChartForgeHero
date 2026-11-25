@@ -242,12 +242,21 @@ bar in its own row: the shapes the game uses, so that a cymbal never needs its c
   titles name the step), Other levels with its state in words, Level below, then a status line that says what an
   edit also changed ("Also changed: Hard 2 notes"), why one was refused (coral), or how far the audio has loaded.
   Below 1500px the key caps and the "bars in view" count are left out; the keys stay in the titles and the legend.
-- The header's end shows the count of unsaved edits.
+- The header's end shows the count of unsaved edits and Save (E.3): the one filled button in the shell, shell
+  ink on petrol like the active level, outlined and quiet when there is nothing to save; "Saving…" while it
+  writes. With errors under Problems it stays pressable: it says how many and takes the user there.
+
+### Draft Box (E.3)
+- Under the tool row, above the ruler, until answered: raised panel with a 1px form rule (not coral: nothing is
+  wrong). A draft from an earlier session reads "N unsaved edits of this song from <date time> were kept in a
+  draft" with Restore (filled marker white) and Discard; a draft set aside names its file in full with Dismiss.
 
 ### Navigation
 - **Instrument tabs:** text tabs in the header; the selected one sits on the raised petrol with a petrol line.
-  An instrument with no chart is disabled and says so in its title.
-- **Level control:** a segmented control of Expert, Hard, Medium and Easy; missing levels are disabled.
+  An instrument with no chart looks disabled (45%) but still answers: its title and a click say "This song has no
+  keys chart." in the tool row, and nothing else changes.
+- **Level control:** a segmented control of Expert, Hard, Medium and Easy; a level the song lacks looks disabled
+  the same way and says "This song has no Hard guitar chart." on hover and click (a Phase A folder has Expert only).
 
 ### Track Cell (signature)
 - A 28 × 22px ruled cell holding a two-digit number in the mono, in front of every lane and every audio file. Lanes

@@ -108,6 +108,24 @@ def test_editing_in_the_browser(node, tmp_path):  # noqa: F811
     print(f"\nbrowser round trips (ms): {', '.join(f'{t:.0f}' for t in out['timings'])}")
 
 
+def test_a_level_or_instrument_the_song_lacks_says_so_instead_of_doing_nothing(node, tmp_path):  # noqa: F811
+    """The edit song has guitar and drums on Expert and Hard only, like a Phase A folder with Expert only: Medium
+    and Keys look passive, keep a hover title, and a click names what is missing without changing the view."""
+    outputs = tmp_path / "outputs"
+    make_edit_song(outputs)
+    with serve(outputs) as url:
+        out = run_browser(node, {"mode": "levels", "url": url, "title": TITLE}, tmp_path, "edit.mjs")
+    assert not out["problems"], out["problems"]
+    assert out["medium"]["ariaDisabled"] == "true" and out["medium"]["disabled"] is False
+    assert out["medium"]["title"] == "This song has no Medium guitar chart."
+    assert float(out["medium"]["opacity"]) == pytest.approx(0.45) and out["medium"]["cursor"] == "default"
+    assert out["hard"]["ariaDisabled"] is None and out["hard"]["title"] is None and float(out["hard"]["opacity"]) == 1
+    assert out["afterMedium"] == {"notice": "This song has no Medium guitar chart.", "instrument": "guitar", "level": "expert"}
+    assert out["keys"]["ariaDisabled"] == "true" and out["keys"]["title"] == "This song has no keys chart."
+    assert out["afterKeys"] == {"notice": "This song has no keys chart.", "instrument": "guitar", "level": "expert"}
+    assert out["afterHard"] == {"instrument": "guitar", "level": "hard"}
+
+
 @pytest.mark.real
 def test_an_edit_on_a_real_song_takes_less_than_30_ms_in_the_browser(node, tmp_path):  # noqa: F811
     source = OUTPUTS / "Davul Testi - LastResort"

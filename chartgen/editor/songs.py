@@ -12,14 +12,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from chartgen.clonehero.chart_format import section_name
+from chartgen.clonehero.protection import EDIT_MARK  # noqa: F401  (the page's "Edited"; tests import it here)
 from chartgen.clonehero.song_ini import DIFFICULTY_KEYS
 from chartgen.clonehero.validate import ValidationReport, read_song_ini, validate_song_folder
 from chartgen.core.model import Chart, Difficulty, Instrument, Track
 from chartgen.editor.messages import explain
 from chartgen.errors import ChartgenError
 
-EDIT_MARK = "chartgen_edits.json"
-"""Written by the editor's first save (E.3); a folder holding it counts as edited (SPEC 55)."""
 
 FORCED, TAP, CYMBAL = 1, 2, 4
 """Bits of a note's flags in the chart JSON (the same as ``ops``)."""
@@ -145,14 +144,14 @@ def validation_json(report: ValidationReport) -> dict[str, list[dict[str, object
     return {"errors": [entry(m) for m in report.errors], "warnings": [entry(m) for m in report.warnings]}
 
 
-def song_info(folder: Path, chart_text: str | None = None) -> dict[str, object]:
+def song_info(folder: Path, chart_text: str | None = None, song_ini_text: str | None = None) -> dict[str, object]:
     """What the side panels show: ``song.ini``, the build's analysis in brief, the audio, the validator's
-    verdict (on ``chart_text`` when the editor holds edits, else on the folder's ``notes.chart``)."""
+    verdict (on ``chart_text`` and ``song_ini_text`` when the editor holds edits, else on the folder's files)."""
     ini = _ini(folder)
     analysis = _analysis(folder)
     audio = analysis.get("audio_files") if isinstance(analysis.get("audio_files"), dict) else {}
     files = sorted(p.name for p in folder.glob("*.ogg"))
-    report = validate_song_folder(folder, chart_text)
+    report = validate_song_folder(folder, chart_text, song_ini_text)
     tempo = analysis.get("tempo") if isinstance(analysis.get("tempo"), dict) else {}
     length_ms = _number(ini.get("song_length"))
     return {

@@ -54,8 +54,9 @@ def track(data: dict, instrument: str, difficulty: str) -> dict:
 
 def test_the_chart_comes_with_its_edit_state(client):
     data = client.get(url("chart")).json()
-    assert set(data["edit"]) == {"version", "unsaved", "undo", "redo"}
+    assert set(data["edit"]) == {"version", "unsaved", "undo", "redo", "draft", "set_aside"}
     assert data["edit"]["unsaved"] == 0 and data["edit"]["undo"] is None
+    assert data["edit"]["draft"] is None and data["edit"]["set_aside"] == []
 
 
 def test_an_operation_returns_the_tracks_it_changed(client):

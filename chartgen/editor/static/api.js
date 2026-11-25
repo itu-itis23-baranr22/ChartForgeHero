@@ -38,7 +38,12 @@ async function call(path, options = {}) {
   const problem = versionProblem(response.headers.get(API_HEADER));
   if (problem) throw new ApiError(problem, response.status, false, true);
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new ApiError(body.error || `${response.status} ${response.statusText}`, response.status, Boolean(body.stale));
+  if (!response.ok) {
+    const error = new ApiError(body.error || `${response.status} ${response.statusText}`, response.status, Boolean(body.stale));
+    error.errors = body.errors; // a refused save: how many hard-rule errors the chart has
+    error.diskChanged = Boolean(body.disk_changed);
+    throw error;
+  }
   return body;
 }
 
@@ -60,4 +65,7 @@ export const api = {
   undo: (id, version) => post(`${song(id)}/undo`, { version }),
   redo: (id, version) => post(`${song(id)}/redo`, { version }),
   validate: (id) => post(`${song(id)}/validate`, {}),
+  save: (id, version) => post(`${song(id)}/save`, { version }),
+  restoreDraft: (id, version) => post(`${song(id)}/draft/restore`, { version }),
+  discardDraft: (id, version) => post(`${song(id)}/draft/discard`, { version }),
 };

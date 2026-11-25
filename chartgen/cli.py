@@ -81,7 +81,15 @@ def _build_parser() -> argparse.ArgumentParser:
     build.add_argument("--output-dir", type=Path, default=Path("outputs"))
     build.add_argument("--cache-dir", type=Path, default=Path(".cache/stems"))
     build.add_argument("--device", default="auto", help="auto, cpu, cuda, mps (default: auto)")
-    build.add_argument("--force", action="store_true", help="replace an existing song folder")
+    build.add_argument(
+        "--force", action="store_true", help="replace an existing song folder (never one with hand edits)"
+    )
+    build.add_argument(
+        "--discard-edits",
+        action="store_true",
+        help="replace an existing song folder even if it has hand edits, moving it to "
+        "<output-dir>/_edited_backup first (implies --force)",
+    )
     build.add_argument(
         "--bpm",
         type=_parse_bpm,
@@ -121,6 +129,28 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--device", default="auto", help="auto, cpu, cuda, mps (default: auto)")
     evaluate.add_argument("--output", type=Path, help="also write the results as JSON")
 
+    protect = commands.add_parser(
+        "protect",
+        help="show which song folders a rebuild may replace; --record protects folders built before E.3",
+    )
+    protect.add_argument("--outputs", type=Path, default=Path("outputs"), help="folder holding the songs (default: outputs)")
+    protect.add_argument(
+        "--record",
+        action="store_true",
+        help="for each folder with no recorded chart hash: rebuild it into a scratch folder and record the "
+        "hash only if the fresh notes.chart is the same byte for byte",
+    )
+    protect.add_argument(
+        "--inputs",
+        type=Path,
+        nargs="+",
+        default=[],
+        metavar="folder",
+        help="where to look for the input audio files (by name and SHA-256), searched with subfolders",
+    )
+    protect.add_argument("--cache-dir", type=Path, default=Path(".cache/stems"))
+    protect.add_argument("--device", default="auto", help="auto, cpu, cuda, mps (default: auto)")
+
     edit = commands.add_parser(
         "edit", help="open the local web editor for the song folders in an output directory"
     )
@@ -155,6 +185,7 @@ def _run_build(args: argparse.Namespace) -> int:
             output_dir=args.output_dir,
             cache_dir=args.cache_dir,
             force=args.force,
+            discard_edits=args.discard_edits,
             bpm_override=args.bpm,
             click_overlay=args.click_overlay,
             drum_ear_test=args.drum_ear_test,
@@ -168,6 +199,40 @@ def _run_build(args: argparse.Namespace) -> int:
     for instrument, levels in charts.items():
         players = " ".join(f"--player {_PREVIEW_PLAYERS.get(instrument, instrument.title())},{level.title()}" for level in levels)
         log.info('Preview with: "%s" --song "%s" %s -i', executable, result.folder.resolve(), players)
+    return 0
+
+
+def _run_protect(args: argparse.Namespace) -> int:
+    """List each folder's state; with --record, record the folders whose fresh build is byte-identical."""
+    from chartgen.clonehero.protection import state
+    from chartgen.protect import RECORDED, record_folder, song_folders
+
+    folders = song_folders(args.outputs)
+    if not folders:
+        log.info("No song folders in %s", args.outputs.resolve())
+        return 0
+    if not args.record:
+        for folder in folders:
+            status, reason = state(folder)
+            log.info("%-14s %s%s", status, folder.name, f": {reason}" if reason else "")
+        log.info("A rebuild replaces only folders without hand edits; 'not recorded' folders are not protected yet "
+                 "(chartgen protect --record --inputs <folders with the audio>).")
+        return 0
+    from chartgen.audio.separation import DemucsSeparator
+
+    separator = DemucsSeparator(device=args.device)
+    outcomes = []
+    for number, folder in enumerate(folders, 1):
+        log.info("[%d/%d] %s ...", number, len(folders), folder.name)
+        outcome = record_folder(folder, args.inputs, args.cache_dir, separator)
+        log.info("    %s%s", outcome.status, f": {outcome.detail}" if outcome.detail else "")
+        outcomes.append(outcome)
+    recorded = [o for o in outcomes if o.status == RECORDED]
+    left = [o for o in outcomes if o.status not in (RECORDED, "protected")]
+    log.info("Recorded %d folder(s); %d already protected; %d left as they were%s",
+             len(recorded), sum(o.status == "protected" for o in outcomes), len(left), ":" if left else ".")
+    for outcome in left:
+        log.info("  %s: %s%s", outcome.folder.name, outcome.status, f" ({outcome.detail})" if outcome.detail else "")
     return 0
 
 
@@ -245,6 +310,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_evaluate(args)
         if args.command == "edit":
             return _run_edit(args)
+        if args.command == "protect":
+            return _run_protect(args)
         return _run_validate(args)
     except ChartgenError as error:
         log.error("Error: %s", error)

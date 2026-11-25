@@ -161,18 +161,53 @@ async function smoke(page) {
   return out;
 }
 
+/** A level and an instrument the song lacks: passive, with words on hover and on a click (owner, 2026-11-25). */
+async function levels(page) {
+  await open(page);
+  const out = {};
+  const describe = (locator) => locator.evaluate((b) => ({
+    ariaDisabled: b.getAttribute("aria-disabled"), title: b.getAttribute("title"), disabled: b.disabled,
+    opacity: getComputedStyle(b).opacity, cursor: getComputedStyle(b).cursor,
+  }));
+  const where = () => page.evaluate(() => ({ instrument: window.chartgenDebug.state.instrument, level: window.chartgenDebug.state.difficulty }));
+  const medium = page.locator('.seg button[data-level="medium"]');
+  out.medium = await describe(medium);
+  out.hard = await describe(page.locator('.seg button[data-level="hard"]'));
+  await medium.click({ force: true }); // a real click reaches it; Playwright waits for aria-disabled
+  out.afterMedium = { notice: await notice(page), ...(await where()) };
+  const keys = page.locator('.tabs button[data-instrument="keys"]');
+  out.keys = await describe(keys);
+  await keys.click({ force: true });
+  out.afterKeys = { notice: await notice(page), ...(await where()) };
+  await page.locator('.seg button[data-level="hard"]').click();
+  out.afterHard = await where();
+  return out;
+}
+
 async function timing(page) {
   await open(page);
+  // From the middle on: a single note on the 1/8 grid (the default) whose next eighth on its lane is free. It
+  // then goes right and back left in turn: the way back is the place it left, so no chart can block a move,
+  // whatever edits the folder holds.
   const pick = await page.evaluate(() => {
     const s = window.chartgenDebug.state;
-    const track = s.chart.tracks.find((t) => t.instrument === "guitar" && t.difficulty === "expert");
-    return track.notes[Math.floor(track.notes.length / 2)];
+    const notes = s.chart.tracks.find((t) => t.instrument === "guitar" && t.difficulty === "expert").notes;
+    const step = s.chart.resolution / 2;
+    const taken = new Set(notes.map((n) => `${n[0]}:${n[1]}`));
+    const chord = (tick) => notes.filter((n) => n[0] === tick).length > 1;
+    const barStart = (tick) => s.bars.filter((b) => b <= tick).at(-1) ?? 0;
+    for (let i = Math.floor(notes.length / 2); i < notes.length; i++) {
+      const n = notes[i];
+      if (n[1] < 5 && (n[0] - barStart(n[0])) % step === 0 && !taken.has(`${n[0] + step}:${n[1]}`) && !chord(n[0])) return n;
+    }
+    return null;
   });
+  if (!pick) throw new Error("no note to move in Expert guitar");
   await view(page, pick[0], 300);
   const p = await at(page, pick[0], pick[1]);
   await page.mouse.click(p.x, p.y);
   for (let k = 0; k < plan.moves; k++) {
-    await answered(page, () => page.keyboard.press(k < plan.moves / 2 ? "ArrowRight" : "ArrowLeft"));
+    await answered(page, () => page.keyboard.press(k % 2 === 0 ? "ArrowRight" : "ArrowLeft"));
   }
   const timings = await page.evaluate(() => performance.getEntriesByType("resource")
     .filter((e) => /\/ops$/.test(e.name)).map((e) => e.responseEnd - e.startTime));
@@ -183,7 +218,7 @@ const browser = await chromium.launch();
 try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
   const problems = watch(page);
-  const out = plan.mode === "smoke" ? await smoke(page) : await timing(page);
+  const out = plan.mode === "smoke" ? await smoke(page) : plan.mode === "levels" ? await levels(page) : await timing(page);
   process.stdout.write(JSON.stringify({ mode: plan.mode, browser: browser.version(), problems, ...out }));
 } finally {
   await browser.close();

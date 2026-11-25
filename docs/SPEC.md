@@ -337,16 +337,23 @@ Decisions made since it was written are listed first and take precedence.
    metronome and a synthetic click stem land within 1 ms of the chart's beats at 1x and 0.5x, also with a
    48 kHz context; live, the playhead stays within one frame of the audio clock.
 54. **Saving.** The model is written as `.chart` text and the whole folder is validated with it
-   (`validate_song_folder(folder, chart_text)`); a hard-rule error writes nothing and is shown. Otherwise the
-   old `notes.chart` is copied to `outputs\_editor_backups\<song>\<date_time>_notes.chart` and the new one
-   replaces it atomically. A file changed on disk since it was opened is not overwritten. `song.ini` gets new
-   `diff_*` values from `difficulty_tier`; no other field changes.
+   (`validate_song_folder(folder, chart_text, song_ini_text)`, with the `song.ini` the save would write); a
+   hard-rule error writes nothing and is shown. Otherwise the old `notes.chart` and `song.ini` are copied to
+   `outputs\_editor_backups\<song>\<date_time>_<file>` (all kept) and the new ones replace them atomically.
+   A file changed on disk since it was opened is not overwritten. `song.ini` gets new `diff_*` values from
+   `difficulty_tier` over the input's length; no other byte changes. Unsaved edits are written a second after
+   each change to `outputs\_editor_drafts\<song>.json` with the hash of the chart they are based on; the page
+   offers to restore a draft on that chart, and a draft on a chart that changed since is renamed
+   `.stale.json` and named, never restored (owner, 2026-11-25).
 55. **Hand edits are never lost silently (owner's option C).** A build records `notes_chart_sha256` in
    `analysis.json`. `build --force` refuses a folder whose `notes.chart` no longer has that hash (an edit
    from any tool) or that holds `chartgen_edits.json` (the editor's mark), and says why; `--discard-edits`
    moves the old folder to `outputs\_edited_backup\` first. Each save also appends its operations to
-   `chartgen_edits.json`, so that replaying them on a new build could be added later. A folder built before
-   this has no hash and counts as unedited until the editor saves it.
+   `chartgen_edits.json`, so that replaying them on a new build could be added later. The check runs again
+   right before the old folder is replaced. A folder built before this has no hash: `chartgen protect
+   --record` rebuilds each such folder from its input into a scratch folder and records the hash only when
+   the fresh `notes.chart` is the folder's byte for byte (owner, 2026-11-25); others stay unprotected and are
+   listed.
 56. **Copying to the game.** Refused while `Clone Hero.exe` runs. The folder is validated, the copy in `Songs`
    is backed up to `outputs\_songs_backup\<date>_editor\`, then only `notes.chart` and `song.ini` are copied
    when the set of audio files is the same (the folder's own layout in `Songs` stays), or the whole folder
