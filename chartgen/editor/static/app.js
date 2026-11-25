@@ -1,8 +1,12 @@
-// chartgen editor (E.1: read-only, with playback). Two views behind the hash: #/ the song list,
-// #/song/<folder> a song.
+// chartgen editor (E.2: playback and editing; saving comes in E.3). Two views behind the hash: #/ the song
+// list, #/song/<folder> a song.
 
 import { api } from "./api.js";
 import { PUMP_MS, Player } from "./audio.js";
+import {
+  CYMBAL, FORCED, GRIDS, TAP, cascadeSummary, clipboardOf, flagTarget, gridTicks, keyOf, laneOfRow, noteKey, notesInBox,
+  pasteAt, plural, rowOf, selectedNotes, snapTick, stepTick, unsavedLabel,
+} from "./edit.js";
 import { icon } from "./icons.js";
 import { TempoMap } from "./tempo.js";
 import { PAD, Timeline } from "./timeline.js";
@@ -80,6 +84,34 @@ function wireHeader() {
   renderThemeButton();
 }
 
+/**
+ * The page and the server are different versions of the editor (api.js versionProblem): say so above
+ * everything and stop editing until the page is reloaded. It stays across views.
+ */
+function showOutdated(message) {
+  state.stale = true;
+  let bar = document.getElementById("outdated");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "outdated";
+    bar.className = "outdated";
+    bar.setAttribute("role", "alert");
+    document.body.prepend(bar);
+  }
+  bar.innerHTML = `<span class="ic-err">${icon("alert", "Error")}</span><p>${esc(message)}</p><button class="reload">Reload the page</button>`;
+  bar.querySelector(".reload").addEventListener("click", () => location.reload());
+  renderEditState();
+}
+
+/** An error from the API: a version mismatch gets the banner, anything else is returned to be shown. */
+function outdated(error) {
+  if (error && error.outdated) {
+    showOutdated(error.message);
+    return true;
+  }
+  return false;
+}
+
 function route() {
   closeAudio();
   const match = location.hash.match(/^#\/song\/(.+)$/);
@@ -103,6 +135,7 @@ async function showList() {
   try {
     data = await api.songs();
   } catch (error) {
+    outdated(error);
     main.innerHTML = `<div class="empty"><h1>The songs could not be listed</h1><p>${esc(error.message)}</p></div>`;
     return;
   }
@@ -137,6 +170,7 @@ async function openSong(id) {
   try {
     [chart, info] = await Promise.all([api.chart(id), api.info(id)]);
   } catch (error) {
+    outdated(error);
     root.className = "app list-view";
     root.innerHTML = header(`<div class="brand"><a class="back" href="#/" title="All songs" aria-label="All songs">${icon("back")}</a>chartgen</div>`) +
       `<main class="list"><div class="empty"><h1>This song cannot be opened</h1><p>${esc(error.message)}</p><p><a class="open" href="#/">Back to the songs</a></p></div></main>`;
@@ -147,11 +181,16 @@ async function openSong(id) {
   const lastTick = Math.max(0, ...chart.tracks.flatMap((t) => t.notes.map((n) => n[0] + n[2])));
   const lengthS = Math.max(info.length_s || 0, tempo.secondsAt(lastTick) + 1);
   const instruments = INSTRUMENTS.filter((i) => chart.tracks.some((t) => t.instrument === i));
+  const grid = Number(stored("chartgen-grid"));
   Object.assign(state, {
     id, chart, info, tempo, lengthS, bars: tempo.barLines(lengthS), instruments,
-    instrument: instruments[0], difficulty: null, selected: null, showBelow: true,
+    instrument: instruments[0], difficulty: null, showBelow: true,
     playhead: 0, rate: 1, metronome: stored("chartgen-metronome") === "on",
     latency: clampLatency(stored("chartgen-latency-ms") ?? 0), audio: { status: "loading", loaded: 0, total: info.audio.length },
+    // editing (E.2): the server holds the chart; the page keeps its version and what is selected
+    edit: chart.edit, validation: info.validation, selection: new Set(), tool: stored("chartgen-tool") === "draw" ? "draw" : "select",
+    grid: GRIDS.includes(grid) ? grid : 8, linked: true, clipboard: state.clipboard || null, queue: Promise.resolve(),
+    stale: false, notice: null, gesture: null,
   });
   state.difficulty = levelsOf(state.instrument)[0];
   document.title = `${chart.name} – chartgen editor`;
@@ -188,14 +227,24 @@ function renderSong() {
       <input class="vol" type="range" min="0" max="100" step="1" value="100" title="${name} volume" aria-label="${name} volume" disabled></div>`;
   }).join("");
   const speeds = SPEEDS.map((s) => `<option value="${s}"${s === state.rate ? " selected" : ""}>${s.toFixed(2)}×</option>`).join("");
+  const grids = GRIDS.map((g) => `<option value="${g}"${g === state.grid ? " selected" : ""}>1/${g}</option>`).join("");
   root.innerHTML = header(`<div class="brand"><a class="back" href="#/" title="All songs" aria-label="All songs">${icon("back")}</a>chartgen</div>
       <div class="song-title"><b>${esc(chart.name)}</b><span>${esc(chart.artist)}</span></div>
       <nav class="tabs" role="tablist" aria-label="Instrument">${tabs}</nav><div class="seg" role="group" aria-label="Level"></div>`) +
     `<div class="tool">
-      <button data-zoom="out" title="Zoom out (−)">${icon("zoomOut")}</button><button data-zoom="in" title="Zoom in (+)">${icon("zoomIn")}</button>
+      <span class="tools" role="group" aria-label="Tool">
+        <button data-tool="select" title="Select (V): click a note, Shift or Ctrl to add, drag a box; drag notes to move them">${icon("select")}Select <kbd>V</kbd></button>
+        <button data-tool="draw" title="Draw (D): click a lane to add a note, drag right for a sustain">${icon("draw")}Draw <kbd>D</kbd></button></span>
+      <span class="sep"></span>
+      <label title="Where notes land when they are drawn, dragged or moved with the arrow keys">Grid<select class="grid">${grids}</select></label>
+      <span class="sep"></span>
+      <button data-zoom="out" title="Zoom out (−)" aria-label="Zoom out">${icon("zoomOut")}</button><button data-zoom="in" title="Zoom in (+)" aria-label="Zoom in">${icon("zoomIn")}</button>
       <button data-zoom="fit" title="Whole song">${icon("fit")}Whole song</button><span class="zoom-label"></span><span class="sep"></span>
-      <label><input type="checkbox" class="below-toggle" ${state.showBelow ? "checked" : ""}>Show the level below</label>
-      <span class="note">Read-only for now: editing comes next.</span></div>
+      <button class="undo" disabled>${icon("undo")}Undo</button><button class="redo" disabled>${icon("redo")}Redo</button>
+      <span class="sep"></span>
+      <button class="linked" aria-pressed="${state.linked}" title="On: a note deleted or moved here goes from the levels below too, and a note added here is added to the levels above that lack it, so every level keeps the notes of the level below it">${icon("levels")}Other levels <b></b></button>
+      <label><input type="checkbox" class="below-toggle" ${state.showBelow ? "checked" : ""}>Level below</label>
+      <span class="note" role="status" aria-live="polite"></span></div>
     <aside class="left"></aside>
     <main class="tl" tabindex="0" aria-label="Timeline: arrow keys scroll, plus and minus zoom"><canvas></canvas><div class="spacer"></div></main>
     <aside class="right"></aside>
@@ -206,9 +255,19 @@ function renderSong() {
       <label class="ctl" title="Draws the playhead this much later than the audio clock. Raise it when the line runs ahead of what you hear (Bluetooth headphones: 150 to 250 ms)">Latency<span class="lat"><input class="latency" type="number" min="-300" max="500" step="5" value="${state.latency}"><span>ms</span></span></label>
       <div class="stems" role="group" aria-label="Stems">${stems}</div></footer>`;
   wireHeader();
-  root.querySelector(".mode").textContent = "Read-only";
   root.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => setInstrument(b.dataset.instrument)));
   root.querySelectorAll("[data-zoom]").forEach((b) => b.addEventListener("click", () => zoomBy(b.dataset.zoom)));
+  root.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => setTool(b.dataset.tool)));
+  root.querySelector(".grid").addEventListener("change", (e) => {
+    state.grid = Number(e.target.value);
+    store("chartgen-grid", state.grid);
+  });
+  root.querySelector(".undo").addEventListener("click", () => history("undo"));
+  root.querySelector(".redo").addEventListener("click", () => history("redo"));
+  root.querySelector(".linked").addEventListener("click", () => {
+    state.linked = !state.linked;
+    renderEditState();
+  });
   root.querySelector(".below-toggle").addEventListener("change", (e) => {
     state.showBelow = e.target.checked;
     state.timeline.showBelow = state.showBelow;
@@ -225,7 +284,9 @@ function renderSong() {
   timeline.playhead = state.playhead;
   wireTimeline(scroller, canvas, timeline);
   wireTransport();
+  renderEditState();
   showTrack();
+  scheduleValidation();
   new ResizeObserver(() => {
     timeline.resize(scroller.clientWidth, scroller.clientHeight);
     layoutLanes();
@@ -248,13 +309,13 @@ function setInstrument(instrument) {
   state.instrument = instrument;
   const levels = levelsOf(instrument);
   if (!levels.includes(state.difficulty)) state.difficulty = levels[0];
-  state.selected = null;
+  state.selection = new Set();
   showTrack();
 }
 
 function setLevel(level) {
   state.difficulty = level;
-  state.selected = null;
+  state.selection = new Set();
   showTrack();
 }
 
@@ -267,7 +328,8 @@ function showTrack() {
   const below = belowLevel();
   const timeline = state.timeline;
   timeline.setTrack(state.instrument, trackOf(state.instrument, state.difficulty), below ? trackOf(state.instrument, below) : null);
-  timeline.selected = state.selected;
+  timeline.selection = state.selection;
+  timeline.flashes = [];
   timeline.markers = markers();
   updateWave();
   layoutLanes();
@@ -304,7 +366,7 @@ function layoutLanes() {
 
 function markers() {
   const below = belowLevel();
-  return state.info.validation.errors
+  return state.validation.errors
     .filter((e) => e.where && e.where.instrument === state.instrument)
     .map((e) => ({
       tick: e.where.tick,
@@ -314,19 +376,20 @@ function markers() {
 
 function problemItem(entry, kind, index) {
   const where = entry.where;
+  let place = "";
+  if (where) {
+    const at = barBeat(state.tempo, state.bars, where.tick);
+    place = `<span class="where">Bar <span class="num">${at.bar}.${at.beat}</span> · ${TITLE[where.difficulty]} ${TITLE[where.instrument].toLowerCase()}</span>`;
+  }
   const go = where ? `<button class="go" data-${kind}="${index}">Go to ${TITLE[where.instrument]} ${TITLE[where.difficulty]}</button>` : "";
+  const raw = entry.raw && entry.raw !== entry.message ? ` title="Validator: ${esc(entry.raw)}"` : "";
   return `<div class="item"><span class="${kind === "error" ? "ic-err" : "ic-warn"}">${kind === "error" ? icon("alert", "Error") : ""}</span>
-    <p>${esc(entry.message)}</p>${go}</div>`;
+    ${place}<p${raw}>${esc(entry.message)}</p>${go}</div>`;
 }
 
 function renderSide() {
   const { info, chart, tempo } = state;
-  const errors = info.validation.errors;
-  const warnings = info.validation.warnings;
-  const count = errors.length + warnings.length;
-  let html = `<h2>Problems <span>${count ? `${errors.length} error${errors.length === 1 ? "" : "s"} · ${warnings.length} warning${warnings.length === 1 ? "" : "s"}` : "none"}</span></h2>`;
-  if (!count) html += '<p class="quiet">The song folder passes every hard rule of the validator.</p>';
-  html += errors.map((e, i) => problemItem(e, "error", i)).join("") + warnings.map((w, i) => problemItem(w, "warning", i)).join("");
+  let html = '<div class="problems"></div>';
   if (info.build_warnings.length) {
     html += `<button class="more" aria-expanded="false">Notes from the build (${info.build_warnings.length})</button><div class="build-notes" hidden>${
       info.build_warnings.map((w) => `<p class="quiet">${esc(w)}</p>`).join("")}</div>`;
@@ -336,38 +399,76 @@ function renderSide() {
     <dt>Tempo</dt><dd>${(info.bpm || tempo.tempos.at(-1).bpm).toFixed(1)} BPM</dd>
     <dt>Tempo events</dt><dd>${tempo.tempos.length}</dd><dt>Time</dt><dd>${signatures}</dd>
     <dt>Sections</dt><dd>${chart.sections.length}</dd><dt>Preview</dt><dd>${clock(info.preview_s)}</dd></dl>`;
-  html += '<h2>Selected note</h2><div class="inspector"></div>';
+  html += '<h2 class="sel-title">Selected</h2><div class="inspector"></div>';
   const side = root.querySelector(".right");
   side.innerHTML = html;
-  side.querySelectorAll("[data-error]").forEach((b) => b.addEventListener("click", () => goTo(errors[+b.dataset.error].where)));
-  side.querySelectorAll("[data-warning]").forEach((b) => b.addEventListener("click", () => goTo(warnings[+b.dataset.warning].where)));
   const more = side.querySelector(".more");
   if (more) more.addEventListener("click", () => {
     const notes = side.querySelector(".build-notes");
     notes.hidden = !notes.hidden;
     more.setAttribute("aria-expanded", String(!notes.hidden));
   });
+  renderProblems();
   renderInspector();
 }
+
+/** The problem list: the live check of the chart as it would be saved, in plain words. */
+function renderProblems() {
+  const box = root.querySelector(".problems");
+  if (!box) return;
+  const { errors, warnings } = state.validation;
+  const count = errors.length + warnings.length;
+  let html = `<h2>Problems <span>${count ? `${plural(errors.length, "error")} · ${plural(warnings.length, "warning")}` : "none"}</span></h2>`;
+  if (!count) html += '<p class="quiet">The chart passes every hard rule of the validator.</p>';
+  html += errors.map((e, i) => problemItem(e, "error", i)).join("") + warnings.map((w, i) => problemItem(w, "warning", i)).join("");
+  box.innerHTML = html;
+  box.querySelectorAll("[data-error]").forEach((b) => b.addEventListener("click", () => goTo(errors[+b.dataset.error].where)));
+  box.querySelectorAll("[data-warning]").forEach((b) => b.addEventListener("click", () => goTo(warnings[+b.dataset.warning].where)));
+}
+
+function laneName(n) {
+  if (state.instrument === "drums") return `${DRUM_NAMES[n[1]]}${n[1] > 1 ? (n[3] & CYMBAL ? " cymbal" : " tom") : ""}`;
+  return n[1] === 5 ? "Open" : FRETS[n[1]];
+}
+
+const KEYS_HINT = `<dl class="keys">
+  <dt><kbd>Del</kbd></dt><dd>Delete</dd>
+  <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Move one grid step</dd>
+  <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Move to the lane above or below</dd>
+  <dt><kbd>Shift</kbd> <kbd>←</kbd> <kbd>→</kbd></dt><dd>Shorten or lengthen the sustain</dd>
+  <dt><kbd>F</kbd> <kbd>T</kbd> <kbd>C</kbd></dt><dd>Forced, tap, cymbal</dd>
+  <dt><kbd>Ctrl</kbd> <kbd>C</kbd> <kbd>V</kbd></dt><dd>Copy, paste at the playhead</dd>
+  <dt><kbd>Ctrl</kbd> <kbd>Z</kbd> <kbd>Y</kbd></dt><dd>Undo, redo</dd></dl>`;
 
 function renderInspector() {
   const box = root.querySelector(".inspector");
   if (!box) return;
-  if (state.selected === null) {
-    box.innerHTML = '<p class="quiet">Click a note to see where it is.</p>';
+  const title = root.querySelector(".sel-title");
+  const notes = selectedNotes(trackOf(state.instrument, state.difficulty), state.selection);
+  if (title) title.innerHTML = `Selected <span>${notes.length ? plural(notes.length, "note") : ""}</span>`;
+  if (!notes.length) {
+    box.innerHTML = `<p class="quiet">${state.tool === "draw"
+      ? "Click an empty spot of a lane to add a note there; drag right to draw its sustain. Click a note to select it."
+      : "Click a note to select it; Shift or Ctrl and click to add more, or drag a box around them."}</p>${KEYS_HINT}`;
     return;
   }
   const { tempo, bars } = state;
-  const tick = state.selected;
-  const notes = trackOf(state.instrument, state.difficulty).notes.filter((n) => n[0] === tick);
   const drums = state.instrument === "drums";
-  const lanes = notes.map((n) => (drums ? `${DRUM_NAMES[n[1]]}${n[1] > 1 ? (n[3] & 4 ? " cymbal" : " tom") : ""}` : n[1] === 5 ? "Open" : FRETS[n[1]])).join(" + ");
-  const sustain = Math.max(...notes.map((n) => n[2]));
-  const flags = [notes.some((n) => n[3] & 1) && "forced", notes.some((n) => n[3] & 2) && "tap"].filter(Boolean).join(", ") || "none";
-  const where = barBeat(tempo, bars, tick);
-  box.innerHTML = `<dl class="kv"><dt>Position</dt><dd>Bar ${where.bar}.${where.beat}</dd><dt>Tick</dt><dd>${tick}</dd>
-    <dt>Time</dt><dd>${clock(tempo.secondsAt(tick))}</dd><dt>${drums ? "Pads" : "Lanes"}</dt><dd>${esc(lanes)}</dd>
-    ${drums ? "" : `<dt>Sustain</dt><dd>${sustain ? `${+(sustain / tempo.resolution).toFixed(3)} beats` : "none"}</dd><dt>Flags</dt><dd>${flags}</dd>`}</dl>`;
+  const first = notes[0][0];
+  const last = notes.at(-1)[0];
+  const from = barBeat(tempo, bars, first);
+  if (first === last) {
+    const lanes = notes.map(laneName).join(" + ");
+    const sustain = Math.max(...notes.map((n) => n[2]));
+    const flags = [notes.some((n) => n[3] & FORCED) && "forced", notes.some((n) => n[3] & TAP) && "tap"].filter(Boolean).join(", ") || "none";
+    box.innerHTML = `<dl class="kv"><dt>Position</dt><dd>Bar ${from.bar}.${from.beat}</dd><dt>Tick</dt><dd>${first}</dd>
+      <dt>Time</dt><dd>${clock(tempo.secondsAt(first))}</dd><dt>${drums ? "Pads" : "Lanes"}</dt><dd>${esc(lanes)}</dd>
+      ${drums ? "" : `<dt>Sustain</dt><dd>${sustain ? `${+(sustain / tempo.resolution).toFixed(3)} beats` : "none"}</dd><dt>Flags</dt><dd>${flags}</dd>`}</dl>${KEYS_HINT}`;
+    return;
+  }
+  const to = barBeat(tempo, bars, last);
+  box.innerHTML = `<dl class="kv"><dt>From</dt><dd>Bar ${from.bar}.${from.beat}</dd><dt>To</dt><dd>Bar ${to.bar}.${to.beat}</dd>
+    <dt>Time</dt><dd>${clock(tempo.secondsAt(first))} – ${clock(tempo.secondsAt(last))}</dd></dl>${KEYS_HINT}`;
 }
 
 function goTo(where) {
@@ -392,19 +493,21 @@ function wireTimeline(scroller, canvas, timeline) {
     if (e.ctrlKey) zoomTo(timeline.zoom * Math.exp(-e.deltaY * 0.0015), e.clientX - scroller.getBoundingClientRect().left);
     else scroller.scrollLeft += e.deltaY + e.deltaX;
   }, { passive: false });
-  // The ruler and the waveform move the playhead; the lanes pick notes.
-  canvas.addEventListener("pointermove", (e) => canvas.classList.toggle("seek", timeline.zoneAt(e.offsetY) !== "lanes"));
-  canvas.addEventListener("click", (e) => {
-    if (timeline.zoneAt(e.offsetY) !== "lanes") {
-      seekTo(timeline.secondsAtX(e.offsetX));
-      return;
+  state.redraw = redraw;
+  // The ruler and the waveform move the playhead; in the lanes the tools select, move and draw notes.
+  canvas.addEventListener("pointerdown", (e) => pointerDown(e, scroller, canvas, timeline));
+  canvas.addEventListener("pointermove", (e) => pointerMove(e, canvas, timeline));
+  canvas.addEventListener("pointerup", (e) => pointerUp(e, canvas, timeline));
+  canvas.addEventListener("pointercancel", () => cancelGesture(timeline));
+  canvas.addEventListener("pointerleave", () => {
+    if (!state.gesture && timeline.hover) {
+      timeline.hover = null;
+      redraw();
     }
-    state.selected = timeline.hit(e.offsetX, e.offsetY);
-    timeline.selected = state.selected;
-    timeline.draw();
-    renderInspector();
   });
   scroller.addEventListener("keydown", (e) => {
+    // With notes selected the arrow keys move them (the editing keys below); without, they scroll.
+    if (state.selection.size && e.key.startsWith("Arrow")) return;
     const bar = state.bars.length > 1 ? (timeline.barSeconds[1] - timeline.barSeconds[0]) * timeline.zoom : 200;
     const actions = {
       ArrowRight: () => { scroller.scrollLeft += bar; },
@@ -412,7 +515,6 @@ function wireTimeline(scroller, canvas, timeline) {
       Home: () => { scroller.scrollLeft = 0; },
       End: () => { scroller.scrollLeft = scroller.scrollWidth; },
       "+": () => zoomBy("in"), "=": () => zoomBy("in"), "-": () => zoomBy("out"),
-      Escape: () => { state.selected = null; timeline.selected = null; timeline.draw(); renderInspector(); },
     };
     if (actions[e.key] && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
@@ -421,6 +523,385 @@ function wireTimeline(scroller, canvas, timeline) {
   });
   showClock(state.playhead);
 }
+
+// ---------------------------------------------------------------- pointer: select, box, move, draw (E.2)
+
+const DRAG_PX = 4; // a press that moves less than this is a click
+
+/** The row under the pointer, clamped to the rows: for a selection box that starts or ends off them. */
+function rowClamped(timeline, py) {
+  const row = timeline.rowAt(py);
+  if (row !== null) return row;
+  return py < timeline.layout().lanesY ? 0 : 4;
+}
+
+function pointerDown(e, scroller, canvas, timeline) {
+  if (e.button !== 0 || state.gesture) return;
+  scroller.focus({ preventScroll: true });
+  if (timeline.zoneAt(e.offsetY) !== "lanes") {
+    seekTo(timeline.secondsAtX(e.offsetX));
+    return;
+  }
+  const note = timeline.noteAt(e.offsetX, e.offsetY);
+  const toggle = e.ctrlKey || e.metaKey;
+  if (note) {
+    const key = noteKey(note);
+    const selection = new Set(toggle || e.shiftKey ? state.selection : []);
+    if (toggle && state.selection.has(key)) selection.delete(key);
+    else selection.add(key);
+    // A press on a note of the selection keeps the group, to drag it; a click without a drag picks the one.
+    const group = !toggle && !e.shiftKey && state.selection.has(key) && state.selection.size > 1;
+    if (group) state.selection.forEach((k) => selection.add(k));
+    setSelection(selection);
+    if (toggle) return;
+    state.gesture = {
+      type: "move", anchor: note, x: e.offsetX, y: e.offsetY, started: false, ticks: 0, rows: 0, group, key,
+      grab: timeline.tickAtX(e.offsetX) - note[0], downRow: rowOf(drums(), note[1]),
+    };
+  } else if (state.tool === "draw") {
+    const lane = laneOfRow(drums(), timeline.rowAt(e.offsetY));
+    if (lane === null) return;
+    const tick = snap(timeline.tickAtX(e.offsetX));
+    state.gesture = { type: "draw", tick, lane };
+    timeline.hover = { tick, lane, length: 0 };
+    timeline.draw();
+  } else {
+    const additive = toggle || e.shiftKey;
+    state.gesture = { type: "box", x0: e.offsetX, y0: e.offsetY, started: false, base: new Set(additive ? state.selection : []) };
+    if (!additive) setSelection([]);
+  }
+  canvas.setPointerCapture(e.pointerId);
+}
+
+function pointerMove(e, canvas, timeline) {
+  const g = state.gesture;
+  const zone = timeline.zoneAt(e.offsetY);
+  canvas.classList.toggle("seek", !g && zone !== "lanes");
+  if (!g) {
+    const over = zone === "lanes" ? timeline.noteAt(e.offsetX, e.offsetY) : null;
+    canvas.classList.toggle("grab", Boolean(over));
+    canvas.classList.toggle("draw", state.tool === "draw" && zone === "lanes" && !over);
+    let hover = null;
+    if (state.tool === "draw" && zone === "lanes" && !over) {
+      const lane = laneOfRow(drums(), timeline.rowAt(e.offsetY));
+      if (lane !== null) hover = { tick: snap(timeline.tickAtX(e.offsetX)), lane, length: 0 };
+    }
+    if (JSON.stringify(hover) !== JSON.stringify(timeline.hover)) {
+      timeline.hover = hover;
+      state.redraw();
+    }
+    return;
+  }
+  if (g.type === "move") {
+    if (!g.started && Math.hypot(e.offsetX - g.x, e.offsetY - g.y) < DRAG_PX) return;
+    g.started = true;
+    canvas.classList.add("dragging");
+    g.ticks = snap(Math.max(0, timeline.tickAtX(e.offsetX) - g.grab)) - g.anchor[0];
+    const row = timeline.rowAt(e.offsetY);
+    if (g.downRow !== null && row !== null) g.rows = row - g.downRow;
+    timeline.drag = { ticks: g.ticks, rows: g.rows };
+  } else if (g.type === "draw") {
+    if (drums()) return; // drum notes have no sustain
+    const length = Math.max(0, snap(timeline.tickAtX(e.offsetX)) - g.tick);
+    timeline.hover = { tick: g.tick, lane: g.lane, length };
+  } else {
+    if (!g.started && Math.hypot(e.offsetX - g.x0, e.offsetY - g.y0) < DRAG_PX) return;
+    g.started = true;
+    timeline.box = { x0: g.x0, y0: g.y0, x1: e.offsetX, y1: e.offsetY };
+    const [xa, xb] = [Math.min(g.x0, e.offsetX), Math.max(g.x0, e.offsetX)];
+    const [ya, yb] = [Math.min(g.y0, e.offsetY), Math.max(g.y0, e.offsetY)];
+    const inside = notesInBox(timeline.track.notes, timeline.tickAtX(xa), timeline.tickAtX(xb), rowClamped(timeline, ya), rowClamped(timeline, yb), drums());
+    timeline.selection = new Set([...g.base, ...inside]);
+  }
+  state.redraw();
+}
+
+function pointerUp(e, canvas, timeline) {
+  const g = state.gesture;
+  if (!g) return;
+  state.gesture = null;
+  canvas.classList.remove("dragging");
+  if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+  if (g.type === "move") {
+    timeline.drag = null;
+    timeline.draw();
+    const { ticks, rows } = g;
+    if (g.started && (ticks || rows)) edit(() => ({ kind: "move", notes: selectedPlaces(), ticks, rows }));
+    else if (!g.started && g.group) setSelection([g.key]);
+  } else if (g.type === "draw") {
+    const length = drums() ? 0 : (timeline.hover ? timeline.hover.length : 0);
+    timeline.hover = null;
+    timeline.draw();
+    edit(() => ({ kind: "add", notes: [[g.tick, g.lane, length, 0]] }));
+  } else {
+    timeline.box = null;
+    setSelection(timeline.selection);
+  }
+}
+
+function cancelGesture(timeline) {
+  state.gesture = null;
+  Object.assign(timeline, { drag: null, box: null, hover: null, selection: state.selection });
+  timeline.draw();
+}
+
+// ---------------------------------------------------------------- editing (E.2, SPEC 50)
+// The server does every edit and answers with the tracks it changed; the page sends one edit at a time,
+// each with the chart version the last answer gave, and builds it when its turn comes (from the selection
+// as it is then), so that a held arrow key moves the notes step by step.
+
+const drums = () => state.instrument === "drums";
+const currentTrack = () => trackOf(state.instrument, state.difficulty);
+const gridStep = () => gridTicks(state.chart.resolution, state.grid);
+const snap = (tick) => snapTick(state.bars, tick, gridStep());
+const selectedPlaces = () => selectedNotes(currentTrack(), state.selection).map((n) => [n[0], n[1]]);
+
+function setSelection(keys) {
+  state.selection = new Set(keys);
+  if (state.timeline) {
+    state.timeline.selection = state.selection;
+    state.timeline.draw();
+  }
+  renderInspector();
+}
+
+function setTool(tool) {
+  state.tool = tool;
+  store("chartgen-tool", tool);
+  if (state.timeline) state.timeline.hover = null;
+  renderEditState();
+  renderInspector();
+  if (state.timeline) state.timeline.draw();
+}
+
+function renderEditState() {
+  const edit = state.edit;
+  const mode = root.querySelector(".mode");
+  if (mode && edit) {
+    mode.textContent = unsavedLabel(edit.unsaved);
+    mode.title = "Edits are kept while chartgen edit runs; saving them to the song folder comes next (E.3)";
+  }
+  root.querySelectorAll("[data-tool]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tool === state.tool)));
+  const undo = root.querySelector(".tool .undo");
+  const redo = root.querySelector(".tool .redo");
+  if (undo && edit) {
+    undo.disabled = !edit.undo || state.stale;
+    undo.title = edit.undo ? `Undo: ${edit.undo} (Ctrl+Z)` : "Nothing to undo";
+    redo.disabled = !edit.redo || state.stale;
+    redo.title = edit.redo ? `Redo: ${edit.redo} (Ctrl+Y)` : "Nothing to redo";
+  }
+  const linked = root.querySelector(".tool .linked");
+  if (linked) {
+    linked.setAttribute("aria-pressed", String(state.linked));
+    linked.querySelector("b").textContent = state.linked ? "On" : "Off";
+  }
+}
+
+/** Queues one edit: `make` returns the operation when its turn comes, or null for nothing to do. */
+function edit(make) {
+  const id = state.id;
+  state.queue = state.queue.then(async () => {
+    if (state.id !== id || state.stale) return;
+    const op = make();
+    if (!op) return;
+    const body = { version: state.edit.version, instrument: state.instrument, difficulty: state.difficulty, linked: state.linked, op };
+    try {
+      const out = await api.op(id, body);
+      if (state.id === id) applyAnswer(out, true, "");
+    } catch (error) {
+      if (state.id === id) failed(error);
+    }
+  });
+}
+
+function history(which) {
+  const id = state.id;
+  state.queue = state.queue.then(async () => {
+    if (state.id !== id || state.stale) return;
+    if (!state.edit[which]) return;
+    try {
+      const out = await api[which](id, state.edit.version);
+      if (state.id === id) applyAnswer(out, false, `${which === "undo" ? "Undid" : "Redid"}: ${out.label}`);
+    } catch (error) {
+      if (state.id === id) failed(error);
+    }
+  });
+}
+
+/** Puts an answer's tracks in place, then redraws, flashes what changed elsewhere and checks again. */
+function applyAnswer(out, select, said) {
+  state.edit = out.edit;
+  for (const track of out.tracks) {
+    const index = state.chart.tracks.findIndex((t) => t.instrument === track.instrument && t.difficulty === track.difficulty);
+    if (index >= 0) state.chart.tracks[index] = track;
+  }
+  const notes = currentTrack().notes;
+  if (select && out.selection) state.selection = new Set(out.selection.map(([t, l]) => keyOf(t, l)));
+  else {
+    const present = new Set(notes.map(noteKey));
+    state.selection = new Set([...state.selection].filter((k) => present.has(k)));
+  }
+  const words = [said, cascadeSummary(out.cascaded), ...(out.notices || [])].filter(Boolean);
+  setNotice(words.join(" · "), "info");
+  const timeline = state.timeline;
+  const below = belowLevel();
+  timeline.setTrack(state.instrument, currentTrack(), below ? trackOf(state.instrument, below) : null);
+  timeline.selection = state.selection;
+  timeline.flashes = (out.cascaded || []).filter((c) => c.difficulty === below);
+  clearTimeout(state.flashTimer);
+  if (timeline.flashes.length) {
+    state.flashTimer = setTimeout(() => {
+      if (state.timeline !== timeline) return;
+      timeline.flashes = [];
+      timeline.draw();
+    }, 1500);
+  }
+  timeline.draw();
+  renderEditState();
+  renderInspector();
+  scheduleValidation();
+}
+
+function failed(error) {
+  if (outdated(error)) return;
+  if (error.stale) state.stale = true;
+  setNotice(error.message, "bad");
+  renderEditState();
+}
+
+function scheduleValidation() {
+  clearTimeout(state.validateTimer);
+  state.validateTimer = setTimeout(runValidation, 150);
+}
+
+/** The live check of the chart as it would be saved; an answer for an older version is dropped. */
+async function runValidation() {
+  const id = state.id;
+  let result;
+  try {
+    result = await api.validate(id);
+  } catch (error) {
+    if (state.id === id && (error.stale || error.outdated)) failed(error);
+    return;
+  }
+  if (state.id !== id || !state.edit || result.version !== state.edit.version) return;
+  state.validation = { errors: result.errors, warnings: result.warnings };
+  if (state.timeline) {
+    state.timeline.markers = markers();
+    state.timeline.draw();
+  }
+  renderProblems();
+}
+
+/** A line in the tool row: what an edit also did, or why it was refused. It stays until the next one. */
+function setNotice(text, tone) {
+  state.notice = text ? { text, tone } : null;
+  renderNote();
+}
+
+function renderNote() {
+  const note = root.querySelector(".tool .note");
+  if (!note) return;
+  const audio = state.audio || {};
+  let text = "";
+  let bad = false;
+  if (state.notice) {
+    text = state.notice.text;
+    bad = state.notice.tone === "bad";
+  } else if (audio.status === "loading") {
+    text = `Loading the audio: ${audio.loaded} of ${audio.total} files`;
+  } else if (audio.status === "error") {
+    text = `The audio could not be loaded: ${audio.message}`;
+    bad = true;
+  }
+  note.textContent = text;
+  note.title = text;
+  note.classList.toggle("bad", bad);
+}
+
+function copySelection() {
+  const notes = selectedNotes(currentTrack(), state.selection);
+  if (!notes.length) {
+    setNotice("Select the notes to copy first.", "info");
+    return;
+  }
+  state.clipboard = clipboardOf(state.instrument, notes);
+  setNotice(`Copied ${plural(notes.length, "note")}: Ctrl+V pastes them at the playhead.`, "info");
+}
+
+function paste() {
+  const clip = state.clipboard;
+  if (!clip) {
+    setNotice("Nothing is copied yet.", "info");
+    return;
+  }
+  if ((clip.instrument === "drums") !== drums()) {
+    setNotice(`Notes copied from ${TITLE[clip.instrument].toLowerCase()} can be pasted on ${clip.instrument === "drums" ? "drums" : "guitar, bass and keys"} only.`, "bad");
+    return;
+  }
+  const tick = snap(state.tempo.ticksAt(state.playhead));
+  edit(() => ({ kind: "paste", notes: pasteAt(clip, tick) }));
+}
+
+function toggleFlag(flag, bit) {
+  edit(() => {
+    const notes = selectedNotes(currentTrack(), state.selection);
+    if (!notes.length) return null;
+    // The cymbal key counts only the pads that can be cymbals: yellow, blue and green.
+    const counted = flag === "cymbal" ? notes.filter((n) => n[1] >= 2 && n[1] <= 4) : notes;
+    return { kind: "flag", notes: notes.map((n) => [n[0], n[1]]), flag, on: counted.length ? flagTarget(counted, bit) : true };
+  });
+}
+
+/** The editing keys: anywhere but in a text field, a select or a slider. */
+document.addEventListener("keydown", (e) => {
+  if (!state.timeline || !state.edit || state.gesture) return;
+  if (e.target.matches && e.target.matches("input, select, textarea")) return;
+  const key = e.key.toLowerCase();
+  const ctrl = e.ctrlKey || e.metaKey;
+  const any = state.selection.size > 0;
+  let action = null;
+  if (ctrl && !e.altKey) {
+    if (key === "z" && !e.shiftKey) action = () => history("undo");
+    else if (key === "y" || (key === "z" && e.shiftKey)) action = () => history("redo");
+    else if (key === "c") action = copySelection;
+    else if (key === "v") action = paste;
+    else if (key === "a") action = () => setSelection(currentTrack().notes.map(noteKey));
+  } else if (!e.altKey && !ctrl) {
+    if (key === "v" && !e.shiftKey) action = () => setTool("select");
+    else if (key === "d" && !e.shiftKey) action = () => setTool("draw");
+    else if (key === "escape" && any) action = () => setSelection([]);
+    else if ((key === "delete" || key === "backspace") && any) action = () => edit(() => ({ kind: "delete", notes: selectedPlaces() }));
+    else if (key === "f" && any) action = () => toggleFlag("forced", FORCED);
+    else if (key === "t" && any) action = () => toggleFlag("tap", TAP);
+    else if (key === "c" && any) action = () => toggleFlag("cymbal", CYMBAL);
+    else if ((key === "arrowleft" || key === "arrowright") && any) {
+      const direction = key === "arrowright" ? 1 : -1;
+      action = e.shiftKey
+        ? () => edit(() => (selectedPlaces().length ? { kind: "sustain", notes: selectedPlaces(), delta: direction * gridStep() } : null))
+        : () => edit(() => {
+          const notes = selectedNotes(currentTrack(), state.selection);
+          if (!notes.length) return null;
+          const ticks = stepTick(state.bars, notes[0][0], gridStep(), direction) - notes[0][0];
+          return ticks ? { kind: "move", notes: notes.map((n) => [n[0], n[1]]), ticks, rows: 0 } : null;
+        });
+    } else if ((key === "arrowup" || key === "arrowdown") && any && !e.shiftKey) {
+      const rows = key === "arrowdown" ? 1 : -1;
+      action = () => edit(() => (selectedPlaces().length ? { kind: "move", notes: selectedPlaces(), ticks: 0, rows } : null));
+    }
+  }
+  if (!action) return;
+  e.preventDefault();
+  action();
+});
+
+/** Leaving the page with unsaved edits asks first: they live only in the running editor until E.3. */
+window.addEventListener("beforeunload", (e) => {
+  if (state.timeline && state.edit && state.edit.unsaved > 0) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
 
 function showClock(seconds) {
   const tick = Math.round(state.tempo.ticksAt(seconds));
@@ -563,13 +1044,9 @@ function updateWave() {
 
 function renderAudioStatus() {
   const audio = state.audio;
-  const note = root.querySelector(".tool .note");
-  if (!note) return;
+  if (!root.querySelector(".tool .note")) return;
   const ready = audio.status === "ready";
-  if (audio.status === "loading") note.textContent = `Loading the audio: ${audio.loaded} of ${audio.total} files`;
-  else if (audio.status === "error") note.textContent = `The audio could not be loaded: ${audio.message}`;
-  else note.textContent = "Read-only for now: editing comes next.";
-  note.classList.toggle("bad", audio.status === "error");
+  renderNote();
   root.querySelectorAll(".bot .play, .bot select, .bot .metro, .stem button, .stem .vol").forEach((el) => { el.disabled = !ready; });
   if (audio.status === "error" && state.timeline) {
     state.timeline.waveNote = "No audio";

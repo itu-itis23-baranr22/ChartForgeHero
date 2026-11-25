@@ -12,17 +12,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from chartgen.clonehero.chart_format import section_name
-from chartgen.clonehero.chart_reader import read_chart_file
 from chartgen.clonehero.song_ini import DIFFICULTY_KEYS
-from chartgen.clonehero.validate import read_song_ini, validate_song_folder
-from chartgen.core.model import Chart, Difficulty, Instrument
+from chartgen.clonehero.validate import ValidationReport, read_song_ini, validate_song_folder
+from chartgen.core.model import Chart, Difficulty, Instrument, Track
+from chartgen.editor.messages import explain
 from chartgen.errors import ChartgenError
 
 EDIT_MARK = "chartgen_edits.json"
 """Written by the editor's first save (E.3); a folder holding it counts as edited (SPEC 55)."""
 
 FORCED, TAP, CYMBAL = 1, 2, 4
-"""Bits of a note's flags in the chart JSON."""
+"""Bits of a note's flags in the chart JSON (the same as ``ops``)."""
 
 _TRACK_OF_SECTION = {section_name(i, d): (i, d) for i in Instrument for d in Difficulty}
 _WHERE = re.compile(r"\[(?P<section>\w+)\] (?:has )?tick (?P<tick>\d+)")
@@ -99,20 +99,22 @@ def song_summary(folder: Path) -> dict[str, object]:
     }
 
 
-def chart_json(chart: Chart) -> dict[str, object]:
-    """The chart as the page draws it: ticks, never seconds; the page converts with the same tempo map."""
-    tracks = []
-    for track in chart.tracks:
-        notes = [
+def track_json(track: Track) -> dict[str, object]:
+    """One track as the page draws it: notes as [tick, lane, length, flags], star power as [tick, length]."""
+    return {
+        "instrument": track.instrument.value,
+        "difficulty": track.difficulty.value,
+        "notes": [
             [n.tick, n.lane, n.length, (FORCED if n.forced else 0) | (TAP if n.tap else 0) | (CYMBAL if n.cymbal else 0)]
             for n in track.notes
-        ]
-        tracks.append({
-            "instrument": track.instrument.value,
-            "difficulty": track.difficulty.value,
-            "notes": notes,
-            "star_power": [[p.tick, p.length] for p in track.star_power],
-        })
+        ],
+        "star_power": [[p.tick, p.length] for p in track.star_power],
+    }
+
+
+def chart_json(chart: Chart) -> dict[str, object]:
+    """The chart as the page draws it: ticks, never seconds; the page converts with the same tempo map."""
+    tracks = [track_json(track) for track in chart.tracks]
     tempo_map = chart.tempo_map
     return {
         "name": chart.metadata.name,
@@ -134,13 +136,23 @@ def locate(message: str) -> dict[str, object] | None:
     return {"instrument": instrument.value, "difficulty": difficulty.value, "tick": int(match["tick"])}
 
 
-def song_info(folder: Path) -> dict[str, object]:
-    """What the side panels show: ``song.ini``, the build's analysis in brief, the audio, the validator's verdict."""
+def validation_json(report: ValidationReport) -> dict[str, list[dict[str, object]]]:
+    """The validator's verdict for the problem list: each message in plain words, the validator's own
+    words and where it points."""
+    def entry(message: str) -> dict[str, object]:
+        return {"message": explain(message), "raw": message, "where": locate(message)}
+
+    return {"errors": [entry(m) for m in report.errors], "warnings": [entry(m) for m in report.warnings]}
+
+
+def song_info(folder: Path, chart_text: str | None = None) -> dict[str, object]:
+    """What the side panels show: ``song.ini``, the build's analysis in brief, the audio, the validator's
+    verdict (on ``chart_text`` when the editor holds edits, else on the folder's ``notes.chart``)."""
     ini = _ini(folder)
     analysis = _analysis(folder)
     audio = analysis.get("audio_files") if isinstance(analysis.get("audio_files"), dict) else {}
     files = sorted(p.name for p in folder.glob("*.ogg"))
-    report = validate_song_folder(folder)
+    report = validate_song_folder(folder, chart_text)
     tempo = analysis.get("tempo") if isinstance(analysis.get("tempo"), dict) else {}
     length_ms = _number(ini.get("song_length"))
     return {
@@ -151,13 +163,6 @@ def song_info(folder: Path) -> dict[str, object]:
         "bpm": tempo.get("bpm"),
         "audio": [{"file": name, "stems": (audio.get(name) or {}).get("stems", [])} for name in files],
         "build_warnings": [w for w in analysis.get("warnings", []) if isinstance(w, str)],
-        "validation": {
-            "errors": [{"message": m, "where": locate(m)} for m in report.errors],
-            "warnings": [{"message": m, "where": locate(m)} for m in report.warnings],
-        },
+        "validation": validation_json(report),
         "edited": (folder / EDIT_MARK).is_file(),
     }
-
-
-def load_chart(folder: Path) -> Chart:
-    return read_chart_file(folder / "notes.chart")

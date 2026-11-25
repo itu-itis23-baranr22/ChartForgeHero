@@ -41,36 +41,36 @@ colors:
   paper-wave-grey: "#aebbbb"
 typography:
   headline:
-    fontFamily: "Barlow Semi Condensed, Bahnschrift, Segoe UI, system-ui, sans-serif"
+    fontFamily: "Barlow SC, Barlow Semi Condensed, Bahnschrift, Segoe UI, system-ui, sans-serif"
     fontSize: "24px"
     fontWeight: 600
     lineHeight: 1.4
   title:
-    fontFamily: "Barlow Semi Condensed, Bahnschrift, Segoe UI, system-ui, sans-serif"
+    fontFamily: "Barlow SC, Barlow Semi Condensed, Bahnschrift, Segoe UI, system-ui, sans-serif"
     fontSize: "16px"
     fontWeight: 600
     lineHeight: 1.4
   body:
-    fontFamily: "Barlow Semi Condensed, Bahnschrift, Segoe UI, system-ui, sans-serif"
+    fontFamily: "Barlow SC, Barlow Semi Condensed, Bahnschrift, Segoe UI, system-ui, sans-serif"
     fontSize: "15px"
     fontWeight: 400
     lineHeight: 1.4
   label:
-    fontFamily: "Barlow Semi Condensed, Bahnschrift, Segoe UI, system-ui, sans-serif"
+    fontFamily: "Barlow SC, Barlow Semi Condensed, Bahnschrift, Segoe UI, system-ui, sans-serif"
     fontSize: "13px"
     fontWeight: 400
     letterSpacing: "0.04em"
   section-mark:
-    fontFamily: "Barlow Semi Condensed, Bahnschrift, Segoe UI, system-ui, sans-serif"
+    fontFamily: "Barlow SC, Barlow Semi Condensed, Bahnschrift, Segoe UI, system-ui, sans-serif"
     fontSize: "17px"
     fontWeight: 700
   data:
-    fontFamily: "Cascadia Mono, Consolas, monospace"
+    fontFamily: "Cascadia Mono CG, Cascadia Mono, Consolas, monospace"
     fontSize: "15px"
     fontWeight: 400
     fontFeature: "tnum, lnum"
   clock:
-    fontFamily: "Cascadia Mono, Consolas, monospace"
+    fontFamily: "Cascadia Mono CG, Cascadia Mono, Consolas, monospace"
     fontSize: "26px"
     fontWeight: 600
     fontFeature: "tnum, lnum"
@@ -152,7 +152,8 @@ fret colours reserved for notes.
   selection outline around a note group, the primary action.
 
 ### Secondary
-- **Star Power Cyan** (#86d3e3; paper #2a8fa8): star power bands on the ruler, the focus ring, text selection.
+- **Star Power Cyan** (#86d3e3; paper #2a8fa8): star power bands on the ruler, the focus ring, text selection,
+  and the ring that marks for a moment a note an edit changed on the level below (linked levels).
 
 ### Tertiary
 - **The Fret Colours** (green #2eb14e, red #d42f35, yellow #f2c230, blue #2f7cf6, orange #de6f1c; paper steps
@@ -181,6 +182,8 @@ changes from graphite to paper.
 
 **Body Font:** Barlow Semi Condensed (self-hosted OFL, with Bahnschrift and Segoe UI behind it)
 **Label/Mono Font:** Cascadia Mono (self-hosted OFL, with Consolas behind it)
+The self-hosted files are declared as "Barlow SC" and "Cascadia Mono CG", so that a copy installed on the machine
+never stands in for them; the names behind them in the stacks are the same families.
 
 **Character:** the printed-form sans of a track sheet, narrow and plain, set against a typewriter-like mono for
 everything that is a number.
@@ -230,7 +233,16 @@ bar in its own row: the shapes the game uses, so that a cymbal never needs its c
 - **Shape:** square-cut (3px).
 - **Ghost (tool row):** pencil-grey text, no fill; hover lifts to the raised panel with marker-white text (150ms).
 - **Shell buttons:** shell-muted text on petrol; the active level segment inverts to shell ink on petrol.
+- **Pressed (tool row):** a tool or toggle that is on sits on the raised panel with a form rule and marker-white
+  text (Select or Draw, Other levels); a toggle also says its state in words ("Other levels On / Off").
 - **Focus:** a 2px star-power-cyan ring, 2px offset, on every control.
+
+### Tool Row (editing, E.2)
+- In order: the tools Select (V) and Draw (D), Grid (a native select, 1/4, 1/8, 1/16), zoom, Undo and Redo (their
+  titles name the step), Other levels with its state in words, Level below, then a status line that says what an
+  edit also changed ("Also changed: Hard 2 notes"), why one was refused (coral), or how far the audio has loaded.
+  Below 1500px the key caps and the "bars in view" count are left out; the keys stay in the titles and the legend.
+- The header's end shows the count of unsaved edits.
 
 ### Navigation
 - **Instrument tabs:** text tabs in the header; the selected one sits on the raised petrol with a petrol line.
@@ -251,12 +263,31 @@ bar in its own row: the shapes the game uses, so that a cymbal never needs its c
   the tool row says how many files are loaded; a file that cannot be decoded is named there in coral.
 
 ### Problem Item
-- A ruled box with a drawn icon (coral disc for an error, amber triangle for a warning), the message, and a "Go to"
-  button when the message names a track and tick; going there switches instrument and level and marks the column.
+- A ruled box with a drawn icon (coral disc for an error, amber triangle for a warning), the place in semibold
+  ink ("Bar 16.4 · Hard guitar", the bar.beat in the mono), the message in plain words (the validator's own words in
+  its title), and a "Go to" button when the message names a track and tick; going there switches instrument and
+  level and marks the column. The list is the live check: it follows every edit.
+
+### Version Warning
+- When the page and the editor server are different versions: a box above everything under the header, raised
+  panel with a 1px coral frame, the coral alert icon, one sentence that says what to do (reload, or restart
+  chartgen edit), and a "Reload the page" button. Editing stops until the page is reloaded. A page that does
+  not start at all shows the same box with "The editor did not start" and how to recover.
+
+### Inspector and Key Legend
+- "Selected" with the count; one chord shows its place, tick, time, lanes, sustain and flags; several notes show
+  where they start and end. Under it a two-column legend of key caps and what they do, always visible.
 
 ### Timeline
 - Gems are circles in the fret colour with a 2px ring of the field colour and a light rim; sustain tails are 9px
-  bars of the same colour. Bar numbers sit in boxed cells; the selection is a marker-white outline around a note group.
+  bars of the same colour. Bar numbers sit in boxed cells.
+- Each selected note has its own 2px marker-white outline in its shape (ring, wider ring for a cymbal, rounded bar for
+  the kick or an open note). A selection box is a 1px marker-white frame over an 8% marker-white wash. While notes
+  are dragged they are drawn where they would land, snapped to the grid; the Draw tool shows the note it would add
+  at 50%, with the sustain being drawn. A note an edit changed on the level below gets a star-power-cyan ring on
+  the ply for 1.5 seconds; it appears and goes without motion.
+- Pointer: the ruler and the waveform move the playhead; a note under the pointer shows a grab cursor, the Draw tool
+  a crosshair.
 - The playhead is a 2px marker-white line from a small triangle in the ruler to the bottom, at the time being heard
   (less the latency setting). While playing, the view turns a page when the playhead passes 85% of it, without
   scrolling smoothly; a view the user scrolled away is left alone. Clicking the ruler or the waveform moves it.

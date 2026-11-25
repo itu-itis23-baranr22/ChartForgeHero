@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import numpy as np
@@ -134,7 +135,7 @@ def test_responses_forbid_anything_from_outside(client):
     assert response.headers["x-content-type-options"] == "nosniff"
     page = client.get("/")
     assert page.status_code == 200
-    assert '<script type="module" src="app.js">' in page.text
+    assert re.search(r'<script type="module" src="app\.js\?v=[0-9a-f]{12}">', page.text)
     assert "frame-ancestors 'none'" in page.headers["content-security-policy"]
     assert "access-control-allow-origin" not in response.headers
 

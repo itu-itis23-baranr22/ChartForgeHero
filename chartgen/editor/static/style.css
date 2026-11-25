@@ -73,8 +73,14 @@ button:focus-visible, select:focus-visible, input:focus-visible, .tl:focus-visib
 .tool .sep { width: 1px; height: 22px; background: var(--rule); margin: 0 8px; }
 .tool label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .tool input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--mark); }
-.tool .note { margin-left: auto; font-size: 14px; color: var(--ink-3); }
+.tool .note { margin-left: auto; padding-left: 12px; font-size: 14px; color: var(--ink-2); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tool .note.bad { color: var(--err); }
+.tools { display: flex; gap: 2px; }
+.tool button[aria-pressed="true"] { color: var(--ink); background: var(--panel-2); border-color: var(--rule); }
+.tool select { font: inherit; color: var(--ink); background: var(--panel-2); border: 1px solid var(--rule); border-radius: 3px; padding: 3px 6px; margin-left: 2px; cursor: pointer; }
+.tool .linked b { font-weight: 600; color: var(--ink); min-width: 2.2em; text-align: left; }
+.tool > * { flex: none; }
+.tool > .note { flex: 1 1 auto; }
 kbd { font-size: 12px; color: var(--ink-3); border: 1px solid var(--rule); border-radius: 2px; padding: 0 4px; }
 
 .left { background: var(--panel); border-right: 1px solid var(--rule); position: relative; overflow: hidden; }
@@ -88,6 +94,9 @@ kbd { font-size: 12px; color: var(--ink-3); border: 1px solid var(--rule); borde
 .tl { position: relative; overflow-x: auto; overflow-y: hidden; scrollbar-color: var(--rule) var(--panel); }
 .tl canvas { position: sticky; left: 0; top: 0; display: block; }
 .tl canvas.seek { cursor: pointer; }
+.tl canvas.draw { cursor: crosshair; }
+.tl canvas.grab { cursor: grab; }
+.tl canvas.dragging { cursor: grabbing; }
 .tl .spacer { height: 1px; }
 
 .right { background: var(--panel); border-left: 1px solid var(--rule); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; scrollbar-color: var(--rule) var(--panel); }
@@ -97,6 +106,11 @@ kbd { font-size: 12px; color: var(--ink-3); border: 1px solid var(--rule); borde
 .item { border: 1px solid var(--rule); padding: 11px 13px; font-size: 14px; color: var(--ink-2); display: grid; grid-template-columns: 18px 1fr; gap: 3px 9px; }
 .item b { color: var(--ink); font-weight: 600; font-size: 15px; }
 .item p { grid-column: 2; overflow-wrap: anywhere; }
+.item .where { grid-column: 2; color: var(--ink); font-weight: 600; font-size: 14px; }
+.problems { display: flex; flex-direction: column; gap: 12px; }
+dl.keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 14px; color: var(--ink-2); margin-top: 14px; align-items: baseline; }
+dl.keys dt { white-space: nowrap; }
+dl.keys dd { font-family: var(--ui); }
 .item .go { grid-column: 2; justify-self: start; margin-top: 4px; padding: 4px 9px; border-color: var(--rule); font-size: 13px; color: var(--ink); }
 .item .go:hover { background: var(--panel-2); }
 .ic-err { width: 18px; height: 18px; margin-top: 1px; }
@@ -166,6 +180,22 @@ td .a { color: var(--ink-2); font-size: 14px; }
 .loading { padding: 40px; color: var(--ink-2); }
 .loading.full { grid-column: 1 / -1; }
 td.act { text-align: right; }
+
+/* The page and the server are different versions, or the page did not start: above everything, until reloaded. */
+.outdated, .boot-failed { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 10; width: min(760px, calc(100vw - 32px));
+  display: grid; grid-template-columns: 18px 1fr auto; gap: 4px 12px; align-items: center; padding: 14px 16px;
+  background: var(--panel-2); border: 1px solid var(--err); color: var(--ink); font-size: 15px; }
+.outdated .reload { padding: 6px 12px; border-color: var(--rule); color: var(--ink); white-space: nowrap; }
+.outdated .reload:hover { background: var(--panel); }
+.boot-failed { grid-template-columns: 1fr; }
+.boot-failed h1 { font-size: 16px; font-weight: 600; }
+.boot-failed p { color: var(--ink-2); }
+
+@media (max-width: 1499px) {
+  .tool kbd, .tool .zoom-label { display: none; }
+  .tool { padding: 0 12px; gap: 4px; }
+  .tool .sep { margin: 0 4px; }
+}
 
 .too-narrow { display: none; }
 @media (max-width: 1099px) {

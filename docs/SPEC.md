@@ -306,10 +306,21 @@ Decisions made since it was written are listed first and take precedence.
    pull in, opentelemetry-api included) are an optional `editor` extra, httpx 0.28.1 a `dev` one, so the
    normal install does not change. The page is plain HTML and JavaScript modules, drawn on a canvas, with
    the Web Audio API: no npm packages, no build step, no CDN. The editor never imports the model stack.
+   The server links the page's modules under addresses that name their content (`?v=<hash>`, the hash also
+   covering what a module imports), so a browser can never run an old module with a new one; those addresses
+   may be kept for good, everything else is revalidated on every load, and the API is never stored. Every
+   answer names the API version (`X-Chartgen-Api`); a page of another version says to reload it or to restart
+   the editor (2026-11-25, after a stale `api.js` broke the first E.2 try).
 50. **Edits happen on the server.** The open song is a `Chart` with an undo and a redo stack in Python; the page
    draws, plays and sends operations (add, delete, move, fret, sustain, forced, tap, cymbal, paste), each one
    an undo step. The model's own checks, the exporter and the validator are used as they are, and every
    operation is tested with pytest. No format knowledge goes to JavaScript: the page gets JSON.
+   What the model cannot hold (two notes on one lane at one tick, a drum sustain, a cymbal on red) is refused
+   with a message; what only breaks a validator rule is allowed and shown by the live check, which validates
+   the session's chart with the rest of the folder and puts the messages in plain words (owner, 2026-11-25).
+   With linked levels (on by default) changes flow down and additions flow up, so that every level keeps the
+   notes of the level below it; a sustain an operation runs into the next note is cut to end on it. Every
+   change gives the session a new version, and an operation sent for an older version is refused.
 51. **A `.chart` reader.** `chartgen/clonehero/chart_reader.py` turns a `.chart` back into a `Chart`, tokenised by
    the validator's `parse_chart` and decoded with `chart_format`'s constants. It refuses an event the writer
    never writes (for example `N 32`, solos, lyrics) instead of dropping it on save. Reading and writing again

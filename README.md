@@ -98,9 +98,11 @@ from the written chart. Each click should fall on that part, and the part should
 
 Opens the song folders in `outputs/` in your browser, on this machine only (127.0.0.1): the chart drawn
 over time, one instrument and level at a time with the level below it faint, bars, tempo changes,
-sections, star power and what the validator says, with the song's audio to play along. Read-only for
-now; editing, saving and copying to the game follow (phase E, `docs/SPEC.md` decisions 49-57). Use
-Chrome or Edge: the audio is Ogg Vorbis.
+sections, star power and what the validator says, with the song's audio to play along, and lets you
+correct the notes. Saving to the song folder and copying to the game follow (phase E, `docs/SPEC.md`
+decisions 49-57): for now the edits live in the running editor and are lost when it stops. Use Chrome or
+Edge: the audio is Ogg Vorbis. After an update the page loads the new files by itself; a page that was
+left open during the update says so and asks to be reloaded.
 
 ```
 pip install -e ".[editor]"
@@ -118,6 +120,19 @@ has its own mute (M), solo (S) and volume, and muting never restarts the music. 
 Latency draws the playhead later by that many milliseconds when it runs ahead of what you hear (Bluetooth
 headphones need 150 to 250). A song's audio is decoded into memory: about 70 MB per file for a
 three-minute song, so a song with five files takes about 350 MB in the browser.
+
+Editing: Select (V) picks notes (Shift or Ctrl and click to add more, drag a box around them) and moves
+them by dragging; Draw (D) adds a note where you click and draws its sustain as you drag right. Notes land
+on the grid (1/4, 1/8 or 1/16). With notes selected: Delete, the arrow keys (a grid step left or right, a
+lane up or down), Shift and the arrows (a shorter or longer sustain), F forced, T tap, C cymbal or tom;
+Ctrl+C and Ctrl+V copy and paste at the playhead, Ctrl+A selects the level, Ctrl+Z and Ctrl+Y undo and
+redo. With "Other levels" on (the default) a note deleted or moved also goes from the levels below, and a
+note added to a lower level is added to the levels above that lack it, so every level keeps the notes of
+the level below it; what changed there is ringed for a moment on the level below and named in the tool
+row. A sustain that an edit runs into the next note is cut to end on it. What the game cannot read (two
+notes on one lane at one tick, a drum sustain, a cymbal on red) is refused with a message; what only breaks
+a rule of the validator (a chord on Easy, a Hard note Expert lacks) is allowed and shown at once under
+Problems, in plain words with its bar and beat.
 
 ## Measuring against human charts
 
@@ -204,7 +219,7 @@ pytest -m real         # your songs and the references; set CHARTGEN_MUSIC_DIR a
 scripts\check.ps1      # quick tests and the validator, under a minute: runs on every commit
 scripts\check.ps1 -Mid    # every test but the real songs and references
 scripts\check.ps1 -Full   # every test, with real Demucs and the references: before a phase commit
-node --test tests\js\tempo.test.mjs tests\js\view.test.mjs tests\js\transport.test.mjs   # the editor's JavaScript (check.ps1 runs it too)
+node --test tests\js\tempo.test.mjs tests\js\view.test.mjs tests\js\transport.test.mjs tests\js\edit.test.mjs   # the editor's JavaScript (check.ps1 runs it too)
 npm ci --prefix tests\browser   # Playwright 1.65.1 for the editor's browser tests (heavy; -Full needs it)
 node tests\browser\memory.mjs http://127.0.0.1:8765 "Artist - Title"   # the browser's memory for one song
 git config core.hooksPath .githooks     # makes every commit run the quick check

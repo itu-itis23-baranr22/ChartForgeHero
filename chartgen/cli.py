@@ -214,10 +214,13 @@ def _run_edit(args: argparse.Namespace) -> int:
     from chartgen.editor.songs import SongLibrary
 
     url = f"http://127.0.0.1:{args.port}/"
-    app = create_app(SongLibrary(args.outputs))
+    app = create_app(SongLibrary(args.outputs), freeze_gc=True)
     log.info("chartgen editor on %s, songs from %s (Ctrl+C stops it)", url, args.outputs.resolve())
     if not args.no_browser:
-        threading.Timer(1.0, webbrowser.open, (url,)).start()
+        # The address names this version of the page, so a browser that kept an older copy of it cannot
+        # show that copy instead (the page itself is revalidated on every later load).
+        opened = f"{url}?v={app.state.assets.version('index.html')}"
+        threading.Timer(1.0, webbrowser.open, (opened,)).start()
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
     return 0
 

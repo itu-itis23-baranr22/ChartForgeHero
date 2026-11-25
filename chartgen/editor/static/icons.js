@@ -10,6 +10,11 @@ const PATHS = {
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
   alert: '<circle cx="12" cy="12" r="9" class="fill"/><path d="M12 7.5v5.5" class="cut"/><circle cx="12" cy="16.3" r="1.1" class="dot"/>',
+  select: '<path d="M5 3l12 8-6 1.5L8.5 19z"/>',
+  draw: '<path d="M4 20l1.3-4.6L15.6 5.1a2.1 2.1 0 0 1 3 3L8.3 18.4zM13.6 7.1l3 3"/>',
+  undo: '<path d="M9 13.5L4.5 9 9 4.5"/><path d="M4.5 9H14a5.5 5.5 0 0 1 0 11h-3"/>',
+  redo: '<path d="M15 13.5L19.5 9 15 4.5"/><path d="M19.5 9H10a5.5 5.5 0 0 0 0 11h3"/>',
+  levels: '<path d="M12 4l8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 16l8 4 8-4"/>',
 };
 
 export function icon(name, label = "") {

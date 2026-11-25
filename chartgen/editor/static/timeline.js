@@ -1,6 +1,7 @@
 // The timeline: time runs left to right in seconds (as the audio does), lanes are rows. Drawn on a canvas
 // that stays in place while a wide spacer scrolls under it, so the browser's own scrollbar moves the view.
 
+import { laneOfRow, noteKey, rowOf } from "./edit.js";
 import { peakBetween } from "./transport.js";
 import { visibleSlice } from "./view.js";
 
@@ -29,7 +30,11 @@ export class Timeline {
     this.scroller = scroller;
     this.ctx = canvas.getContext("2d");
     this.zoom = 160; // px per second
-    this.selected = null; // tick
+    this.selection = new Set(); // keys "tick:lane" of the selected notes
+    this.drag = null; // {ticks, rows}: the selected notes drawn where a drag would put them
+    this.hover = null; // {tick, lane, length}: the note the Draw tool would add
+    this.box = null; // {x0, y0, x1, y1}: a selection box being drawn
+    this.flashes = []; // {tick, lane}: notes an edit changed on the level below, ringed for a moment
     this.markers = [];
     this.showBelow = true;
     this.playhead = 0; // seconds: where playback is, or starts
@@ -144,8 +149,17 @@ export class Timeline {
     this.drawRuler(L);
     this.drawMarkers(L);
 
-    // notes of the edited level
-    const notes = visibleSlice(this.track.notes, t0, t1, this.longest);
+    // notes of the edited level; while notes are dragged, the selected ones are drawn where they would go
+    let notes = visibleSlice(this.track.notes, t0, t1, this.longest);
+    if (this.drag) {
+      notes = notes.filter((n) => !this.selection.has(noteKey(n)));
+      for (const n of this.track.notes) {
+        if (!this.selection.has(noteKey(n))) continue;
+        const moved = this.dragged(n);
+        if (moved[0] + moved[2] >= t0 - 1 && moved[0] <= t1 + 1) notes.push(moved);
+      }
+      notes.sort((a, b) => a[0] - b[0]);
+    }
     const byTick = new Map();
     for (const n of notes) {
       if (!byTick.has(n[0])) byTick.set(n[0], []);
@@ -153,11 +167,38 @@ export class Timeline {
     }
     for (const n of notes) if (n[2] > 0 && n[1] !== OPEN_LANE) this.drawSustain(n, L);
     for (const [tick, group] of byTick) this.drawGroup(tick, group, L);
-    if (this.selected !== null && byTick.has(this.selected)) this.drawSelection(this.selected, byTick.get(this.selected), L);
+    for (const n of notes) if (this.drag ? n[4] === true : this.selection.has(noteKey(n))) this.drawSelected(n, L);
+    if (this.hover) this.drawHover(L);
 
     if (L.ghost) this.drawBelow(L, t0, t1);
     this.drawWave(L);
+    if (this.box) this.drawBox();
     this.drawPlayhead();
+  }
+
+  /** A selected note where the current drag would put it, marked as selected (fifth element). */
+  dragged(n) {
+    const row = rowOf(this.drums, n[1]);
+    const lane = row === null ? n[1] : laneOfRow(this.drums, row + this.drag.rows);
+    return [Math.max(0, n[0] + this.drag.ticks), lane === null ? n[1] : lane, n[2], n[3], true];
+  }
+
+  /** The tick under an x position of the canvas (fractional). */
+  tickAtX(x) {
+    return this.tempo.ticksAt(this.secondsAtX(x));
+  }
+
+  /** The row under a y position: 0-4 from the top, the kick's row being 4 on drums; null elsewhere. */
+  rowAt(py) {
+    const L = this.layout();
+    if (py >= L.lanesY && py < L.lanesY + L.rows * L.lane) return Math.floor((py - L.lanesY) / L.lane);
+    if (L.kick && py >= L.kickY && py < L.kickY + L.kick) return 4;
+    return null;
+  }
+
+  /** The y of a row's centre. */
+  rowY(row, L) {
+    return this.drums && row === 4 ? L.kickY + L.kick / 2 : L.lanesY + row * L.lane + L.lane / 2;
   }
 
   /** What a click at height `py` does: "ruler" and "wave" move the playhead, "lanes" picks notes. */
@@ -353,13 +394,13 @@ export class Timeline {
     return this.barSeconds.filter((s) => s >= s0 && s <= s1).length;
   }
 
-  drawSustain(n, L) {
+  drawSustain(n, L, alpha = 0.9) {
     const ctx = this.ctx;
     const x0 = this.x(this.tempo.secondsAt(n[0]));
     const x1 = this.x(this.tempo.secondsAt(n[0] + n[2]));
     if (x1 < 0 || x0 > this.width) return;
     const y = this.laneY(n[1], L);
-    ctx.globalAlpha = 0.9;
+    ctx.globalAlpha = alpha;
     ctx.fillStyle = this.colourOf(n[1]);
     this.roundRect(x0, y - 4.5, x1 - x0, 9, 4.5);
     ctx.fill();
@@ -457,16 +498,50 @@ export class Timeline {
     ctx.globalAlpha = 1;
   }
 
-  drawSelection(tick, group, L) {
+  /** A marker-white outline around one selected note, shaped as the note is. */
+  drawSelected(n, L) {
     const ctx = this.ctx;
-    const x = this.x(this.tempo.secondsAt(tick));
-    const ys = group.map((n) => (n[1] === OPEN_LANE ? null : this.laneY(n[1], L))).filter((y) => y !== null);
-    const top = ys.length ? Math.min(...ys) - 19 : L.lanesY + 2;
-    const bottom = ys.length ? Math.max(...ys) + 19 : L.lanesY + L.rows * L.lane - 2;
+    const x = this.x(this.tempo.secondsAt(n[0]));
+    if (x < -30 || x > this.width + 30) return;
     ctx.strokeStyle = this.colours.mark;
     ctx.lineWidth = 2;
-    this.roundRect(x - 19, top, 38, bottom - top, 6);
+    if (n[1] === OPEN_LANE) {
+      this.roundRect(x - 10, L.lanesY + 2, 20, L.rows * L.lane - 4, 8);
+    } else if (this.drums && n[1] === 0) {
+      const y = L.kickY + L.kick / 2;
+      this.roundRect(x - 21, y - 11, 42, 22, 9);
+    } else {
+      ctx.beginPath();
+      ctx.arc(x, this.laneY(n[1], L), this.radius(L) + (n[3] & CYMBAL ? 9 : 6), 0, Math.PI * 2);
+    }
     ctx.stroke();
+  }
+
+  /** The note the Draw tool would add, faint, with the sustain being drawn. */
+  drawHover(L) {
+    const { tick, lane, length } = this.hover;
+    const x = this.x(this.tempo.secondsAt(tick));
+    if (x < -30 || x > this.width + 30) return;
+    const ctx = this.ctx;
+    if (length > 0) this.drawSustain([tick, lane, length, 0], L, 0.45);
+    ctx.globalAlpha = 0.5;
+    if (this.drums && lane === 0) this.drawKick(x, L);
+    else this.drawGem(x, this.laneY(lane, L), this.colourOf(lane), 0, L);
+    ctx.globalAlpha = 1;
+  }
+
+  drawBox() {
+    const ctx = this.ctx;
+    const { x0, y0, x1, y1 } = this.box;
+    const left = Math.min(x0, x1);
+    const top = Math.min(y0, y1);
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = this.colours.mark;
+    ctx.fillRect(left, top, Math.abs(x1 - x0), Math.abs(y1 - y0));
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = this.colours.mark;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(left + 0.5, top + 0.5, Math.abs(x1 - x0), Math.abs(y1 - y0));
   }
 
   drawBelow(L, t0, t1) {
@@ -493,6 +568,16 @@ export class Timeline {
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+    // Notes an edit just changed here on its own (linked levels): a ring for a moment, no animation.
+    ctx.strokeStyle = c.sp;
+    ctx.lineWidth = 2;
+    for (const f of this.flashes) {
+      const x = this.x(this.tempo.secondsAt(f.tick));
+      if (x < -12 || x > this.width + 12) continue;
+      ctx.beginPath();
+      ctx.arc(x, L.ghostY + rowBelow(f.lane) * GHOST_ROW + GHOST_ROW / 2, 8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 
   roundRect(x, y, w, h, r) {
@@ -501,8 +586,8 @@ export class Timeline {
     ctx.roundRect(x, y, Math.max(0, w), h, Math.min(r, Math.abs(w) / 2, h / 2));
   }
 
-  /** The tick of the note group under a point of the canvas, or null. */
-  hit(px, py) {
+  /** The note under a point of the canvas (an open note counts in every row), or null. */
+  noteAt(px, py) {
     if (!this.track) return null;
     const L = this.layout();
     const bottom = L.lanesY + L.rows * L.lane + L.kick;
@@ -514,11 +599,13 @@ export class Timeline {
     let best = null;
     let bestDistance = Infinity;
     for (const n of visibleSlice(this.track.notes, t0, t1)) {
-      const y = n[1] === OPEN_LANE ? py : this.laneY(n[1], L);
+      const open = n[1] === OPEN_LANE;
+      const y = open ? py : this.laneY(n[1], L);
       const dx = this.x(this.tempo.secondsAt(n[0])) - px;
-      const d = Math.hypot(dx, y - py);
+      // An open note loses to a gem at the same spot, so the gems of a chord stay reachable.
+      const d = Math.hypot(dx, y - py) + (open ? 8 : 0);
       if (d < bestDistance && Math.abs(dx) <= 16 && Math.abs(y - py) <= L.lane / 2) {
-        best = n[0];
+        best = n;
         bestDistance = d;
       }
     }

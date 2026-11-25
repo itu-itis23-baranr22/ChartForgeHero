@@ -566,8 +566,12 @@ def _check_audio_lengths(folder: Path, report: ValidationReport) -> None:
         report.errors.append(f"audio files differ in length: {frames}")
 
 
-def validate_song_folder(folder: Path) -> ValidationReport:
-    """Check that ``folder`` holds what Clone Hero needs to accept a song."""
+def validate_song_folder(folder: Path, chart_text: str | None = None) -> ValidationReport:
+    """Check that ``folder`` holds what Clone Hero needs to accept a song.
+
+    With ``chart_text``, that chart is checked in place of the folder's ``notes.chart``, together with the
+    rest of the folder: the editor checks a chart before it is written (SPEC 54).
+    """
     report = ValidationReport()
     if not folder.is_dir():
         report.errors.append(f"not a folder: {folder}")
@@ -575,8 +579,10 @@ def validate_song_folder(folder: Path) -> ValidationReport:
 
     chart_path = folder / "notes.chart"
     parsed: ParsedChart | None = None
-    if chart_path.is_file():
-        parsed, chart_report = validate_chart_text(chart_path.read_text(encoding="utf-8-sig"))
+    if chart_text is not None or chart_path.is_file():
+        if chart_text is None:
+            chart_text = chart_path.read_text(encoding="utf-8-sig")
+        parsed, chart_report = validate_chart_text(chart_text)
         report.extend(chart_report)
         _check_opening(folder, parsed, report)
     else:

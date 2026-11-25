@@ -19,6 +19,8 @@ import socket
 import subprocess
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -117,15 +119,18 @@ def node() -> str:
     return path
 
 
-@pytest.fixture(scope="module")
-def served(tmp_path_factory: pytest.TempPathFactory):
-    """The editor's server on a free port of 127.0.0.1, serving one synthetic song."""
-    outputs = tmp_path_factory.mktemp("sync") / "outputs"
-    folder, beats = make_sync_song(outputs)
+def free_port() -> int:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
-    server = uvicorn.Server(uvicorn.Config(create_app(SongLibrary(outputs)), host="127.0.0.1", port=port, log_level="warning"))
+        return probe.getsockname()[1]
+
+
+@contextmanager
+def serve(outputs: Path | None, port: int | None = None, app=None) -> Iterator[str]:
+    """The editor's server (or ``app``) on 127.0.0.1, for the song folders in ``outputs``; yields its URL."""
+    port = port or free_port()
+    app = app or create_app(SongLibrary(outputs))
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     deadline = time.monotonic() + 20
@@ -133,16 +138,27 @@ def served(tmp_path_factory: pytest.TempPathFactory):
         if time.monotonic() > deadline or not thread.is_alive():
             pytest.fail("the editor's server did not start")
         time.sleep(0.05)
-    yield {"url": f"http://127.0.0.1:{port}", "folder": folder, "beats": beats}
-    server.should_exit = True
-    thread.join(timeout=10)
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
 
 
-def run_browser(node: str, plan: dict, tmp_path: Path) -> dict:
+@pytest.fixture(scope="module")
+def served(tmp_path_factory: pytest.TempPathFactory):
+    """The editor's server serving one synthetic song."""
+    outputs = tmp_path_factory.mktemp("sync") / "outputs"
+    folder, beats = make_sync_song(outputs)
+    with serve(outputs) as url:
+        yield {"url": url, "folder": folder, "beats": beats}
+
+
+def run_browser(node: str, plan: dict, tmp_path: Path, script: str = "sync.mjs") -> dict:
     path = tmp_path / f"{plan['mode']}_plan.json"
     path.write_text(json.dumps(plan), encoding="utf-8")
     result = subprocess.run(
-        [node, str(BROWSER / "sync.mjs"), str(path)],
+        [node, str(BROWSER / script), str(path)],
         cwd=BROWSER, capture_output=True, text=True, encoding="utf-8", timeout=600, check=False,
     )
     assert result.returncode == 0, result.stdout[-2000:] + result.stderr[-4000:]
