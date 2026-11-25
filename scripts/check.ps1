@@ -60,6 +60,24 @@ try {
         exit 1
     }
 
+    # The editor's JavaScript (SPEC 57): Node's own test runner, no packages. Skipped without Node except in -Full.
+    $node = Get-Command node -ErrorAction SilentlyContinue
+    $jsTests = @(Get-ChildItem (Join-Path $root 'tests\js') -Filter '*.test.mjs' -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    if ($null -eq $node) {
+        if ($Full) {
+            Write-Output 'check: FAILED, -Full needs Node.js on PATH for the editor tests (tests\js)'
+            exit 1
+        }
+        Write-Output 'check: no Node.js on PATH, so the editor JavaScript tests are skipped'
+    } elseif ($jsTests.Count -gt 0) {
+        Write-Output "check: running $($jsTests.Count) JavaScript test file(s) with Node ..."
+        & $node.Source --test --test-reporter=dot @jsTests
+        if ($LASTEXITCODE -ne 0) {
+            Write-Output 'check: FAILED, the editor JavaScript tests did not pass'
+            exit 1
+        }
+    }
+
     # A folder whose name starts with _ is not a song: outputs\_songs_backup holds old copies from the
     # game, outputs\_experiments and outputs\_drafts hold experiments and notes.
     $folders = @(Get-ChildItem (Join-Path $root 'outputs') -Directory -ErrorAction SilentlyContinue |

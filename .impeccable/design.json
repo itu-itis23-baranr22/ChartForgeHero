@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-24T23:59:00+03:00",
+  "title": "Design System: chartgen editor",
+  "extensions": {
+    "colorMeta": {
+      "graphite-ground": { "role": "neutral", "displayName": "Graphite Ground", "canonical": "oklch(21.0% 0.014 220.3)", "tonalRamp": ["#080c0d", "#212628", "#3c4346", "#596366", "#7a8488", "#9ea7aa", "#c3cacd", "#eaeff1"] },
+      "track-panel": { "role": "neutral", "displayName": "Track Panel", "canonical": "oklch(23.9% 0.019 225.7)", "tonalRamp": ["#080c0e", "#1f2629", "#3a4448", "#576469", "#78858b", "#9ca7ac", "#c2cbcf", "#e9f0f3"] },
+      "petrol-shell": { "role": "primary", "displayName": "Petrol Shell", "canonical": "oklch(30.4% 0.041 215.7)", "tonalRamp": ["#040d10", "#17282d", "#2f464d", "#48676f", "#698891", "#90aab1", "#b8cdd3", "#e2f2f6"] },
+      "marker-white": { "role": "primary", "displayName": "Marker White", "canonical": "oklch(95.0% 0.004 236.5)", "tonalRamp": ["#0a0b0c", "#242526", "#404243", "#5f6263", "#808384", "#a3a5a7", "#c8c9ca", "#edefef"] },
+      "star-power-cyan": { "role": "secondary", "displayName": "Star Power Cyan", "canonical": "oklch(82.2% 0.079 212.3)", "tonalRamp": ["#000e13", "#002b32", "#104a54", "#246c79", "#498e9c", "#79afbb", "#a7d2db", "#d6f5fc"] },
+      "fret-green": { "role": "tertiary", "displayName": "Fret Green", "canonical": "oklch(66.9% 0.178 147.3)", "tonalRamp": ["#001200", "#003100", "#00530b", "#00781e", "#259b43", "#66bc73", "#9bdca2", "#cefdd2"] },
+      "fret-red": { "role": "tertiary", "displayName": "Fret Red", "canonical": "oklch(57.0% 0.200 24.8)", "tonalRamp": ["#250000", "#500003", "#7f0413", "#b21b25", "#db4847", "#f57b74", "#ffaba3", "#ffd9d3"] },
+      "fret-yellow": { "role": "tertiary", "displayName": "Fret Yellow", "canonical": "oklch(83.4% 0.158 89.0)", "tonalRamp": ["#160800", "#372000", "#5b3c00", "#825a00", "#a57c00", "#c3a142", "#e1c782", "#ffedbc"] },
+      "fret-blue": { "role": "tertiary", "displayName": "Fret Blue", "canonical": "oklch(60.7% 0.198 259.6)", "tonalRamp": ["#00062d", "#001f5c", "#023b8f", "#125ac6", "#397eed", "#6ba4ff", "#9ccaff", "#cef0ff"] },
+      "fret-orange": { "role": "tertiary", "displayName": "Fret Orange", "canonical": "oklch(66.1% 0.163 50.7)", "tonalRamp": ["#1f0000", "#461000", "#722700", "#a04000", "#c66318", "#e28d5b", "#fcb891", "#ffe2c6"] },
+      "error-coral": { "role": "status", "displayName": "Error Coral", "canonical": "oklch(73.5% 0.163 21.9)", "tonalRamp": ["#210001", "#49070e", "#751d23", "#a53339", "#cc5759", "#e88582", "#ffb1ad", "#ffddda"] },
+      "paper-ground": { "role": "neutral", "displayName": "Paper Ground (light theme)", "canonical": "oklch(96.8% 0.002 165.1)", "tonalRamp": ["#0b0b0b", "#242525", "#414242", "#606261", "#818382", "#a4a5a5", "#c8c9c9", "#eeefee"] }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "The song list's title." },
+      "title": { "displayName": "Title", "purpose": "Side panel headings and the song name in the header." },
+      "body": { "displayName": "Body", "purpose": "Controls, problems and the song list." },
+      "label": { "displayName": "Label", "purpose": "Uppercase lane group labels and table headings." },
+      "section-mark": { "displayName": "Section Mark", "purpose": "Section names written on the ruler, underlined 2px." },
+      "data": { "displayName": "Data", "purpose": "Ticks, times, bar.beat, BPM and track numbers." },
+      "clock": { "displayName": "Clock", "purpose": "The transport clock." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "state-change", "value": "150ms ease-out", "purpose": "Background and colour changes of controls; none under prefers-reduced-motion. Keyboard actions never animate." }
+    ],
+    "breakpoints": [
+      { "name": "too-narrow", "value": "1099px", "purpose": "At or below this width the editor shows a notice instead of the three-column layout." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Track Cell",
+      "kind": "custom",
+      "refersTo": "track-cell",
+      "description": "The signature: a ruled cell with a two-digit number in front of every lane and audio file.",
+      "html": "<div class=\"ds-lane\"><span class=\"ds-cell\">02</span><span class=\"ds-swatch\"></span>Red</div>",
+      "css": ".ds-lane { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: #152126; color: #aab5ba; font: 15px 'Barlow Semi Condensed', Bahnschrift, sans-serif; border-bottom: 1px solid #2b3b41; } .ds-cell { font: 12px 'Cascadia Mono', Consolas, monospace; width: 28px; height: 22px; border: 1px solid #2b3b41; display: grid; place-items: center; color: #85939a; } .ds-swatch { width: 12px; height: 12px; border-radius: 50%; background: #d42f35; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Tool row buttons: quiet until hovered.",
+      "html": "<button class=\"ds-btn-ghost\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\"><path d=\"M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5\"/></svg>Whole song</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border: 1px solid transparent; border-radius: 3px; background: none; color: #aab5ba; font: 15px 'Barlow Semi Condensed', Bahnschrift, sans-serif; cursor: pointer; transition: background-color 150ms ease-out, color 150ms ease-out; } .ds-btn-ghost:hover { background: #1a272d; color: #eceff1; } .ds-btn-ghost:focus-visible { outline: 2px solid #86d3e3; outline-offset: 2px; }"
+    },
+    {
+      "name": "Level Segments",
+      "kind": "nav",
+      "refersTo": "level-segment-active",
+      "description": "Expert, Hard, Medium, Easy in the petrol header; the active one inverts.",
+      "html": "<div class=\"ds-seg\"><button aria-pressed=\"true\">Expert</button><button>Hard</button><button>Medium</button><button disabled>Easy</button></div>",
+      "css": ".ds-seg { display: inline-flex; border: 1px solid #2c5c68; border-radius: 3px; background: #12343c; } .ds-seg button { padding: 7px 13px; border: 0; background: none; color: #a8c3c8; font: 15px 'Barlow Semi Condensed', Bahnschrift, sans-serif; cursor: pointer; } .ds-seg button:hover:not(:disabled) { color: #e6f0f1; } .ds-seg button[aria-pressed=true] { background: #e6f0f1; color: #12343c; } .ds-seg button:disabled { opacity: .45; cursor: default; } .ds-seg button:focus-visible { outline: 2px solid #86d3e3; outline-offset: 2px; }"
+    },
+    {
+      "name": "Instrument Tabs",
+      "kind": "nav",
+      "refersTo": "instrument-tab-active",
+      "description": "Text tabs in the header; a missing chart is disabled.",
+      "html": "<nav class=\"ds-tabs\"><button aria-selected=\"true\">Guitar</button><button>Bass</button><button>Drums</button><button disabled>Keys</button></nav>",
+      "css": ".ds-tabs { display: flex; gap: 2px; padding: 8px; background: #12343c; } .ds-tabs button { padding: 7px 13px; border: 1px solid transparent; border-radius: 3px; background: none; color: #a8c3c8; font: 15px 'Barlow Semi Condensed', Bahnschrift, sans-serif; cursor: pointer; } .ds-tabs button:hover:not(:disabled) { color: #e6f0f1; } .ds-tabs button[aria-selected=true] { background: #174450; border-color: #2c5c68; color: #e6f0f1; } .ds-tabs button:disabled { opacity: .45; } .ds-tabs button:focus-visible { outline: 2px solid #86d3e3; outline-offset: 2px; }"
+    },
+    {
+      "name": "Problem Item",
+      "kind": "card",
+      "refersTo": "problem-item",
+      "description": "A validator finding with a drawn icon and, when it names a place, a Go to button.",
+      "html": "<div class=\"ds-item\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"9\" fill=\"#ff7a7a\"/><path d=\"M12 7.5v5.5\" stroke=\"#111a1d\" stroke-width=\"2.4\"/><circle cx=\"12\" cy=\"16.3\" r=\"1.1\" fill=\"#111a1d\"/></svg><p>[HardSingle] has tick 6160, but [ExpertSingle] does not</p><button class=\"ds-go\">Go to Guitar Hard</button></div>",
+      "css": ".ds-item { display: grid; grid-template-columns: 18px 1fr; gap: 3px 9px; padding: 11px 13px; border: 1px solid #2b3b41; background: #152126; color: #aab5ba; font: 14px 'Barlow Semi Condensed', Bahnschrift, sans-serif; } .ds-item p { grid-column: 2; margin: 0; } .ds-go { grid-column: 2; justify-self: start; margin-top: 4px; padding: 4px 9px; border: 1px solid #2b3b41; border-radius: 3px; background: none; color: #eceff1; font: 13px 'Barlow Semi Condensed', Bahnschrift, sans-serif; cursor: pointer; } .ds-go:hover { background: #1a272d; } .ds-go:focus-visible { outline: 2px solid #86d3e3; outline-offset: 2px; }"
+    },
+    {
+      "name": "Transport Clock",
+      "kind": "custom",
+      "refersTo": "play-button",
+      "description": "The play button and the tabular clock on the petrol transport.",
+      "html": "<div class=\"ds-transport\"><button class=\"ds-play\" aria-label=\"Play\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\"><path d=\"M7 4.5v15l13-7.5z\" fill=\"currentColor\"/></svg></button><div><b class=\"ds-clock\">0:30.795</b><span class=\"ds-pos\">Bar 24.2 · tick 17856</span></div></div>",
+      "css": ".ds-transport { display: flex; align-items: center; gap: 26px; padding: 20px; background: #12343c; color: #e6f0f1; } .ds-play { width: 48px; height: 48px; border-radius: 999px; border: 0; background: #e6f0f1; color: #12343c; display: grid; place-items: center; cursor: pointer; } .ds-play:focus-visible { outline: 2px solid #86d3e3; outline-offset: 2px; } .ds-clock { display: block; font: 600 26px 'Cascadia Mono', Consolas, monospace; font-variant-numeric: tabular-nums lining-nums; } .ds-pos { font: 13px 'Cascadia Mono', Consolas, monospace; color: #a8c3c8; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Track Sheet",
+    "overview": "The editor is the session's paperwork: the printed track sheet clipped to a multitrack tape box, with numbered cells, faint ruled lines and names written in marker. It is a working screen first (Operate): a header, a tool row, the lanes, a problems list and a transport sit where anyone who has used an editor expects them, and the world shows only in type, colour, density and one signature, the numbered track cell.\n\nColour is committed at the shell, not scattered: a petrol header and transport frame a petrol-tinted graphite field, and the only saturated colours inside it are the five fret colours of Clone Hero, which belong to the notes alone. Density is a desk tool's: 15px body, nothing under 12px, numbers in a tabular mono that never jitters. The light theme is the same sheet on paper under the same petrol shell. Motion is almost absent: state changes take 150ms and keyboard actions never animate.",
+    "keyCharacteristics": [
+      "Petrol shell (header, transport) around a petrol-tinted graphite field; a paper field in the light theme.",
+      "Numbered track cells for lanes and audio files; bar numbers in boxed cells; section names written in and underlined.",
+      "Notes drawn as the game draws them: round gems, cymbal plates, a kick bar, sustain tails.",
+      "One semi-condensed DIN-like sans for words, one tabular mono for every number.",
+      "Flat, ruled, no shadows; depth only as plies (the level below is translucent)."
+    ],
+    "rules": [
+      { "name": "The Frets Belong to the Game Rule", "body": "Green, red, yellow, blue and orange appear only on notes and their lane swatches, never on buttons, links, states or decoration.", "section": "colors" },
+      { "name": "The Petrol Frame Rule", "body": "The shell colour stays the same in both themes; only the field between header and transport changes from graphite to paper.", "section": "colors" },
+      { "name": "The Tabular Numbers Rule", "body": "Every number is set in the mono with tabular lining figures; a clock that moves never changes width. Words stay in the sans, even next to a number.", "section": "typography" },
+      { "name": "The Ply Rule", "body": "Only the level being edited is opaque; any other level is a translucent ply below it and never competes for attention.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do draw notes as Clone Hero draws them: round gems, cymbal plates, a kick bar, sustain tails, fret colours.",
+      "Do keep every number in Cascadia Mono with tabular figures, and every word in Barlow Semi Condensed.",
+      "Do keep text at 12px or larger; body text is 15px.",
+      "Do use standard controls: native scrollbars (themed), tabs, segmented buttons, checkboxes, plain buttons.",
+      "Do draw icons as SVG in one stroke weight (1.75 on a 24px grid)."
+    ],
+    "donts": [
+      "Don't add glow, neon, gradients or decorative motion; state changes take 150ms and keyboard actions never animate.",
+      "Don't use a fret colour for anything that is not a note.",
+      "Don't set a typed character (\"!\", \"×\", an emoji) as an icon.",
+      "Don't load anything from outside the machine: fonts, scripts and styles are served by the editor itself."
+    ]
+  }
+}

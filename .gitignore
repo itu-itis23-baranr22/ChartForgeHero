@@ -15,3 +15,8 @@ references/
 *.flac
 *.ogg
 *.opus
+
+# Design work kept on this machine only: review screenshots, drafts and Impeccable's own state
+.impeccable/review/
+.impeccable/mocks/
+.impeccable/questions/

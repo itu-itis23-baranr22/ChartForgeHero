@@ -195,6 +195,9 @@ def test_a_changed_seed_is_separated_again(song_file, tmp_path):
 def test_normal_use_never_imports_the_model_stack():
     code = (
         "import sys, chartgen.cli, chartgen.pipeline, chartgen.audio.separation\n"
+        "import importlib.util\n"
+        "if importlib.util.find_spec('fastapi'):\n"
+        "    import chartgen.editor.server  # the editor too (SPEC 49)\n"
         "loaded = {'torch', 'demucs'} & set(sys.modules)\n"
         "assert not loaded, loaded\n"
     )

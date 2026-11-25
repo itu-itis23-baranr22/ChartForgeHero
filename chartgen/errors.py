@@ -23,3 +23,7 @@ class NoPlayableInstrumentError(ChartgenError):
 
 class ChartValidationError(ChartgenError):
     """A generated chart or song folder failed validation."""
+
+
+class ChartReadError(ChartgenError):
+    """A ``.chart`` file holds something the reader cannot bring back without losing it."""

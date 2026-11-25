@@ -527,6 +527,12 @@ def _check_preview(parsed: ParsedChart | None, ini: dict[str, str], report: Vali
         )
 
 
+def read_song_ini(path: Path) -> tuple[dict[str, str], ValidationReport]:
+    """The ``[song]`` fields of a ``song.ini``, and why they could not be read if they could not."""
+    report = ValidationReport()
+    return _read_song_ini(path, report), report
+
+
 def _read_song_ini(path: Path, report: ValidationReport) -> dict[str, str]:
     parser = configparser.ConfigParser(
         delimiters=("=",), comment_prefixes=(), interpolation=None, strict=False

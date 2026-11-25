@@ -120,6 +120,13 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--cache-dir", type=Path, default=Path(".cache/stems"))
     evaluate.add_argument("--device", default="auto", help="auto, cpu, cuda, mps (default: auto)")
     evaluate.add_argument("--output", type=Path, help="also write the results as JSON")
+
+    edit = commands.add_parser(
+        "edit", help="open the local web editor for the song folders in an output directory"
+    )
+    edit.add_argument("--outputs", type=Path, default=Path("outputs"), help="folder holding the songs (default: outputs)")
+    edit.add_argument("--port", type=int, default=8765, help="port on 127.0.0.1 (default: 8765)")
+    edit.add_argument("--no-browser", action="store_true", help="do not open the page in a browser")
     return parser
 
 
@@ -192,6 +199,29 @@ def _run_evaluate(args: argparse.Namespace) -> int:
     return 0 if report.songs else 1
 
 
+def _run_edit(args: argparse.Namespace) -> int:
+    try:
+        import uvicorn
+
+        from chartgen.editor.server import create_app
+    except ImportError as error:
+        raise ChartgenError(
+            f"The editor needs FastAPI and uvicorn ({error.name} is missing): pip install -e .[editor]"
+        ) from error
+    import threading
+    import webbrowser
+
+    from chartgen.editor.songs import SongLibrary
+
+    url = f"http://127.0.0.1:{args.port}/"
+    app = create_app(SongLibrary(args.outputs))
+    log.info("chartgen editor on %s, songs from %s (Ctrl+C stops it)", url, args.outputs.resolve())
+    if not args.no_browser:
+        threading.Timer(1.0, webbrowser.open, (url,)).start()
+    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the CLI and return the process exit code."""
     args = _build_parser().parse_args(argv)
@@ -210,6 +240,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_build(args)
         if args.command == "evaluate":
             return _run_evaluate(args)
+        if args.command == "edit":
+            return _run_edit(args)
         return _run_validate(args)
     except ChartgenError as error:
         log.error("Error: %s", error)

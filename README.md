@@ -33,7 +33,7 @@ Needs Python 3.11 or newer. No external programs: audio is read and encoded by l
 python -m venv .venv
 .venv\Scripts\activate
 pip install torch --index-url https://download.pytorch.org/whl/cpu
-pip install -e ".[separation,dev]"
+pip install -e ".[separation,editor,dev]"
 ```
 
 `requirements.lock.txt` records the exact versions this was tested with.
@@ -93,6 +93,23 @@ the drums. `--bpm` forces one exact tempo; the phase and the first downbeat are 
 `--drum-ear-test` adds `debug/drums_kick.wav`, `drums_snare.wav`, `drums_hihat.wav`, `drums_ride.wav`,
 `drums_crash.wav` and `drums_toms.wav`: the drum stem with a click on every hit of that part, read back
 from the written chart. Each click should fall on that part, and the part should not sound without one.
+
+## Web editor (in progress)
+
+Opens the song folders in `outputs/` in your browser, on this machine only (127.0.0.1): the chart drawn
+over time, one instrument and level at a time with the level below it faint, bars, tempo changes,
+sections, star power and what the validator says. Read-only for now; playback, editing, saving and
+copying to the game follow (phase E, `docs/SPEC.md` decisions 49-57).
+
+```
+pip install -e ".[editor]"
+chartgen edit                  # serves http://127.0.0.1:8765/ and opens it
+chartgen edit --port 9000 --no-browser --outputs other_folder
+```
+
+Scroll with the wheel or the arrow keys, zoom with Ctrl and the wheel or plus and minus, click a note
+to see its bar, tick and time. The page loads nothing from the internet; its fonts (Barlow Semi
+Condensed and Cascadia Mono, SIL Open Font License) ship with it.
 
 ## Measuring against human charts
 
@@ -179,6 +196,7 @@ pytest -m real         # your songs and the references; set CHARTGEN_MUSIC_DIR a
 scripts\check.ps1      # quick tests and the validator, under a minute: runs on every commit
 scripts\check.ps1 -Mid    # every test but the real songs and references
 scripts\check.ps1 -Full   # every test, with real Demucs and the references: before a phase commit
+node --test tests\js\tempo.test.mjs tests\js\view.test.mjs   # the editor's JavaScript (check.ps1 runs it too)
 git config core.hooksPath .githooks     # makes every commit run the quick check
 ```
 
