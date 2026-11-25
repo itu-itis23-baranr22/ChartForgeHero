@@ -98,8 +98,9 @@ from the written chart. Each click should fall on that part, and the part should
 
 Opens the song folders in `outputs/` in your browser, on this machine only (127.0.0.1): the chart drawn
 over time, one instrument and level at a time with the level below it faint, bars, tempo changes,
-sections, star power and what the validator says. Read-only for now; playback, editing, saving and
-copying to the game follow (phase E, `docs/SPEC.md` decisions 49-57).
+sections, star power and what the validator says, with the song's audio to play along. Read-only for
+now; editing, saving and copying to the game follow (phase E, `docs/SPEC.md` decisions 49-57). Use
+Chrome or Edge: the audio is Ogg Vorbis.
 
 ```
 pip install -e ".[editor]"
@@ -110,6 +111,13 @@ chartgen edit --port 9000 --no-browser --outputs other_folder
 Scroll with the wheel or the arrow keys, zoom with Ctrl and the wheel or plus and minus, click a note
 to see its bar, tick and time. The page loads nothing from the internet; its fonts (Barlow Semi
 Condensed and Cascadia Mono, SIL Open Font License) ship with it.
+
+Playback: Space plays and pauses; clicking the ruler or the waveform moves the playhead. Every audio file
+has its own mute (M), solo (S) and volume, and muting never restarts the music. Speed goes down to 0.5x
+(the pitch drops with it), the metronome clicks the chart's own tempo map with the downbeats higher, and
+Latency draws the playhead later by that many milliseconds when it runs ahead of what you hear (Bluetooth
+headphones need 150 to 250). A song's audio is decoded into memory: about 70 MB per file for a
+three-minute song, so a song with five files takes about 350 MB in the browser.
 
 ## Measuring against human charts
 
@@ -196,7 +204,9 @@ pytest -m real         # your songs and the references; set CHARTGEN_MUSIC_DIR a
 scripts\check.ps1      # quick tests and the validator, under a minute: runs on every commit
 scripts\check.ps1 -Mid    # every test but the real songs and references
 scripts\check.ps1 -Full   # every test, with real Demucs and the references: before a phase commit
-node --test tests\js\tempo.test.mjs tests\js\view.test.mjs   # the editor's JavaScript (check.ps1 runs it too)
+node --test tests\js\tempo.test.mjs tests\js\view.test.mjs tests\js\transport.test.mjs   # the editor's JavaScript (check.ps1 runs it too)
+npm ci --prefix tests\browser   # Playwright 1.65.1 for the editor's browser tests (heavy; -Full needs it)
+node tests\browser\memory.mjs http://127.0.0.1:8765 "Artist - Title"   # the browser's memory for one song
 git config core.hooksPath .githooks     # makes every commit run the quick check
 ```
 

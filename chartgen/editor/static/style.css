@@ -20,14 +20,14 @@
   color-scheme: dark;
   --bg: #111a1d; --panel: #152126; --panel-2: #1a272d; --rule: #2b3b41; --rule-2: #1f2c31;
   --ink: #eceff1; --ink-2: #aab5ba; --ink-3: #85939a; --mark: #eceff1;
-  --sp: #86d3e3; --err: #ff7a7a; --warn: #f5b83d; --focus: #86d3e3; --ghost: 0.42; --rim: rgba(255, 255, 255, 0.55);
+  --sp: #86d3e3; --err: #ff7a7a; --warn: #f5b83d; --focus: #86d3e3; --ghost: 0.42; --rim: rgba(255, 255, 255, 0.55); --wave: #5c6c73;
   --fret-0: #2eb14e; --fret-1: #d42f35; --fret-2: #f2c230; --fret-3: #2f7cf6; --fret-4: #de6f1c; --open: #a66de0;
 }
 :root[data-theme="light"] {
   color-scheme: light;
   --bg: #f3f5f4; --panel: #e9eeed; --panel-2: #e1e7e6; --rule: #bfcaca; --rule-2: #d5dddc;
   --ink: #12191c; --ink-2: #3f4d54; --ink-3: #5b6a71; --mark: #12343c;
-  --sp: #2a8fa8; --err: #c0262d; --warn: #9a6700; --focus: #2a8fa8; --ghost: 0.5; --rim: rgba(18, 25, 28, 0.55);
+  --sp: #2a8fa8; --err: #c0262d; --warn: #9a6700; --focus: #2a8fa8; --ghost: 0.5; --rim: rgba(18, 25, 28, 0.55); --wave: #aebbbb;
   --fret-0: #3dae5a; --fret-1: #c1272d; --fret-2: #d9a40e; --fret-3: #1f66d9; --fret-4: #db6a12; --open: #7b3fc4;
 }
 
@@ -74,6 +74,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, .tl:focus-visib
 .tool label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .tool input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--mark); }
 .tool .note { margin-left: auto; font-size: 14px; color: var(--ink-3); }
+.tool .note.bad { color: var(--err); }
 kbd { font-size: 12px; color: var(--ink-3); border: 1px solid var(--rule); border-radius: 2px; padding: 0 4px; }
 
 .left { background: var(--panel); border-right: 1px solid var(--rule); position: relative; overflow: hidden; }
@@ -86,6 +87,7 @@ kbd { font-size: 12px; color: var(--ink-3); border: 1px solid var(--rule); borde
 
 .tl { position: relative; overflow-x: auto; overflow-y: hidden; scrollbar-color: var(--rule) var(--panel); }
 .tl canvas { position: sticky; left: 0; top: 0; display: block; }
+.tl canvas.seek { cursor: pointer; }
 .tl .spacer { height: 1px; }
 
 .right { background: var(--panel); border-left: 1px solid var(--rule); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; scrollbar-color: var(--rule) var(--panel); }
@@ -108,18 +110,36 @@ dl.kv { display: grid; grid-template-columns: 104px 1fr; gap: 7px 12px; font-siz
 .kv dt { color: var(--ink-3); }
 .kv dd { overflow-wrap: anywhere; }
 
-.bot { grid-column: 1 / -1; background: var(--shell); color: var(--shell-ink); display: flex; align-items: center; gap: 26px; padding: 0 20px; min-width: 0; }
+.bot { grid-column: 1 / -1; background: var(--shell); color: var(--shell-ink); display: flex; align-items: center; gap: 22px; padding: 0 20px; min-width: 0; }
 .play { width: 48px; height: 48px; border-radius: 50%; background: var(--shell-ink); color: var(--shell); justify-content: center; flex: none; }
 .play svg.i { width: 22px; height: 22px; fill: currentColor; stroke: none; }
+.clock { flex: none; min-width: 172px; }
 .clock b { display: block; font: 600 26px var(--mono); font-variant-numeric: tabular-nums; }
-.clock span { font: 13px var(--mono); color: var(--shell-ink-2); }
-.ctl { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--shell-ink-2); }
+.clock span { font: 13px var(--mono); color: var(--shell-ink-2); white-space: nowrap; }
+.ctl { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--shell-ink-2); flex: none; }
 .ctl b { font: 600 16px var(--mono); color: var(--shell-ink); }
-.stems { margin-left: auto; display: flex; border: 1px solid var(--shell-line); min-width: 0; overflow: hidden; }
-.stem { width: 150px; padding: 9px 11px; border-right: 1px solid var(--shell-line); display: flex; align-items: center; gap: 8px; }
+.ctl select, .ctl .metro, .lat { font: 600 16px var(--mono); font-variant-numeric: tabular-nums; color: var(--shell-ink); background: var(--shell-2); border: 1px solid var(--shell-line); border-radius: 3px; height: 30px; }
+.ctl select { padding: 0 6px; cursor: pointer; }
+.ctl select option { background: var(--shell); color: var(--shell-ink); }
+.ctl .metro { padding: 0 12px; min-width: 56px; justify-content: center; }
+.ctl .metro[aria-pressed="true"] { background: var(--shell-ink); color: var(--shell); border-color: var(--shell-ink); }
+.lat { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 0; }
+.lat input { width: 64px; height: 28px; font: inherit; color: inherit; background: none; border: 0; padding: 0 0 0 8px; text-align: right; }
+.lat span { font-size: 13px; color: var(--shell-ink-2); font-weight: 400; }
+.bot :disabled { opacity: 0.45; cursor: default; }
+.stems { margin-left: auto; display: flex; border: 1px solid var(--shell-line); min-width: 0; overflow-x: auto; scrollbar-color: var(--shell-line) var(--shell); }
+.stem { flex: 0 0 172px; padding: 8px 10px 9px; border-right: 1px solid var(--shell-line); display: grid; grid-template-columns: auto 1fr auto; gap: 7px 8px; align-items: center; }
 .stem:last-child { border-right: 0; }
 .stem .no { font: 12px var(--mono); color: var(--shell-ink-2); width: 26px; height: 22px; display: grid; place-items: center; border: 1px solid var(--shell-line); flex: none; }
-.stem .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stem.solo .no { border: 2px solid var(--shell-ink); border-radius: 50%; color: var(--shell-ink); height: 26px; margin: -2px 0; }
+.stem .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.stem.muted .nm { text-decoration: line-through; text-decoration-thickness: 2px; color: var(--shell-ink-2); }
+.stem.silenced .nm { color: var(--shell-ink-2); }
+.stem .ms { display: flex; gap: 4px; }
+.stem .ms button { width: 24px; height: 24px; justify-content: center; border-color: var(--shell-line); font: 600 12px var(--ui); color: var(--shell-ink-2); }
+.stem .ms button:hover:not(:disabled):not([aria-pressed="true"]) { color: var(--shell-ink); }
+.stem .ms button[aria-pressed="true"] { background: var(--shell-ink); color: var(--shell); border-color: var(--shell-ink); }
+.stem .vol { grid-column: 1 / -1; width: 100%; height: 14px; margin: 0; accent-color: var(--shell-ink); cursor: pointer; }
 
 .list { overflow-y: auto; padding: 28px 40px 40px; }
 .list h1 { font-size: 24px; font-weight: 600; margin-bottom: 6px; }

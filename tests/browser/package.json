@@ -1,0 +1,9 @@
+{
+  "name": "chartgen-editor-browser-tests",
+  "private": true,
+  "description": "Measures the editor's sync in Chromium (SPEC 53, 57). Not part of the editor: the page uses no npm packages.",
+  "type": "module",
+  "devDependencies": {
+    "playwright": "1.65.1"
+  }
+}

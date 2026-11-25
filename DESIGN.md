@@ -37,6 +37,8 @@ colors:
   paper-fret-blue: "#1f66d9"
   paper-fret-orange: "#db6a12"
   paper-open-violet: "#7b3fc4"
+  wave-grey: "#5c6c73"
+  paper-wave-grey: "#aebbbb"
 typography:
   headline:
     fontFamily: "Barlow Semi Condensed, Bahnschrift, Segoe UI, system-ui, sans-serif"
@@ -164,6 +166,7 @@ fret colours reserved for notes.
 - **Track Panel** (#152126): the lane column, the tool row and the side panel; raised (#1a272d) for hover.
 - **Form Rule** (#2b3b41) and **Faint Rule** (#1f2c31): cell borders, bar lines, lane centre lines and beat lines.
 - **Pencil Grey** (#aab5ba) and **Faint Pencil** (#85939a): secondary text and labels.
+- **Wave Grey** (#5c6c73; paper #aebbbb): the waveform under the lanes, quieter than any note.
 - **Error Coral** (#ff7a7a; paper #c0262d) and **Warning Amber** (#f5b83d; paper #9a6700): problems only, always
   with a drawn icon and words.
 
@@ -201,7 +204,8 @@ A fixed desktop grid: header 56px, tool row 46px, then three columns (lane cells
 then the transport 96px. The timeline is a canvas that stays in place over a wide spacer, so the browser's own
 horizontal scrollbar moves through the song; time runs left to right in seconds, so tempo changes show as bars of
 different width. Lanes take 44-76px each by the window's height; the ruler above them is 92px (bar cells, tempo and
-time signature marks, sections, star power). The level below sits under the lanes as a ply of five 13px rows. Spacing
+time signature marks, sections, star power). The level below sits under the lanes as a ply of five 13px rows; under it a 56px waveform row shows the
+instrument's own stem (the backing track when it has none), labelled with its file. Spacing
 steps are 6, 8, 12, 20 and 24px. Below 1100px wide the editor does not try to fit: it says so and asks for a wider
 window.
 
@@ -236,6 +240,15 @@ bar in its own row: the shapes the game uses, so that a cymbal never needs its c
 ### Track Cell (signature)
 - A 28 × 22px ruled cell holding a two-digit number in the mono, in front of every lane and every audio file. Lanes
   read 01-05 top to bottom; audio files keep the order song, guitar, bass, drums, keys, vocals.
+- In the transport every audio file is a stem cell: its number, its name, M and S buttons and a volume slider.
+  Muting strikes the name through, solo circles the number, and a stem silenced by another stem's solo turns pencil
+  grey. On a narrow window the stem cells scroll sideways rather than shrink.
+
+### Transport
+- The play pill (Space anywhere but in a text field), the clock of the playhead with bar.beat and tick, then
+  Speed (a native select, 0.50× to 1.00×), Metronome (a shell button that inverts when on) and Latency (a number in
+  ms), each a label over its control, then the stem cells. Until the audio is decoded every control is at 45% and
+  the tool row says how many files are loaded; a file that cannot be decoded is named there in coral.
 
 ### Problem Item
 - A ruled box with a drawn icon (coral disc for an error, amber triangle for a warning), the message, and a "Go to"
@@ -244,6 +257,9 @@ bar in its own row: the shapes the game uses, so that a cymbal never needs its c
 ### Timeline
 - Gems are circles in the fret colour with a 2px ring of the field colour and a light rim; sustain tails are 9px
   bars of the same colour. Bar numbers sit in boxed cells; the selection is a marker-white outline around a note group.
+- The playhead is a 2px marker-white line from a small triangle in the ruler to the bottom, at the time being heard
+  (less the latency setting). While playing, the view turns a page when the playhead passes 85% of it, without
+  scrolling smoothly; a view the user scrolled away is left alone. Clicking the ruler or the waveform moves it.
 
 ## Do's and Don'ts
 

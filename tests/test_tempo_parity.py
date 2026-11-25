@@ -1,5 +1,6 @@
 """The page converts ticks and seconds itself (chartgen/editor/static/tempo.js). This keeps it equal to Python's
-TempoMap: the values here are the fixture tests/js/tempo.test.mjs checks the JavaScript against (SPEC 57).
+TempoMap, and its metronome to click_overlay.click_schedule (SPEC 53): the values here are the fixture
+tests/js/tempo.test.mjs checks the JavaScript against (SPEC 57).
 
 Regenerate the fixture after a deliberate change to TempoMap with CHARTGEN_WRITE_FIXTURES=1.
 """
@@ -17,6 +18,7 @@ import pytest
 from conftest import skip_missing
 
 from chartgen.clonehero.chart_reader import read_chart_file
+from chartgen.clonehero.click_overlay import click_schedule
 from chartgen.core.timing import TempoEvent, TempoMap, TimeSignatureEvent
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,7 +60,14 @@ def case(name: str, tempo_map: TempoMap, end_s: float) -> dict[str, object]:
         "seconds_at": [[t, float(tempo_map.seconds_at(t))] for t in ticks],
         "ticks_at": [[s, float(tempo_map.ticks_at(s))] for s in seconds],
         "bar_lines": tempo_map.bar_lines(end_s).tolist(),
+        "metronome": metronome(tempo_map, end_s),
     }
+
+
+def metronome(tempo_map: TempoMap, end_s: float) -> list[list[object]]:
+    """The beats the editor's metronome clicks on: ``click_schedule``'s, as [seconds, downbeat]."""
+    schedule = click_schedule(tempo_map, end_s)
+    return [[float(s), bool(d)] for s, d in zip(schedule.times, schedule.is_downbeat)]
 
 
 def synthetic_cases() -> list[dict[str, object]]:

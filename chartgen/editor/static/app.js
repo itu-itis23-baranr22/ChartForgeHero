@@ -1,9 +1,12 @@
-// chartgen editor (E.0: read-only). Two views behind the hash: #/ the song list, #/song/<folder> a song.
+// chartgen editor (E.1: read-only, with playback). Two views behind the hash: #/ the song list,
+// #/song/<folder> a song.
 
 import { api } from "./api.js";
+import { PUMP_MS, Player } from "./audio.js";
 import { icon } from "./icons.js";
 import { TempoMap } from "./tempo.js";
 import { PAD, Timeline } from "./timeline.js";
+import { SPEEDS, clampLatency, followScroll, metronomeBeats, peaks, silencedBySolo } from "./transport.js";
 import { barBeat, clampZoom, clock, zoomAround } from "./view.js";
 
 const INSTRUMENTS = ["guitar", "bass", "drums", "keys"];
@@ -16,10 +19,18 @@ const root = document.getElementById("app");
 
 const esc = (value) => String(value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 
-// ---------------------------------------------------------------- theme (a per-viewer convenience)
+// ---------------------------------------------------------------- per-viewer conveniences
+
+function stored(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function store(key, value) {
+  try { localStorage.setItem(key, String(value)); } catch { /* private window: the choice lasts this page */ }
+}
 
 function storedTheme() {
-  try { return localStorage.getItem("chartgen-theme"); } catch { return null; }
+  return stored("chartgen-theme");
 }
 
 function applyTheme(theme) {
@@ -30,7 +41,7 @@ function applyTheme(theme) {
 function toggleTheme() {
   const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
   applyTheme(next);
-  try { localStorage.setItem("chartgen-theme", next); } catch { /* private window: the choice lasts this page */ }
+  store("chartgen-theme", next);
   if (state.timeline) {
     state.timeline.readColours();
     state.timeline.draw();
@@ -53,6 +64,13 @@ applyTheme(storedTheme());
 
 const state = {};
 
+/** Read by the measurement scripts in tests/browser: the open song's state and its player. */
+window.chartgenDebug = {
+  get state() { return state; },
+  get player() { return state.player || null; },
+  frames: null, // an array to record every drawn playhead into, or null
+};
+
 function header(inner) {
   return `<header class="top">${inner}<div class="end"><span class="mode"></span><button class="theme"></button></div></header>`;
 }
@@ -63,6 +81,7 @@ function wireHeader() {
 }
 
 function route() {
+  closeAudio();
   const match = location.hash.match(/^#\/song\/(.+)$/);
   if (match) openSong(decodeURIComponent(match[1]));
   else showList();
@@ -131,10 +150,13 @@ async function openSong(id) {
   Object.assign(state, {
     id, chart, info, tempo, lengthS, bars: tempo.barLines(lengthS), instruments,
     instrument: instruments[0], difficulty: null, selected: null, showBelow: true,
+    playhead: 0, rate: 1, metronome: stored("chartgen-metronome") === "on",
+    latency: clampLatency(stored("chartgen-latency-ms") ?? 0), audio: { status: "loading", loaded: 0, total: info.audio.length },
   });
   state.difficulty = levelsOf(state.instrument)[0];
   document.title = `${chart.name} – chartgen editor`;
   renderSong();
+  loadAudio(id);
 }
 
 function levelsOf(instrument) {
@@ -157,7 +179,15 @@ function renderSong() {
   const order = ["song", "guitar", "bass", "drums", "keys", "vocals"];
   const rank = (file) => { const i = order.indexOf(file.replace(/\.ogg$/, "")); return i < 0 ? order.length : i; };
   const audio = [...info.audio].sort((a, b) => rank(a.file) - rank(b.file));
-  const stems = audio.map((a, n) => `<div class="stem" title="${esc(a.file)}${a.stems.length ? `: ${esc(a.stems.join(", "))}` : ""}"><span class="no">${String(n + 1).padStart(2, "0")}</span><span class="nm">${esc(a.file.replace(/\.ogg$/, ""))}</span></div>`).join("");
+  state.audioFiles = audio.map((a) => a.file);
+  const stems = audio.map((a, n) => {
+    const name = esc(stemName(a.file));
+    const what = `${esc(a.file)}${a.stems.length ? `: ${esc(a.stems.join(", "))}` : ""}`;
+    return `<div class="stem" data-stem="${n}"><span class="no">${String(n + 1).padStart(2, "0")}</span><span class="nm" title="${what}">${name}</span>
+      <span class="ms"><button class="mute" aria-pressed="false" title="Mute ${name}" aria-label="Mute ${name}" disabled>M</button><button class="solo" aria-pressed="false" title="Solo ${name}" aria-label="Solo ${name}" disabled>S</button></span>
+      <input class="vol" type="range" min="0" max="100" step="1" value="100" title="${name} volume" aria-label="${name} volume" disabled></div>`;
+  }).join("");
+  const speeds = SPEEDS.map((s) => `<option value="${s}"${s === state.rate ? " selected" : ""}>${s.toFixed(2)}×</option>`).join("");
   root.innerHTML = header(`<div class="brand"><a class="back" href="#/" title="All songs" aria-label="All songs">${icon("back")}</a>chartgen</div>
       <div class="song-title"><b>${esc(chart.name)}</b><span>${esc(chart.artist)}</span></div>
       <nav class="tabs" role="tablist" aria-label="Instrument">${tabs}</nav><div class="seg" role="group" aria-label="Level"></div>`) +
@@ -169,10 +199,12 @@ function renderSong() {
     <aside class="left"></aside>
     <main class="tl" tabindex="0" aria-label="Timeline: arrow keys scroll, plus and minus zoom"><canvas></canvas><div class="spacer"></div></main>
     <aside class="right"></aside>
-    <footer class="bot"><button class="play" disabled title="Playback comes next">${icon("play")}</button>
+    <footer class="bot"><button class="play" disabled title="Loading the audio" aria-label="Play">${icon("play")}</button>
       <div class="clock"><b class="t">0:00.000</b><span class="pos"></span></div>
-      <div class="ctl">Tempo<b class="bpm">–</b></div><div class="ctl">Length<b>${clock(state.lengthS).replace(/\.\d+$/, "")}</b></div>
-      <div class="stems" role="group" aria-label="Audio files">${stems}</div></footer>`;
+      <label class="ctl" title="Playback speed; slower playback also lowers the pitch">Speed<select class="speed" disabled>${speeds}</select></label>
+      <div class="ctl" title="A click on every beat of the chart's tempo map, the downbeat higher"><span id="metro-label">Metronome</span><button class="metro" aria-labelledby="metro-label" aria-pressed="${state.metronome}" disabled>${state.metronome ? "On" : "Off"}</button></div>
+      <label class="ctl" title="Draws the playhead this much later than the audio clock. Raise it when the line runs ahead of what you hear (Bluetooth headphones: 150 to 250 ms)">Latency<span class="lat"><input class="latency" type="number" min="-300" max="500" step="5" value="${state.latency}"><span>ms</span></span></label>
+      <div class="stems" role="group" aria-label="Stems">${stems}</div></footer>`;
   wireHeader();
   root.querySelector(".mode").textContent = "Read-only";
   root.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => setInstrument(b.dataset.instrument)));
@@ -190,7 +222,9 @@ function renderSong() {
   state.timeline = timeline;
   timeline.setSong(state.tempo, state.bars, state.lengthS, state.chart.sections);
   timeline.zoom = startZoom();
+  timeline.playhead = state.playhead;
   wireTimeline(scroller, canvas, timeline);
+  wireTransport();
   showTrack();
   new ResizeObserver(() => {
     timeline.resize(scroller.clientWidth, scroller.clientHeight);
@@ -235,6 +269,7 @@ function showTrack() {
   timeline.setTrack(state.instrument, trackOf(state.instrument, state.difficulty), below ? trackOf(state.instrument, below) : null);
   timeline.selected = state.selected;
   timeline.markers = markers();
+  updateWave();
   layoutLanes();
   renderSide();
   timeline.draw();
@@ -254,6 +289,8 @@ function layoutLanes() {
   }
   if (L.kick) html += `<div class="lane" data-top="${L.kickY}" data-height="${L.kick}"><span class="cell">05</span><span class="sw bar c4"></span>Kick</div>`;
   if (L.ghost && below) html += `<div class="lvl" data-top="${L.ghostY - 30}">${TITLE[below]} · below</div>`;
+  const wave = waveFile();
+  html += `<div class="lvl" data-top="${L.waveY - 30}">${wave ? `Audio · ${esc(wave)}` : "Audio"}</div>`;
   const left = root.querySelector(".left");
   left.innerHTML = html;
   // Positions go through CSSOM: the page's policy allows no inline style attributes.
@@ -310,7 +347,6 @@ function renderSide() {
     notes.hidden = !notes.hidden;
     more.setAttribute("aria-expanded", String(!notes.hidden));
   });
-  root.querySelector(".bpm").textContent = (info.bpm || tempo.tempos.at(-1).bpm).toFixed(1);
   renderInspector();
 }
 
@@ -356,9 +392,13 @@ function wireTimeline(scroller, canvas, timeline) {
     if (e.ctrlKey) zoomTo(timeline.zoom * Math.exp(-e.deltaY * 0.0015), e.clientX - scroller.getBoundingClientRect().left);
     else scroller.scrollLeft += e.deltaY + e.deltaX;
   }, { passive: false });
-  canvas.addEventListener("pointermove", (e) => showClock(timeline.secondsAtX(e.offsetX)));
-  canvas.addEventListener("pointerleave", () => showClock(timeline.secondsAtX(0)));
+  // The ruler and the waveform move the playhead; the lanes pick notes.
+  canvas.addEventListener("pointermove", (e) => canvas.classList.toggle("seek", timeline.zoneAt(e.offsetY) !== "lanes"));
   canvas.addEventListener("click", (e) => {
+    if (timeline.zoneAt(e.offsetY) !== "lanes") {
+      seekTo(timeline.secondsAtX(e.offsetX));
+      return;
+    }
     state.selected = timeline.hit(e.offsetX, e.offsetY);
     timeline.selected = state.selected;
     timeline.draw();
@@ -379,7 +419,7 @@ function wireTimeline(scroller, canvas, timeline) {
       actions[e.key]();
     }
   });
-  showClock(0);
+  showClock(state.playhead);
 }
 
 function showClock(seconds) {
@@ -423,3 +463,264 @@ function scrollToTick(tick) {
   timeline.draw();
   timeline.scroller.focus();
 }
+
+// ---------------------------------------------------------------- playback (E.1, SPEC 53)
+
+const STEM_TITLE = { song: "Song", guitar: "Guitar", bass: "Bass", drums: "Drums", keys: "Keys", vocals: "Vocals", crowd: "Crowd" };
+
+function stemName(file) {
+  const base = file.replace(/\.ogg$/i, "");
+  return STEM_TITLE[base] || base;
+}
+
+/** The file whose waveform runs under the lanes: the instrument's own stem, else the backing track. */
+function waveFile() {
+  const files = state.audioFiles || [];
+  return files.find((f) => f === `${state.instrument}.ogg`) || files.find((f) => f === "song.ogg") || files[0] || null;
+}
+
+/** Fetches and decodes every audio file of the song, one after the other, showing how far it is. */
+async function loadAudio(id) {
+  const ctx = new AudioContext({ latencyHint: "interactive" });
+  const player = new Player(ctx);
+  player.setBeats(metronomeBeats(state.tempo, state.lengthS + 30));
+  player.setMetronome(state.metronome);
+  player.setRate(state.rate);
+  Object.assign(state, { audioCtx: ctx, player, peaks: new Map() });
+  renderAudioStatus();
+  try {
+    if (!state.audioFiles.length) throw new Error("this song folder has no .ogg files.");
+    for (const [index, file] of state.audioFiles.entries()) {
+      let response;
+      try {
+        response = await fetch(api.audioUrl(id, file));
+      } catch {
+        throw new Error("the editor server is not reachable. Is chartgen edit still running?");
+      }
+      if (!response.ok) throw new Error(`${file}: ${response.status} ${response.statusText}`);
+      const bytes = await response.arrayBuffer();
+      if (state.player !== player) return; // the song was closed meanwhile
+      let buffer;
+      try {
+        buffer = await ctx.decodeAudioData(bytes);
+      } catch {
+        throw new Error(`${file} could not be decoded. The editor plays Ogg Vorbis in Chrome and Edge.`);
+      }
+      if (state.player !== player) return;
+      player.addStem(file, buffer);
+      state.audio.loaded = index + 1;
+      renderAudioStatus();
+    }
+  } catch (error) {
+    if (state.player !== player) return;
+    state.audio.status = "error";
+    state.audio.message = error.message;
+    renderAudioStatus();
+    return;
+  }
+  player.cursor = Math.min(state.playhead, player.duration);
+  state.audio.status = "ready";
+  renderAudioStatus();
+  updateWave();
+  layoutLanes();
+  drawFrame();
+}
+
+/** Stops playback and lets the decoded audio go: on leaving the song. */
+function closeAudio() {
+  stopLoop();
+  const { player, audioCtx } = state;
+  state.player = null;
+  state.audioCtx = null;
+  if (player) player.dispose();
+  if (audioCtx) audioCtx.close().catch(() => {});
+}
+
+/** The waveform of the stem under the lanes, its peaks computed once per file. */
+function updateWave() {
+  const timeline = state.timeline;
+  const player = state.player;
+  if (!timeline || !player || state.audio.status !== "ready") return;
+  const file = waveFile();
+  const stem = player.stems.find((s) => s.file === file);
+  if (!stem) {
+    timeline.wave = null;
+    timeline.waveNote = "No audio";
+    return;
+  }
+  if (!state.peaks.has(file)) {
+    const buffer = stem.buffer;
+    const block = 128;
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
+    const values = peaks(channels, block);
+    let max = 0;
+    for (const v of values) if (v > max) max = v;
+    // Quiet stems are drawn larger, up to four times, so that a soft part still shows its shape.
+    state.peaks.set(file, { peaks: values, perSecond: buffer.sampleRate / block, scale: max > 0 ? Math.min(4, 0.95 / max) : 1 });
+  }
+  timeline.wave = state.peaks.get(file);
+}
+
+function renderAudioStatus() {
+  const audio = state.audio;
+  const note = root.querySelector(".tool .note");
+  if (!note) return;
+  const ready = audio.status === "ready";
+  if (audio.status === "loading") note.textContent = `Loading the audio: ${audio.loaded} of ${audio.total} files`;
+  else if (audio.status === "error") note.textContent = `The audio could not be loaded: ${audio.message}`;
+  else note.textContent = "Read-only for now: editing comes next.";
+  note.classList.toggle("bad", audio.status === "error");
+  root.querySelectorAll(".bot .play, .bot select, .bot .metro, .stem button, .stem .vol").forEach((el) => { el.disabled = !ready; });
+  if (audio.status === "error" && state.timeline) {
+    state.timeline.waveNote = "No audio";
+    state.timeline.draw();
+  }
+  renderPlayButton();
+}
+
+function renderPlayButton() {
+  const play = root.querySelector(".bot .play");
+  if (!play) return;
+  const playing = Boolean(state.player && state.player.playing);
+  play.innerHTML = icon(playing ? "pause" : "play");
+  const label = state.audio.status === "ready" ? `${playing ? "Pause" : "Play"} (Space)`
+    : state.audio.status === "error" ? "No audio to play" : "Loading the audio";
+  play.title = label;
+  play.setAttribute("aria-label", label);
+}
+
+function renderStems() {
+  const stems = state.player ? state.player.stems : [];
+  root.querySelectorAll(".stem").forEach((cell) => {
+    const index = Number(cell.dataset.stem);
+    const stem = stems[index];
+    if (!stem) return;
+    cell.classList.toggle("muted", stem.mute);
+    cell.classList.toggle("solo", stem.solo);
+    cell.classList.toggle("silenced", silencedBySolo(stems, index));
+    cell.querySelector(".mute").setAttribute("aria-pressed", String(stem.mute));
+    cell.querySelector(".solo").setAttribute("aria-pressed", String(stem.solo));
+  });
+}
+
+function wireTransport() {
+  const bot = root.querySelector(".bot");
+  bot.querySelector(".play").addEventListener("click", togglePlay);
+  bot.querySelector(".speed").addEventListener("change", (e) => {
+    state.rate = Number(e.target.value);
+    if (state.player) state.player.setRate(state.rate);
+  });
+  const metro = bot.querySelector(".metro");
+  metro.addEventListener("click", () => {
+    state.metronome = !state.metronome;
+    store("chartgen-metronome", state.metronome ? "on" : "off");
+    if (state.player) state.player.setMetronome(state.metronome);
+    metro.setAttribute("aria-pressed", String(state.metronome));
+    metro.textContent = state.metronome ? "On" : "Off";
+  });
+  const latency = bot.querySelector(".latency");
+  latency.addEventListener("change", () => {
+    state.latency = clampLatency(latency.value);
+    latency.value = state.latency;
+    store("chartgen-latency-ms", state.latency);
+    drawFrame();
+  });
+  bot.querySelectorAll(".stem").forEach((cell) => {
+    const index = Number(cell.dataset.stem);
+    cell.querySelector(".mute").addEventListener("click", () => toggleStem(index, "mute"));
+    cell.querySelector(".solo").addEventListener("click", () => toggleStem(index, "solo"));
+    cell.querySelector(".vol").addEventListener("input", (e) => {
+      if (state.player && state.player.stems[index]) state.player.setStem(index, { volume: Number(e.target.value) / 100 });
+    });
+  });
+}
+
+function toggleStem(index, key) {
+  const player = state.player;
+  if (!player || !player.stems[index]) return;
+  player.setStem(index, { [key]: !player.stems[index][key] });
+  renderStems();
+}
+
+async function togglePlay() {
+  const player = state.player;
+  if (!player || state.audio.status !== "ready") return;
+  if (player.playing) {
+    const heard = player.playhead(state.latency); // stop where the user is listening, not where the clock is
+    player.pause();
+    player.cursor = heard;
+    stopLoop();
+  } else {
+    if (player.cursor >= player.duration - 0.05) player.cursor = 0;
+    await state.audioCtx.resume();
+    if (state.player !== player || player.playing) return;
+    player.play();
+    startLoop();
+  }
+  renderPlayButton();
+  drawFrame();
+}
+
+/** Moves the playhead to a time: playback goes on from there, or starts there. */
+function seekTo(seconds) {
+  const player = state.player;
+  const end = player && player.duration ? player.duration : state.lengthS;
+  const target = Math.max(0, Math.min(seconds, end));
+  if (player && state.audio.status === "ready") player.seek(target);
+  if (!player || !player.playing) state.playhead = target;
+  drawFrame();
+}
+
+function startLoop() {
+  stopLoop();
+  state.pump = setInterval(() => { if (state.player) state.player.pump(); }, PUMP_MS);
+  const frame = () => {
+    state.frame = requestAnimationFrame(frame);
+    drawFrame();
+  };
+  state.frame = requestAnimationFrame(frame);
+}
+
+function stopLoop() {
+  if (state.frame) cancelAnimationFrame(state.frame);
+  if (state.pump) clearInterval(state.pump);
+  state.frame = 0;
+  state.pump = 0;
+}
+
+/** Draws the timeline with the playhead where the audio is heard, turning the page to follow it. */
+function drawFrame() {
+  const timeline = state.timeline;
+  if (!timeline) return;
+  const player = state.player;
+  const ready = player && state.audio.status === "ready";
+  const heard = ready ? player.heardContextTime() : 0;
+  const seconds = ready ? player.playhead(state.latency, heard) : state.playhead;
+  state.playhead = seconds;
+  if (ready && player.playing) {
+    const next = followScroll(timeline.x(seconds), timeline.width, timeline.scroller.scrollLeft);
+    if (next !== null) timeline.scroller.scrollLeft = next;
+    const record = window.chartgenDebug.frames;
+    if (record) record.push({ at: performance.now(), playhead: seconds, heard, contextTime: state.audioCtx.currentTime, latency: state.latency });
+    if (player.position() >= player.duration) {
+      player.pause();
+      player.cursor = player.duration;
+      stopLoop();
+      renderPlayButton();
+    }
+  }
+  timeline.playhead = seconds;
+  timeline.draw();
+  showClock(seconds);
+}
+
+/** Space plays and pauses anywhere but in a text field; a focused button is not pressed by it as well. */
+document.addEventListener("keydown", (e) => {
+  if (e.code !== "Space" || !state.timeline || e.ctrlKey || e.altKey || e.metaKey) return;
+  if (e.target.matches && e.target.matches('input:not([type="range"]), select, textarea')) return;
+  e.preventDefault();
+  if (!e.repeat) togglePlay();
+});
+document.addEventListener("keyup", (e) => {
+  if (e.code === "Space" && state.timeline && e.target.matches && e.target.matches('button, input[type="range"]')) e.preventDefault();
+});

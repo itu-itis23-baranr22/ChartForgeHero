@@ -321,7 +321,8 @@ Decisions made since it was written are listed first and take precedence.
 53. **Audio and sync.** One Web Audio source per stem, all started at the same audio-clock time, a gain per
    stem (muting does not restart playback), speed 0.5x to 1x through the playback rate, so the pitch drops
    (a pitch-keeping slow-down is an E.4 option). The metronome is scheduled on the audio clock from the tempo
-   map; a latency offset in ms works like the game's calibration. Measured: in an offline render the
+   map, on the beats `click_overlay.click_schedule` lists; a latency offset in ms works like the game's
+   calibration. Measured: in an offline render the
    metronome and a synthetic click stem land within 1 ms of the chart's beats at 1x and 0.5x, also with a
    48 kHz context; live, the playhead stays within one frame of the audio clock.
 54. **Saving.** The model is written as `.chart` text and the whole folder is validated with it
@@ -343,7 +344,8 @@ Decisions made since it was written are listed first and take precedence.
    through `TestClient`, saving, backups, the build's refusal); the round trip of every folder in `outputs\`
    is `real`. JavaScript modules are tested with Node's built-in runner (`node --test`, no packages):
    `check.ps1` runs them in the quick tier when Node is there and requires Node in `-Full`. Playwright
-   1.65.1 measures sync offline and opens the page as a smoke test. Out of scope: editing the tempo map.
+   1.65.1 measures sync offline and opens the page as a smoke test; it is an npm dev package in
+   `tests/browser` (`npm ci`, pinned by its lock file) that the page never loads, and its tests are `heavy`. Out of scope: editing the tempo map.
    Optional in E.4: editing sections, star power and the preview, the pitch-keeping slow-down, a highway
    preview.
 

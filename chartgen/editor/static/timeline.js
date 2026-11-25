@@ -1,12 +1,15 @@
 // The timeline: time runs left to right in seconds (as the audio does), lanes are rows. Drawn on a canvas
 // that stays in place while a wide spacer scrolls under it, so the browser's own scrollbar moves the view.
 
+import { peakBetween } from "./transport.js";
 import { visibleSlice } from "./view.js";
 
 export const PAD = 24; // px before the song's start and after its end
 const RULER = 92;
 const GHOST_ROW = 13;
 const KICK_ROW = 44;
+const WAVE_ROW = 56;
+const WAVE_GAP = 40; // room for the waveform's label above it
 const FORCED = 1;
 const TAP = 2;
 const CYMBAL = 4;
@@ -29,6 +32,9 @@ export class Timeline {
     this.selected = null; // tick
     this.markers = [];
     this.showBelow = true;
+    this.playhead = 0; // seconds: where playback is, or starts
+    this.wave = null; // {peaks, perSecond, scale} of the stem under the lanes, null while loading
+    this.waveNote = "Loading the audio…";
     this.width = 0;
     this.height = 0;
   }
@@ -58,12 +64,13 @@ export class Timeline {
     const rows = this.drums ? 4 : 5;
     const kick = this.drums ? KICK_ROW : 0;
     const ghost = this.showBelow && this.below ? 40 + 5 * GHOST_ROW + 16 : 0;
-    const free = this.height - RULER - kick - ghost - 24;
+    const free = this.height - RULER - kick - ghost - WAVE_GAP - WAVE_ROW - 24;
     const lane = Math.max(44, Math.min(76, Math.floor(free / rows)));
     const lanesY = RULER;
     const kickY = lanesY + rows * lane;
     const ghostY = kickY + kick + 40;
-    return { rows, lane, lanesY, kick, kickY, ghostY, ghost: ghost > 0 };
+    const waveY = (ghost ? ghostY + 5 * GHOST_ROW + 6 : kickY + kick) + WAVE_GAP;
+    return { rows, lane, lanesY, kick, kickY, ghostY, ghost: ghost > 0, waveY, wave: WAVE_ROW };
   }
 
   resize(width, height) {
@@ -107,7 +114,7 @@ export class Timeline {
     this.colours = {
       bg: css("--bg"), panel: css("--panel"), rule: css("--rule"), rule2: css("--rule-2"), ink: css("--ink"),
       ink2: css("--ink-2"), ink3: css("--ink-3"), mark: css("--mark"), sp: css("--sp"), err: css("--err"),
-      rim: css("--rim"), open: css("--open"), ghost: parseFloat(css("--ghost")) || 0.45,
+      rim: css("--rim"), open: css("--open"), ghost: parseFloat(css("--ghost")) || 0.45, wave: css("--wave"),
       fret: [0, 1, 2, 3, 4].map((i) => css(`--fret-${i}`)),
       ui: css("--ui"), mono: css("--mono"),
     };
@@ -149,6 +156,60 @@ export class Timeline {
     if (this.selected !== null && byTick.has(this.selected)) this.drawSelection(this.selected, byTick.get(this.selected), L);
 
     if (L.ghost) this.drawBelow(L, t0, t1);
+    this.drawWave(L);
+    this.drawPlayhead();
+  }
+
+  /** What a click at height `py` does: "ruler" and "wave" move the playhead, "lanes" picks notes. */
+  zoneAt(py) {
+    const L = this.layout();
+    if (py < L.lanesY) return "ruler";
+    if (py >= L.waveY - 6 && py <= L.waveY + L.wave + 6) return "wave";
+    return "lanes";
+  }
+
+  drawWave(L) {
+    const ctx = this.ctx;
+    const c = this.colours;
+    const mid = L.waveY + L.wave / 2;
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = c.panel;
+    ctx.fillRect(0, L.waveY - 6, this.width, L.wave + 12);
+    ctx.globalAlpha = 1;
+    this.hline(mid, c.rule2);
+    if (!this.wave) {
+      ctx.font = `14px ${c.ui}`;
+      ctx.fillStyle = c.ink3;
+      ctx.textAlign = "left";
+      ctx.fillText(this.waveNote, 16, mid + 5);
+      return;
+    }
+    const { peaks, perSecond, scale } = this.wave;
+    const half = L.wave / 2;
+    ctx.fillStyle = c.wave;
+    const first = Math.max(0, this.x(0));
+    const last = Math.min(this.width, this.x(this.lengthS));
+    for (let x = first; x < last; x++) {
+      const s0 = (x + this.scroller.scrollLeft - PAD) / this.zoom;
+      const peak = peakBetween(peaks, perSecond, s0, s0 + 1 / this.zoom);
+      const h = Math.min(half, Math.round(peak * scale * half));
+      if (h > 0) ctx.fillRect(x, mid - h, 1, 2 * h);
+    }
+  }
+
+  /** The playhead: where the audio is while playing, where it starts while stopped. */
+  drawPlayhead() {
+    const x = this.x(this.playhead);
+    if (x < -8 || x > this.width + 8) return;
+    const ctx = this.ctx;
+    ctx.fillStyle = this.colours.mark;
+    ctx.fillRect(x - 1, 8, 2, this.height - 8);
+    ctx.beginPath();
+    ctx.moveTo(x - 7, 0);
+    ctx.lineTo(x + 7, 0);
+    ctx.lineTo(x, 9);
+    ctx.closePath();
+    ctx.fill();
   }
 
   hline(y, colour, alpha = 1) {

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { TempoMap, roundHalfEven } from "../../chartgen/editor/static/tempo.js";
+import { metronomeBeats } from "../../chartgen/editor/static/transport.js";
 
 const path = process.env.CHARTGEN_TEMPO_FIXTURE || new URL("./tempo_fixture.json", import.meta.url);
 const cases = JSON.parse(readFileSync(path, "utf8"));
@@ -18,6 +19,13 @@ for (const c of cases) {
       assert.ok(Math.abs(map.ticksAt(seconds) - tick) <= 1e-6, `ticks at ${seconds} s: ${map.ticksAt(seconds)} vs ${tick}`);
     }
     assert.deepEqual(map.barLines(c.end_s), c.bar_lines);
+    const beats = metronomeBeats(map, c.end_s);
+    assert.equal(beats.length, c.metronome.length, "the metronome has as many beats as click_schedule");
+    beats.forEach((beat, i) => {
+      const [seconds, downbeat] = c.metronome[i];
+      assert.ok(Math.abs(beat.seconds - seconds) <= 1e-9, `beat ${i}: ${beat.seconds} vs ${seconds}`);
+      assert.equal(beat.downbeat, downbeat, `downbeat ${i}`);
+    });
   });
 }
 

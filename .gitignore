@@ -20,3 +20,6 @@ references/
 .impeccable/review/
 .impeccable/mocks/
 .impeccable/questions/
+
+# The editor's browser tests install Playwright here (npm ci in tests/browser)
+tests/browser/node_modules/

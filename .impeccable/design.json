@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-24T23:59:00+03:00",
+  "generatedAt": "2026-11-25T12:00:00+03:00",
   "title": "Design System: chartgen editor",
   "extensions": {
     "colorMeta": {
@@ -82,7 +82,8 @@
       "description": "The play button and the tabular clock on the petrol transport.",
       "html": "<div class=\"ds-transport\"><button class=\"ds-play\" aria-label=\"Play\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\"><path d=\"M7 4.5v15l13-7.5z\" fill=\"currentColor\"/></svg></button><div><b class=\"ds-clock\">0:30.795</b><span class=\"ds-pos\">Bar 24.2 · tick 17856</span></div></div>",
       "css": ".ds-transport { display: flex; align-items: center; gap: 26px; padding: 20px; background: #12343c; color: #e6f0f1; } .ds-play { width: 48px; height: 48px; border-radius: 999px; border: 0; background: #e6f0f1; color: #12343c; display: grid; place-items: center; cursor: pointer; } .ds-play:focus-visible { outline: 2px solid #86d3e3; outline-offset: 2px; } .ds-clock { display: block; font: 600 26px 'Cascadia Mono', Consolas, monospace; font-variant-numeric: tabular-nums lining-nums; } .ds-pos { font: 13px 'Cascadia Mono', Consolas, monospace; color: #a8c3c8; }"
-    }
+    },
+    {"name": "Stem Cell", "kind": "custom", "refersTo": "track-cell", "description": "One audio file in the transport: number, name, mute and solo, volume. Mute strikes the name through, solo circles the number.", "html": "<div class=\"ds-stem\"><span class=\"ds-no ds-solo\">02</span><span class=\"ds-nm\">Guitar</span><span class=\"ds-ms\"><button aria-pressed=\"false\" aria-label=\"Mute Guitar\">M</button><button aria-pressed=\"true\" aria-label=\"Solo Guitar\">S</button></span><input type=\"range\" min=\"0\" max=\"100\" value=\"100\" aria-label=\"Guitar volume\"></div>", "css": ".ds-stem { width: 172px; padding: 8px 10px 9px; display: grid; grid-template-columns: auto 1fr auto; gap: 7px 8px; align-items: center; background: #12343c; color: #e6f0f1; border: 1px solid #2c5c68; font: 15px 'Barlow Semi Condensed', sans-serif; } .ds-no { font: 12px 'Cascadia Mono', monospace; width: 26px; height: 22px; display: grid; place-items: center; border: 1px solid #2c5c68; color: #a8c3c8; } .ds-no.ds-solo { border: 2px solid #e6f0f1; border-radius: 50%; height: 26px; color: #e6f0f1; } .ds-ms { display: flex; gap: 4px; } .ds-ms button { width: 24px; height: 24px; border: 1px solid #2c5c68; border-radius: 3px; background: none; color: #a8c3c8; font: 600 12px 'Barlow Semi Condensed', sans-serif; } .ds-ms button[aria-pressed=true] { background: #e6f0f1; color: #12343c; border-color: #e6f0f1; } .ds-stem input { grid-column: 1 / -1; width: 100%; accent-color: #e6f0f1; }"}
   ],
   "narrative": {
     "northStar": "The Track Sheet",

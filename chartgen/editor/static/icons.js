@@ -3,6 +3,7 @@
 const PATHS = {
   back: '<path d="M15 5l-7 7 7 7"/>',
   play: '<path d="M7 4.5v15l13-7.5z"/>',
+  pause: '<path d="M6.5 4.5h4v15h-4zM13.5 4.5h4v15h-4z"/>',
   zoomIn: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5M8.5 11h5M11 8.5v5"/>',
   zoomOut: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5M8.5 11h5"/>',
   fit: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
