@@ -1,9 +1,12 @@
-# chartgen
+# ChartForgeHero
 
-Generates playable [Clone Hero](https://clonehero.net/) song folders from local audio files
-you own: it separates a song into stems, charts them, and packages everything the game needs.
+ChartForgeHero generates playable [Clone Hero](https://clonehero.net/) song folders from local audio
+files you own: it separates a song into stems, charts them, and packages everything the game needs.
 
 It only processes files you give it. It does not download audio or touch streaming services.
+
+ChartForgeHero works through the `chartgen` command: the Python package and the command keep that name
+(`chartgen build`, `chartgen edit`, `chartgen protect`).
 
 ## Status
 

@@ -1,6 +1,6 @@
 ---
-name: chartgen editor
-description: A local editor that shows, plays and corrects the Clone Hero charts chartgen generates.
+name: ChartForgeHero editor
+description: A local editor that shows, plays and corrects the Clone Hero charts ChartForgeHero generates.
 colors:
   graphite-ground: "#111a1d"
   track-panel: "#152126"
@@ -117,7 +117,7 @@ components:
     padding: "11px 13px"
 ---
 
-# Design System: chartgen editor
+# Design System: ChartForgeHero editor
 
 ## Overview
 
@@ -210,8 +210,9 @@ horizontal scrollbar moves through the song; time runs left to right in seconds,
 different width. Lanes take 44-76px each by the window's height; the ruler above them is 92px (bar cells, tempo and
 time signature marks, sections, star power). The level below sits under the lanes as a ply of five 13px rows; under it a 56px waveform row shows the
 instrument's own stem (the backing track when it has none), labelled with its file. Spacing
-steps are 6, 8, 12, 20 and 24px. Below 1100px wide the editor does not try to fit: it says so and asks for a wider
-window.
+steps are 6, 8, 12, 20 and 24px. Below 1200px a song's header keeps the back arrow without the product name, so that
+the song's own name keeps its room (the name stays in the tab title and on the song list). Below 1100px wide the
+editor does not try to fit: it says so and asks for a wider window.
 
 ## Elevation & Depth
 

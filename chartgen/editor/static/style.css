@@ -260,6 +260,10 @@ td.act { text-align: right; }
 .toast.out { opacity: 0; transition: opacity 150ms ease-out; pointer-events: none; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 
+/* Below 1200px a song's header keeps its back arrow without the project's name, so that the song's own name
+   keeps its room; the name stays in the tab title and on the song list. */
+@media (max-width: 1199px) { .app:not(.list-view) .brand-name { display: none; } }
+
 @media (max-width: 1499px) {
   .tool kbd, .tool .zoom-label { display: none; }
   .tool { padding: 0 12px; gap: 4px; }

@@ -133,9 +133,9 @@ route();
 
 async function showList() {
   state.timeline = null;
-  document.title = "chartgen editor";
+  document.title = "ChartForgeHero editor";
   root.className = "app list-view";
-  root.innerHTML = header('<div class="brand">chartgen</div><span>Editor</span>') + '<main class="list"><p class="loading">Loading the songs…</p></main>';
+  root.innerHTML = header('<div class="brand">ChartForgeHero</div><span>Editor</span>') + '<main class="list"><p class="loading">Loading the songs…</p></main>';
   wireHeader();
   const main = root.querySelector(".list");
   let data;
@@ -161,7 +161,7 @@ async function showList() {
       <td><div class="inst">${badges}</div></td><td class="num">${s.length_s ? clock(s.length_s).replace(/\.\d+$/, "") : "–"}</td>
       <td>${status}</td><td class="act"><a class="open" href="#/song/${encodeURIComponent(s.id)}">Open</a></td></tr>`;
   }).join("");
-  main.innerHTML = `<h1>Songs</h1><p class="sub">Song folders in <span class="num">${esc(data.root)}</span>, built by chartgen.</p>
+  main.innerHTML = `<h1>Songs</h1><p class="sub">Song folders in <span class="num">${esc(data.root)}</span>, built by ChartForgeHero.</p>
     <table><thead><tr><th>Song</th><th>Charts</th><th>Length</th><th>State</th><th><span hidden>Open</span></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
@@ -169,7 +169,7 @@ async function showList() {
 
 async function openSong(id) {
   root.className = "app";
-  root.innerHTML = header(`<div class="brand"><a class="back" href="#/" title="All songs" aria-label="All songs">${icon("back")}</a>chartgen</div>`) +
+  root.innerHTML = header(`<div class="brand"><a class="back" href="#/" title="All songs" aria-label="All songs">${icon("back")}</a><span class="brand-name">ChartForgeHero</span></div>`) +
     '<p class="loading full">Opening the song…</p>';
   wireHeader();
   let chart;
@@ -179,7 +179,7 @@ async function openSong(id) {
   } catch (error) {
     outdated(error);
     root.className = "app list-view";
-    root.innerHTML = header(`<div class="brand"><a class="back" href="#/" title="All songs" aria-label="All songs">${icon("back")}</a>chartgen</div>`) +
+    root.innerHTML = header(`<div class="brand"><a class="back" href="#/" title="All songs" aria-label="All songs">${icon("back")}</a><span class="brand-name">ChartForgeHero</span></div>`) +
       `<main class="list"><div class="empty"><h1>This song cannot be opened</h1><p>${esc(error.message)}</p><p><a class="open" href="#/">Back to the songs</a></p></div></main>`;
     wireHeader();
     return;
@@ -201,7 +201,7 @@ async function openSong(id) {
     structure: null, spAll: true, focusName: false,
   });
   state.difficulty = levelsOf(state.instrument)[0];
-  document.title = `${chart.name} – chartgen editor`;
+  document.title = `${chart.name} – ChartForgeHero editor`;
   renderSong();
   loadAudio(id);
 }
@@ -236,7 +236,7 @@ function renderSong() {
   }).join("");
   const speeds = SPEEDS.map((s) => `<option value="${s}"${s === state.rate ? " selected" : ""}>${s.toFixed(2)}×</option>`).join("");
   const grids = GRIDS.map((g) => `<option value="${g}"${g === state.grid ? " selected" : ""}>1/${g}</option>`).join("");
-  root.innerHTML = header(`<div class="brand"><a class="back" href="#/" title="All songs" aria-label="All songs">${icon("back")}</a>chartgen</div>
+  root.innerHTML = header(`<div class="brand"><a class="back" href="#/" title="All songs" aria-label="All songs">${icon("back")}</a><span class="brand-name">ChartForgeHero</span></div>
       <div class="song-title"><b>${esc(chart.name)}</b><span>${esc(chart.artist)}</span></div>
       <nav class="tabs" role="tablist" aria-label="Instrument">${tabs}</nav><div class="seg" role="group" aria-label="Level"></div>`,
     '<button class="copy" disabled>Copy to game</button><button class="save" disabled>Save</button>') +

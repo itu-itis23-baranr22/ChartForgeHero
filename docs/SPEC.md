@@ -1,4 +1,4 @@
-# Specification
+# ChartForgeHero: specification
 
 The project owner's specification, kept here so that later phases can work from it.
 Decisions made since it was written are listed first and take precedence.

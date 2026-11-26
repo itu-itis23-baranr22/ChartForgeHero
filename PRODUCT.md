@@ -24,7 +24,7 @@ Both work at a wide desktop monitor with a mouse and a keyboard.
 
 ## Product Purpose
 
-The web editor (Phase E) opens a song folder that chartgen generated (`outputs\<Artist - Title>`), shows its
+The web editor (Phase E) opens a song folder that ChartForgeHero generated (`outputs\<Artist - Title>`), shows its
 chart against the music, plays the separated stems in sync with a playhead, lets the user correct notes by
 hand, saves only charts the game will accept, keeps a backup of every save, and copies the result to Clone
 Hero's `Songs` folder. Success: a wrong note heard in the game can be found, fixed and saved in minutes, and
@@ -32,7 +32,7 @@ nothing the user corrected is ever lost silently.
 
 ## Positioning
 
-It is the editor of chartgen's own output: it opens a generated folder with its stems and its `analysis.json`
+It is the editor of ChartForgeHero's own output: it opens a generated folder with its stems and its `analysis.json`
 (tempo, warnings), checks every save with the same validator that guards every build, and refuses to let a
 rebuild overwrite hand edits. General chart editors know nothing of either.
 
@@ -62,7 +62,8 @@ rebuild overwrite hand edits. General chart editors know nothing of either.
 
 ## Brand Commitments
 
-- The name is chartgen.
+- The name is ChartForgeHero (owner, 2026-11-26). The Python package and the command keep the name `chartgen`
+  (`chartgen build`, `chartgen edit`).
 - Fret colours follow Clone Hero: green, red, yellow, blue, orange (owner's binding constraint). On drums a
   cymbal and a tom of the same colour must look different.
 
@@ -77,5 +78,5 @@ rebuild overwrite hand edits. General chart editors know nothing of either.
 - Never lose the user's work silently: backups on every save, rebuilds refuse to overwrite edits.
 - The game's rules are the editor's rules: an invalid chart is explained, never saved.
 - What you see is what you hear: the playhead and the audio agree within a frame, and that is measured.
-- One implementation of the format: the editor reuses chartgen's model, writer and validator.
+- One implementation of the format: the editor reuses ChartForgeHero's model, writer and validator.
 - Local and private by design.

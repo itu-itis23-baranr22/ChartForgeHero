@@ -1,6 +1,8 @@
-# Proje durumu
+# ChartForgeHero: proje durumu
 
 A'dan D'ye bütün fazlar tamamlandı. Yeni insan chart'larıyla ayar (0-5. adımlar, aşağıda "Referanslarla ayar") ve ardından "sonra" listesi kapandı: Sonra 1 bölümler (`a28d9fd`), Sonra 2 star power (`f26b54f`); Sonra 3 preview P1 uygulanmadı, kodu `preview-p1` branch'inde (`11ef55d`), main'de D.2 preview'u kalıyor. Faz E (web editörü) 2026-11-24'te başladı, 2026-11-26'da kapandı: E.0-E.4 (aşağıda "Faz E kapanışı"). Şartname ve alınan kararlar `docs/SPEC.md` dosyasında.
+
+Projenin adı ChartForgeHero (proje sahibi, 2026-11-26). Python paketi ve komut `chartgen` olarak kalıyor (`chartgen build`, `chartgen edit`); ad yalnızca görünen yerlerde değişti (README, SPEC ve STATUS başlıkları, PRODUCT.md, DESIGN.md, editörün başlığı ve sekme başlığı). Oyundaki `charter = chartgen` (song.ini ve notes.chart) değişmedi: çıktı hash'leri ona bağlı.
 
 ## Şu anki adım
 
