@@ -1,36 +1,25 @@
 # ChartForgeHero
 
-ChartForgeHero generates playable [Clone Hero](https://clonehero.net/) song folders from local audio
-files you own: it separates a song into stems, charts them, and packages everything the game needs.
+**Turn a song you own into a playable [Clone Hero](https://clonehero.net/) chart: guitar, bass, drums and keys at four difficulties, then fix anything you like in a local web editor and copy it straight into the game.**
 
-It only processes files you give it. It does not download audio or touch streaming services.
+![The ChartForgeHero editor: a song's guitar chart over time, with its audio and the validator's report](docs/images/editor.png)
 
-ChartForgeHero works through the `chartgen` command: the Python package and the command keep that name
-(`chartgen build`, `chartgen edit`, `chartgen protect`).
+ChartForgeHero separates a song into stems with [Demucs](https://github.com/facebookresearch/demucs), finds its tempo map, charts each instrument the way a human charter would (playable, not a literal transcription) and packages a song folder the game can load. It is measured against charts made by people, with a train/test split, and guarded by more than 1,300 tests.
 
-## Status
+It only processes local audio files you give it. It does not download audio or touch streaming services.
 
-| Phase | Scope | State |
-|---|---|---|
-| Foundation | Format-independent chart model, `.chart` exporter, validator | Done |
-| A | Stem separation, packaging, simple onset-based guitar chart | Done |
-| Tempo check | `--click-overlay`, `--bpm`, `--max-beat-drift-ms`, explained tempo events | Done |
-| B1 | Time signature, chords, sustains, Viterbi fret mapping, vocal bleed removal (Expert) | Done |
-| B2 | Difficulty reduction to Hard, Medium and Easy | Done |
-| B3 | Bass and keys; a song no longer needs a guitar | Done; keys not verified on real data |
-| C | Drums (4-lane Pro): percussion classification, four difficulties | In progress: C.0 format, C.1 Expert and C.2 lower levels done; waiting for play-testing |
-| D | Sections, preview, star power, vocals | Done; drum star power activation not checked in the game, no lyrics |
+## Highlights
 
-Guitar, bass, keys and drums are charted at all four difficulties, so a song needs at least one of the four.
-Drums are 4-lane Pro with cymbals; toms and the crash are not verified on real data, and a build says so.
-Keys have only been tested on synthetic audio, and a build says so. Telling chords from single notes on heavily distorted guitar is unverified. 3/4 and 6/8 have only
-been tested on synthetic audio.
+- **Four instruments, four difficulties.** Guitar and bass on five frets with sustains (chords on guitar; bass plays single notes), 4-lane Pro Drums with cymbals, and keys. Hard, Medium and Easy are reduced from Expert by musical importance (beat strength, phrase position, held notes), never by deleting every Nth note.
+- **Playable fret mapping.** A Viterbi search follows the melodic contour of each phrase instead of pinning pitches to frets, so a riff keeps its shape wherever it is played.
+- **A tempo map you can trust.** Whole-song tempo analysis with explained tempo events, a drum-based check of the beat phase, fast songs recognised from the snare backbeat, and a click track you can listen to.
+- **Song structure.** Sections named by structure (`A1`, `B1`, `A2`...), a preview point, and star power phrases on every instrument.
+- **A local web editor.** See the chart over time, play it in sync with the stems, edit notes, sections and star power, save with automatic backups, and copy the song into the game in one click.
+- **Safe by design.** A validator checks every build and every save; an invalid chart is never written; hand edits are never silently overwritten by a rebuild.
 
-See [docs/SPEC.md](docs/SPEC.md) for the full specification.
+## Quick start
 
-## Install
-
-Needs Python 3.11 or newer. No external programs: audio is read and encoded by libsndfile.
+Needs Python 3.11 or newer; developed and tested on Windows, and the commands below are for Windows. No external programs: audio is read and encoded by libsndfile.
 
 ```
 python -m venv .venv
@@ -39,249 +28,126 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -e ".[separation,editor,dev]"
 ```
 
-`requirements.lock.txt` records the exact versions this was tested with.
-
-The first build downloads the Demucs `htdemucs_6s` weights from Hugging Face. Without a GPU,
-separation took 74-99 s for songs of 166-235 s on a 16-thread CPU. Each song is only ever separated
-once: stems are cached under `.cache/stems`, at about 160 MB per song. The same file gives the same
-stems: the randomness in Demucs is seeded, and the cache key names the model, device kind, seed and
-shifts.
-
-**GPU:** identical stems are verified bit for bit on one CPU only. Whether a GPU repeats its own results,
-or matches the CPU, has not been checked. Each kind of device therefore gets its own cache entry, and
-a chart built on a GPU may differ slightly from one built on a CPU.
-
-## Usage
+Build a song, open it in the editor, and play it:
 
 ```
-python -m chartgen build song.mp3 --artist "Artist" --title "Title" --instruments guitar,bass,drums
-python -m chartgen validate "outputs/Artist - Title"
+python -m chartgen build song.mp3 --artist "Artist" --title "Title"
+chartgen edit
 ```
 
-The song appears in `outputs/Artist - Title/`:
+The song folder appears in `outputs/Artist - Title/`. In the editor, **Copy to game** puts it into Clone Hero's `Songs` folder; in the game, run *Settings > General > Scan Songs* if it does not show up yet.
 
-| File | Content |
-|---|---|
-| `notes.chart` | The chart |
-| `song.ini` | Metadata; `diff_*` is `-1` for instruments without a chart |
-| `song.ogg` | Backing track: the `other` stem plus every stem without its own file |
-| `guitar.ogg`, `bass.ogg`, `drums.ogg`, `keys.ogg`, `vocals.ogg` | Stems that are really present |
-| `analysis.json` | Tempo and why, stem presence scores, note counts, stage timings, warnings |
-| `debug/debug_click.wav` | Only with `--click-overlay` |
+The first build downloads the Demucs `htdemucs_6s` weights. Without a GPU, separating a three-to-four-minute song took 74 to 99 seconds on a 16-thread CPU; every song is separated once and its stems are cached.
 
-Preview it with bot players, without scanning your library:
-
-```
-"<path to Clone Hero.exe>" --song "<song folder>" --player Guitar,Expert --player Guitar,Hard --player Guitar,Medium --player Guitar,Easy -i
-```
-
-A build prints this command for each instrument it charted, for example `--player Bass,Expert`. Drums
-are 4-lane Pro and play as `ProDrums`: with `Drums` the game shows every cymbal as a pad.
-
-To add it to your library, copy the folder into Clone Hero's `Songs` folder and press
-*Settings > General > Scan Songs*. Songs the game rejects are listed in `badsongs.txt`.
-
-### Checking the tempo by ear
-
-```
-python -m chartgen build song.mp3 --artist "Artist" --title "Title" --click-overlay
-python -m chartgen build song.mp3 --artist "Artist" --title "Title" --bpm 97 --click-overlay --force
-```
-
-`--click-overlay` adds `debug/debug_click.wav`: the original mix with a metronome taken from the written
-`notes.chart`, the first beat of each bar an octave higher. A wrong tempo audibly slides away from
-the drums. `--bpm` forces one exact tempo; the phase and the first downbeat are still detected.
-`--max-beat-drift-ms` sets how far a region's beats may stray from one tempo before it gets an event.
-
-`--drum-ear-test` adds `debug/drums_kick.wav`, `drums_snare.wav`, `drums_hihat.wav`, `drums_ride.wav`,
-`drums_crash.wav` and `drums_toms.wav`: the drum stem with a click on every hit of that part, read back
-from the written chart. Each click should fall on that part, and the part should not sound without one.
-
-## Web editor (in progress)
-
-Opens the song folders in `outputs/` in your browser, on this machine only (127.0.0.1): the chart drawn
-over time, one instrument and level at a time with the level below it faint, bars, tempo changes,
-sections, star power and what the validator says, with the song's audio to play along, and lets you
-correct and save the notes, sections, star power and the preview, and copy the song into Clone Hero
-(phase E, `docs/SPEC.md` decisions 49-57). Use Chrome or Edge: the audio is Ogg Vorbis. After an update the page loads the new files by itself; a page that was
-left open during the update says so and asks to be reloaded.
-
-```
-pip install -e ".[editor]"
-chartgen edit                  # serves http://127.0.0.1:8765/ and opens it
-chartgen edit --port 9000 --no-browser --outputs other_folder
-chartgen edit --songs "D:\Games\Clone Hero\Songs"   # where Copy to game copies to
-```
-
-Scroll with the wheel or the arrow keys, zoom with Ctrl and the wheel or plus and minus, click a note
-to see its bar, tick and time. The page loads nothing from the internet; its fonts (Barlow Semi
-Condensed and Cascadia Mono, SIL Open Font License) ship with it.
-
-Playback: Space plays and pauses; clicking the ruler or the waveform moves the playhead. Every audio file
-has its own mute (M), solo (S) and volume, and muting never restarts the music. Speed goes down to 0.5x
-(the pitch drops with it, unless Keep pitch is on: then the editor stretches each audio file once for that
-speed, which takes some seconds per file the first time, and keeps the copies in `outputs/_editor_cache/`;
-until they are ready the song plays on at the lower pitch), the metronome clicks the chart's own tempo map with the downbeats higher, and
-Latency draws the playhead later by that many milliseconds when it runs ahead of what you hear (Bluetooth
-headphones need 150 to 250). A song's audio is decoded into memory: about 70 MB per file for a
-three-minute song, so a song with five files takes about 350 MB in the browser.
-
-Editing: Select (V) picks notes (Shift or Ctrl and click to add more, drag a box around them) and moves
-them by dragging; Draw (D) adds a note where you click and draws its sustain as you drag right. Notes land
-on the grid (1/4, 1/8, 1/16, or the triplet grids 1/12 and 1/24). Without the mouse: `.` and `,` select
-the next and the previous note or chord (with Shift they add it to the selection), Ctrl and the left or right
-arrow move the playhead one grid step, and 1 to 5 add a note on that numbered lane at the playhead (on
-drums 5 is the kick). With notes selected: Delete, the arrow keys (a grid step left or right, a
-lane up or down), Shift and the arrows (a shorter or longer sustain), F forced, T tap, C cymbal or tom;
-Ctrl+C and Ctrl+V copy and paste at the playhead, Ctrl+A selects the level, Ctrl+Z and Ctrl+Y undo and
-redo. With "Other levels" on (the default) a note deleted or moved also goes from the levels below, and a
-note added to a lower level is added to the levels above that lack it, so every level keeps the notes of
-the level below it; what changed there is ringed for a moment on the level below and named in the tool
-row. A sustain that an edit runs into the next note is cut to end on it. What the game cannot read (two
-notes on one lane at one tick, a drum sustain, a cymbal on red) is refused with a message; what only breaks
-a rule of the validator (a chord on Easy, a Hard note Expert lacks) is allowed and shown at once under
-Problems, in plain words with its bar and beat.
-
-Sections, star power and the preview: under Song, Add a section, Add star power and Set the preview put
-one on the bar the playhead is in (they always start on a bar line). A new section's name field is focused:
-type the name and press Enter. Click a section name, a star power band or the preview mark on the ruler to
-select it: a section is renamed, moved a bar earlier or later or deleted; star power is moved, made a bar
-shorter or longer or deleted (the Delete key works for both); the preview moves to the playhead's bar. Star power is added and changed on every level that has notes unless "Change every
-level the same way" is unticked. The validator's rules apply here as well, as errors under Problems that
-keep Save from writing until they are fixed: a section lasts at least 4 bars, and the preview starts after
-the opening and its 30 seconds end before the song does.
-
-Saving: Save (or Ctrl+S) writes the chart to the song folder. A chart with an error under Problems is not
-saved: Save says how many and takes you there. Before writing, the folder's `notes.chart` and `song.ini`
-are copied to `outputs/_editor_backups/<song>/<date_time>_<file>` (every save keeps its own copies);
-`song.ini` changes only in its `diff_*` values and `preview_start_time`. A `notes.chart` that changed on disk after you opened the
-song (a rebuild, another tool) is not overwritten. Unsaved edits are kept by the running editor and, a
-second after each edit, in a draft in `outputs/_editor_drafts/`: open the song again after the editor
-stopped and it offers to restore them. A draft made on a `notes.chart` that has changed since is never
-restored; it is set aside as `<song>.<date_time>.stale.json` and the page names the file.
-
-Copy to game copies the saved song into Clone Hero's Songs folder (`Documents\Clone Hero\Songs`, or the
-folder given with `--songs`); with unsaved edits it asks you to save first. Close the game before copying:
-the editor checks and refuses while it runs. If the song is already there with the same audio (same `.ogg`
-names, and the same bytes or the same decoded sound), only `notes.chart` and `song.ini` are replaced and
-those two are backed up; otherwise the whole folder is replaced and the old one is backed up whole. Backups
-go to `outputs/_songs_backup/<date_time>_editor/<song>/`. If the game still shows the old song, scan the
-songs again from its settings.
-
-Saves, copies and refusals appear as notifications over the lower right of the timeline. "Saved" and
-"Copied to game" go by themselves after a few seconds (not while the pointer is on them) and name the backup
-folder, with Copy path; a warning or an error ("Save first", "Clone Hero is running", "Not saved: 1 error")
-stays until you close it and offers the next step (Save, Copy again, Go to Problems).
-
-Rebuilding a song you edited: `build --force` refuses a folder with hand edits (saved in the editor, or a
-`notes.chart` changed by any tool) and says why; `--discard-edits` moves that folder to
-`outputs/_edited_backup/` and builds anew. `chartgen protect` lists which folders are protected;
-`chartgen protect --record --inputs <folders with the audio>` protects folders built before this check
-existed, but only those whose fresh build gives the same `notes.chart` byte for byte.
-
-## Measuring against human charts
-
-```
-python -m chartgen evaluate references
-python -m chartgen evaluate references --split test --output report.json
-```
-
-References are `.sng` files or folders holding `notes.chart` or `notes.mid` with their audio, kept in
-`references/train/` and `references/test/`. Those folders are ignored by git: no reference may enter
-the repository. The tool runs the real analysis on each and reports every metric per song and on
-average, with each split on its own.
-
-Weights and thresholds may only be tuned on `train`, whose scores are flattered by that tuning. A new
-reference goes to `test`, and is measured before anything else happens.
-`CHARTGEN_REFERENCE_DIR=references pytest -m real` runs this as a test.
-
-Each song's structure is compared too, where the human chart has it: section boundaries (F1 within one
-bar, next to naive boundaries every N bars), star power phrases per instrument, and the preview start.
-
-The report shows each difficulty next to the human's, along with what two naive reductions of the same
-Expert chart would score: deleting every Nth note, and keeping beats first. It also says how far each
-lane's share is from the human's (10 points is the limit, which only warns) and which soft targets a
-level misses.
-
-The weights of the fret mapper live in `chartgen/chart/fret_weights.toml`, and bass has its own in
-`bass_fret_weights.toml` next to it. The rules that keep a chart playable are in
-`chartgen/chart/fret_mapping.py`, and tests check them under random weights.
-The limits for vocal bleed live in `chartgen/audio/vocal_bleed.toml`, and the rule for bass notes far
-below the song's median note, which is off, in `chartgen/audio/quiet_notes.toml`. How difficulties are reduced
-lives in `chartgen/chart/difficulty.toml`, and for bass in `bass_difficulty.toml`, whose soft targets only
-warn. For bass, the report also gives each level's orange notes by pitch, and warns if more than 70% are
-one pitch. The rules that always hold are in
-`chartgen/chart/difficulty.py`, and the file cannot weaken them.
+The project is named ChartForgeHero; its Python package and command keep the name `chartgen`.
 
 ## How it works
 
-1. **Separate** the song with Demucs, cached by the file's SHA-256.
-2. **Check presence**: a model always outputs all six stems, so each is compared with the mix,
-   and a stem that is only bleed gets no chart. Its audio moves to `song.ogg` rather than vanishing.
-3. **Track tempo** once on the original mix; all instruments share this map. A whole-song analysis
-   finds the tempo, because a beat tracker left to itself read 129 BPM for a 97 BPM song. Told that
-   tempo, the same tracker finds the beats. A song keeps one tempo unless a region's beats stray more
-   than `--max-beat-drift-ms` (25 by default) from it. Then that region gets a tempo event, but only
-   if the event brings the onsets around it closer to the grid. `analysis.json` records each event's
-   reason and gain. Against a human-made map of one real song: 94% of beats within 35 ms, using 25
-   tempo events where the human used 123. The drum stem then checks the beat itself: a 3-3-2 groove
-   can lead the tracker half a beat off the kick, so the grid moves if the kick and the snare both say
-   so. An opening whose onsets do not fit the grid, such as the talking start of a video, is reported
-   apart and warned about rather than counted as drift. No instrument gets a note there. Its start
-   is marked with the section `Intro`, and the song's own start with the section `Song`.
-   Sections follow where the song's texture changes: harmony, timbre, loudness and voice, compared bar
-   by bar. They start on bar lines, last at least four bars and are named by structure: a part that
-   comes back gets the same letter (`A1`, `B1`, `A2`...). After an opening, the part `Song` starts is
-   `A1` too, so its return is `A2`. A song that hardly changes gets none, and the build says so.
-   The song list's preview starts four bars before the second start of the loudest part that comes
-   back, so it runs into a part already heard once. Without one it is the loudest 30 seconds on a bar
-   line. It never starts in an opening, and its 30 seconds fit in the song.
-   Every instrument gets star power: one-bar phrases about every 25 seconds, the same on all four of
-   its levels, each on a bar line and holding a note on every level. Drums get no activation fills;
-   how the game activates drum star power without them has not been checked in the game.
-4. **Detect onsets** on each stem, behind a noise gate and an adaptive threshold that reject bleed.
-5. **Remove vocal bleed**: a note where the singer is louder than a stem that is unusually quiet and
-   does not stay is a trace of the vocals, not an instrument. `analysis.json` lists these.
-6. **Read each note**: how its spectrum moves relative to its neighbours, whether it repeats the
-   previous note, whether it is a chord, and how long it rings.
-7. **Map to frets** with the Viterbi algorithm, following the contour within each phrase and never a
-   fixed pitch for each fret, so the same riff played higher elsewhere keeps its shape.
-8. **Reduce to Hard, Medium and Easy**: each level keeps the notes that matter most from the level
-   above: where they fall in the bar, how hard they are struck, whether they are held, where they sit
-   in their phrase. A phrase's first note always stays. Chords keep their lowest notes, and Viterbi
-   then fits the result to the frets the level allows. Medium and Easy turn automatic HOPOs into
-   strums. `analysis.json` holds each level's numbers and which soft targets it missed.
-9. **Package and verify**: every encoded file is decoded again and must match its source's length
-   exactly with zero lag, and the finished folder must pass an independent validator. The folder
-   appears only once all of that succeeded, so a failed build leaves nothing behind.
+```mermaid
+flowchart LR
+    A[Your audio file] --> B[Separate stems<br/>Demucs htdemucs_6s]
+    B --> C[Keep stems<br/>that are really there]
+    A --> D[Tempo map, meter,<br/>sections]
+    B --> D
+    C --> E[Onsets, chords,<br/>sustains per stem]
+    D --> E
+    E --> F[Viterbi fret mapping<br/>and drum classes]
+    F --> G[Hard, Medium, Easy]
+    G --> H[Star power]
+    H --> I[Package: chart, audio,<br/>preview, song.ini]
+    I --> J[Validate]
+    J --> K[Web editor]
+    K --> L[Clone Hero]
+```
+
+1. **Separate** the song into six stems, cached by the file's SHA-256 and seeded so the same file always gives the same stems.
+2. **Check presence**: a stem that is only bleed from other instruments gets no chart; its audio moves to the backing track instead of vanishing.
+3. **Track tempo** once on the mix, shared by every instrument. The whole-song analysis looks between 60 and 160 BPM, so a faster song is first found at half its tempo; the drum stem checks the beat phase, and when the snare falls on every beat the tempo is doubled (up to 230 BPM): that is how fast songs are recognised. A region gets its own tempo event only when that brings its onsets closer to the grid, and `analysis.json` records why.
+4. **Find sections** where the texture changes, bar by bar, named by structure.
+5. **Find notes** on each stem behind a noise gate and an adaptive threshold, and drop traces of the vocals that leak into instrument stems.
+6. **Map to frets** with the Viterbi algorithm (guitar, bass, keys) or classify kick, snare, toms, hi-hat, ride and crash (drums).
+7. **Reduce** Expert to Hard, Medium and Easy under hard rules that keep every level playable: each level's notes come from the level above, no chords on Easy, no orange on Medium and Easy. Then star power goes on every instrument, every few bars.
+8. **Package and verify**: the chart, the audio files, a preview that runs into a part already heard once, and `song.ini`; every encoded file is decoded again and checked, and the folder must pass an independent validator. A failed build leaves nothing behind.
+
+Each step in more detail: [docs/USAGE.md](docs/USAGE.md#what-a-build-does). The full specification and every design decision are in [docs/SPEC.md](docs/SPEC.md).
+
+## Results against human charts
+
+ChartForgeHero is tuned and scored against 12 charts made by people (8 for tuning, 4 held out for testing). Settings are only ever tuned on the training songs; the test songs are measured once per change, after the settings are frozen.
+
+| Note F1 against the human chart, training songs | Expert | Hard | Medium | Easy |
+|---|---|---|---|---|
+| Guitar | 0.762 | 0.718 | 0.643 | 0.626 |
+| Bass | 0.824 | 0.796 | 0.785 | 0.744 |
+| Drums (positions) | 0.889 | 0.868 | 0.907 | 0.862 |
+
+On the four held-out test songs, guitar Expert scores 0.684 on average (median 0.744).
+
+Each lower difficulty is also scored next to two naive reductions of the same Expert chart (keeping every Nth note, keeping beats first); on the reference song the tests use, the drum levels must beat both and the bass levels must beat beats first. How the evaluation works and where its settings live: [docs/EVALUATION.md](docs/EVALUATION.md).
+
+## The editor
+
+`chartgen edit` serves a local page on `127.0.0.1` only; nothing is sent anywhere and the page loads nothing from the internet.
+
+- **See** one instrument and difficulty at a time, with the level below it faint, bars, tempo changes, sections, star power and the validator's problems in plain words.
+- **Hear** the stems in sync with the chart, with mute, solo, a metronome, latency compensation and slow-down that keeps the pitch.
+- **Edit** with a select and a draw tool, a grid of 1/4, 1/8 or 1/16 or the triplet grids 1/12 and 1/24, keyboard shortcuts, and undo and redo. Changes to one level can flow to the levels above and below so they stay consistent.
+- **Save** only charts that pass the validator, with a backup of the previous files on every save and a draft kept after every edit.
+- **Copy to game** with one click, refused while Clone Hero is running, with a backup of what it replaces.
+
+The full guide, with every shortcut: [docs/EDITOR.md](docs/EDITOR.md).
+
+## Status and known limits
+
+| | State |
+|---|---|
+| Guitar, bass | Four difficulties; played and approved in the game |
+| Pro Drums | Four difficulties with cymbals; played in the game; toms and the crash are not verified on real data |
+| Keys | Four difficulties; tested on synthetic audio only |
+| Vocals | Separate `vocals.ogg` for the game's volume control; no lyrics |
+| Structure | Sections, preview and star power; drum star power activation is untested in the game |
+| Editor | Complete: view, play, edit, save, copy to game |
+
+Other known limits: the settings come from a small set of mostly rock songs, so very different genres may chart less well; telling chords from single notes on heavily distorted guitar is unverified; 3/4 and 6/8 have only been tested on synthetic audio; tempo changes cannot be edited yet; stems are verified to be identical run to run on CPU only. The project's working notes and open items are in [docs/STATUS.md](docs/STATUS.md) (in Turkish).
+
+More on building songs, the output files, previewing with bots and checking the tempo by ear: [docs/USAGE.md](docs/USAGE.md).
 
 ## Development
 
 ```
-pytest                 # no model download: separation is mocked
-pytest -m slow         # runs real Demucs on synthetic audio
-pytest -m real         # your songs and the references; set CHARTGEN_MUSIC_DIR and CHARTGEN_REFERENCE_DIR
-scripts\check.ps1      # quick tests and the validator, under a minute: runs on every commit
+pytest                    # every test but real Demucs and your own songs; separation is mocked
+pytest -m slow            # real Demucs on synthetic audio
+pytest -m real            # your songs and the references; set CHARTGEN_MUSIC_DIR and CHARTGEN_REFERENCE_DIR
+scripts\check.ps1         # quick tests, the editor's JavaScript and the validator, a few minutes; runs on every commit
 scripts\check.ps1 -Mid    # every test but the real songs and references
-scripts\check.ps1 -Full   # every test, with real Demucs and the references: before a phase commit
-node --test tests\js\tempo.test.mjs tests\js\view.test.mjs tests\js\transport.test.mjs tests\js\edit.test.mjs   # the editor's JavaScript (check.ps1 runs it too)
-npm ci --prefix tests\browser   # Playwright 1.65.1 for the editor's browser tests (heavy; -Full needs it)
-node tests\browser\memory.mjs http://127.0.0.1:8765 "Artist - Title"   # the browser's memory for one song
-git config core.hooksPath .githooks     # makes every commit run the quick check
+scripts\check.ps1 -Full   # everything: real Demucs, real songs, references and browser tests; before a phase commit
+npm ci --prefix tests\browser            # Playwright 1.65.1, for the browser tests
+node --test "tests/js/*.test.mjs"        # the editor's JavaScript alone
+git config core.hooksPath .githooks       # makes every commit run the quick check
 ```
 
-The check validates every folder in `outputs/` but those whose name starts with `_`, such as
-`outputs/_songs_backup/`, where old copies of song folders from the game are kept.
-
-The code is layered so that `chartgen.core` knows nothing about Clone Hero:
+Hard rules live in code and in the validator; soft targets live in `.toml` files and only warn. The editor's JavaScript is tested with Node's built-in runner and its pages with Playwright. The check also validates every song folder in `outputs/` except those whose name starts with `_`, such as `outputs/_songs_backup/`, where old copies of song folders from the game are kept.
 
 ```
 chartgen/
-  core/       chart model, tempo map, exporter interface
-  audio/      loading, separation, presence, tempo, meter, onsets, pitch, sustain, vocal bleed
-  chart/      stems to tracks: charter, fret mapping, difficulty reduction, HOPOs, and their settings
-  clonehero/  .chart and song.ini writers, packaging, validation
-  evaluation/ reference charts and metrics
-  pipeline.py the build, stage by stage
-  cli.py      command line
+  core/        chart model, tempo map, drum kit, exporter interface (knows nothing about Clone Hero)
+  audio/       loading, separation, presence, tempo, meter, sections, onsets, pitch, sustain,
+               vocal bleed, drum hits
+  chart/       charting, fret mapping, HOPOs, difficulty reduction, drums, sections, preview,
+               star power, and their settings
+  clonehero/   .chart reader and writer, song.ini, packaging, validation, edit protection,
+               click and drum listening files
+  editor/      the local web editor: server, edit operations, saving and copying, the page
+  evaluation/  reference charts and metrics
+  pipeline.py  the build, stage by stage
+  protect.py   chartgen protect: which song folders a rebuild may replace
+  cli.py       command line
 ```
+
+## Notes
+
+ChartForgeHero is an independent project and is not affiliated with Clone Hero or with the makers of Guitar Hero. Use it with audio you own. Stem separation uses [Demucs](https://github.com/facebookresearch/demucs) (MIT). The editor ships the Barlow Semi Condensed and Cascadia Mono fonts under the SIL Open Font License.
+
+## License
+
+MIT; see [LICENSE](LICENSE).
