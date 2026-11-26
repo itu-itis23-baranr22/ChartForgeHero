@@ -1,7 +1,8 @@
 # Runs what must pass before a commit: the tests and the song folder validator.
 # Exit code 0 means everything passed.
 #
-#   scripts\check.ps1         the quick tests and the validator, under a minute: the pre-commit hook
+#   scripts\check.ps1         the quick tests, the editor's JavaScript tests and the validator, a few
+#                             minutes: the pre-commit hook
 #   scripts\check.ps1 -Mid    every test but the real songs and references: heavy synthetic tests and
 #                             real Demucs on synthetic audio, about half of -Full
 #   scripts\check.ps1 -Full   every test, with real Demucs and the reference songs: before a phase commit;
