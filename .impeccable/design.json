@@ -1,37 +1,639 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-25T23:00:00+03:00",
+  "generatedAt": "2026-11-26T19:05:38+03:00",
   "title": "Design System: chartgen editor",
   "extensions": {
     "colorMeta": {
-      "graphite-ground": { "role": "neutral", "displayName": "Graphite Ground", "canonical": "oklch(21.0% 0.014 220.3)", "tonalRamp": ["#080c0d", "#212628", "#3c4346", "#596366", "#7a8488", "#9ea7aa", "#c3cacd", "#eaeff1"] },
-      "track-panel": { "role": "neutral", "displayName": "Track Panel", "canonical": "oklch(23.9% 0.019 225.7)", "tonalRamp": ["#080c0e", "#1f2629", "#3a4448", "#576469", "#78858b", "#9ca7ac", "#c2cbcf", "#e9f0f3"] },
-      "petrol-shell": { "role": "primary", "displayName": "Petrol Shell", "canonical": "oklch(30.4% 0.041 215.7)", "tonalRamp": ["#040d10", "#17282d", "#2f464d", "#48676f", "#698891", "#90aab1", "#b8cdd3", "#e2f2f6"] },
-      "marker-white": { "role": "primary", "displayName": "Marker White", "canonical": "oklch(95.0% 0.004 236.5)", "tonalRamp": ["#0a0b0c", "#242526", "#404243", "#5f6263", "#808384", "#a3a5a7", "#c8c9ca", "#edefef"] },
-      "star-power-cyan": { "role": "secondary", "displayName": "Star Power Cyan", "canonical": "oklch(82.2% 0.079 212.3)", "tonalRamp": ["#000e13", "#002b32", "#104a54", "#246c79", "#498e9c", "#79afbb", "#a7d2db", "#d6f5fc"] },
-      "fret-green": { "role": "tertiary", "displayName": "Fret Green", "canonical": "oklch(66.9% 0.178 147.3)", "tonalRamp": ["#001200", "#003100", "#00530b", "#00781e", "#259b43", "#66bc73", "#9bdca2", "#cefdd2"] },
-      "fret-red": { "role": "tertiary", "displayName": "Fret Red", "canonical": "oklch(57.0% 0.200 24.8)", "tonalRamp": ["#250000", "#500003", "#7f0413", "#b21b25", "#db4847", "#f57b74", "#ffaba3", "#ffd9d3"] },
-      "fret-yellow": { "role": "tertiary", "displayName": "Fret Yellow", "canonical": "oklch(83.4% 0.158 89.0)", "tonalRamp": ["#160800", "#372000", "#5b3c00", "#825a00", "#a57c00", "#c3a142", "#e1c782", "#ffedbc"] },
-      "fret-blue": { "role": "tertiary", "displayName": "Fret Blue", "canonical": "oklch(60.7% 0.198 259.6)", "tonalRamp": ["#00062d", "#001f5c", "#023b8f", "#125ac6", "#397eed", "#6ba4ff", "#9ccaff", "#cef0ff"] },
-      "fret-orange": { "role": "tertiary", "displayName": "Fret Orange", "canonical": "oklch(66.1% 0.163 50.7)", "tonalRamp": ["#1f0000", "#461000", "#722700", "#a04000", "#c66318", "#e28d5b", "#fcb891", "#ffe2c6"] },
-      "error-coral": { "role": "status", "displayName": "Error Coral", "canonical": "oklch(73.5% 0.163 21.9)", "tonalRamp": ["#210001", "#49070e", "#751d23", "#a53339", "#cc5759", "#e88582", "#ffb1ad", "#ffddda"] },
-      "paper-ground": { "role": "neutral", "displayName": "Paper Ground (light theme)", "canonical": "oklch(96.8% 0.002 165.1)", "tonalRamp": ["#0b0b0b", "#242525", "#414242", "#606261", "#818382", "#a4a5a5", "#c8c9c9", "#eeefee"] }
+      "graphite-ground": {
+        "role": "neutral",
+        "displayName": "Graphite Ground",
+        "canonical": "oklch(21.0% 0.014 220.3)",
+        "tonalRamp": [
+          "#080c0d",
+          "#212628",
+          "#3c4346",
+          "#596366",
+          "#7a8488",
+          "#9ea7aa",
+          "#c3cacd",
+          "#eaeff1"
+        ]
+      },
+      "track-panel": {
+        "role": "neutral",
+        "displayName": "Track Panel",
+        "canonical": "oklch(23.9% 0.019 225.7)",
+        "tonalRamp": [
+          "#080c0e",
+          "#1f2629",
+          "#3a4448",
+          "#576469",
+          "#78858b",
+          "#9ca7ac",
+          "#c2cbcf",
+          "#e9f0f3"
+        ]
+      },
+      "track-panel-raised": {
+        "role": "neutral",
+        "displayName": "Track Panel Raised",
+        "canonical": "oklch(26.3% 0.021 228.1)",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#212629",
+          "#394449",
+          "#56646a",
+          "#76858c",
+          "#99a8af",
+          "#bfcbd1",
+          "#e9f0f3"
+        ]
+      },
+      "form-rule": {
+        "role": "neutral",
+        "displayName": "Form Rule",
+        "canonical": "oklch(34.1% 0.023 222.9)",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#202629",
+          "#384449",
+          "#54646a",
+          "#74868d",
+          "#97a8af",
+          "#beccd1",
+          "#e8f0f3"
+        ]
+      },
+      "form-rule-faint": {
+        "role": "neutral",
+        "displayName": "Faint Rule",
+        "canonical": "oklch(28.3% 0.020 223.5)",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#212628",
+          "#3a4448",
+          "#566469",
+          "#76858b",
+          "#99a8ae",
+          "#c0cbd0",
+          "#e9f0f2"
+        ]
+      },
+      "marker-white": {
+        "role": "primary",
+        "displayName": "Marker White",
+        "canonical": "oklch(95.0% 0.004 236.5)",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#242526",
+          "#404243",
+          "#5f6263",
+          "#808384",
+          "#a3a5a7",
+          "#c8c9ca",
+          "#edefef"
+        ]
+      },
+      "pencil-grey": {
+        "role": "neutral",
+        "displayName": "Pencil Grey",
+        "canonical": "oklch(76.6% 0.014 226.6)",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#222627",
+          "#3c4346",
+          "#5a6367",
+          "#7a8489",
+          "#9da7ab",
+          "#c2cbce",
+          "#ebeff1"
+        ]
+      },
+      "faint-pencil": {
+        "role": "neutral",
+        "displayName": "Faint Pencil",
+        "canonical": "oklch(65.4% 0.019 229.2)",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#212628",
+          "#3a4448",
+          "#57636a",
+          "#77858c",
+          "#9aa7ae",
+          "#c0cbd0",
+          "#eaf0f3"
+        ]
+      },
+      "petrol-shell": {
+        "role": "primary",
+        "displayName": "Petrol Shell",
+        "canonical": "oklch(30.4% 0.041 215.7)",
+        "tonalRamp": [
+          "#040d10",
+          "#17282d",
+          "#2f464d",
+          "#48676f",
+          "#698891",
+          "#90aab1",
+          "#b8cdd3",
+          "#e2f2f6"
+        ]
+      },
+      "petrol-shell-raised": {
+        "role": "primary",
+        "displayName": "Petrol Shell Raised",
+        "canonical": "oklch(36.1% 0.052 218.6)",
+        "tonalRamp": [
+          "#080c0d",
+          "#18282d",
+          "#284750",
+          "#3f6874",
+          "#5e8a98",
+          "#83adba",
+          "#afd0da",
+          "#e0f2f8"
+        ]
+      },
+      "petrol-line": {
+        "role": "primary",
+        "displayName": "Petrol Line",
+        "canonical": "oklch(44.6% 0.055 216.2)",
+        "tonalRamp": [
+          "#070c0d",
+          "#17282d",
+          "#264850",
+          "#3c6974",
+          "#5b8b98",
+          "#80aeba",
+          "#add0da",
+          "#dff3f8"
+        ]
+      },
+      "petrol-well": {
+        "role": "primary",
+        "displayName": "Petrol Well",
+        "canonical": "oklch(26.7% 0.037 216.2)",
+        "tonalRamp": [
+          "#090c0d",
+          "#1c272a",
+          "#31464b",
+          "#4b666e",
+          "#6a8890",
+          "#8eabb3",
+          "#b7ced4",
+          "#e4f1f5"
+        ]
+      },
+      "shell-ink": {
+        "role": "neutral",
+        "displayName": "Shell Ink",
+        "canonical": "oklch(94.8% 0.011 204.1)",
+        "tonalRamp": [
+          "#0a0b0b",
+          "#222626",
+          "#3d4344",
+          "#5b6364",
+          "#7b8485",
+          "#9ea7a8",
+          "#c4cbcb",
+          "#ebeff0"
+        ]
+      },
+      "shell-ink-muted": {
+        "role": "neutral",
+        "displayName": "Shell Ink Muted",
+        "canonical": "oklch(79.9% 0.030 210.1)",
+        "tonalRamp": [
+          "#090c0c",
+          "#1e2729",
+          "#344549",
+          "#4f666a",
+          "#6e888c",
+          "#92aaaf",
+          "#bacdd1",
+          "#e6f1f3"
+        ]
+      },
+      "star-power-cyan": {
+        "role": "secondary",
+        "displayName": "Star Power Cyan",
+        "canonical": "oklch(82.2% 0.079 212.3)",
+        "tonalRamp": [
+          "#000e13",
+          "#002b32",
+          "#104a54",
+          "#246c79",
+          "#498e9c",
+          "#79afbb",
+          "#a7d2db",
+          "#d6f5fc"
+        ]
+      },
+      "error-coral": {
+        "role": "status",
+        "displayName": "Error Coral",
+        "canonical": "oklch(73.5% 0.163 21.9)",
+        "tonalRamp": [
+          "#210001",
+          "#49070e",
+          "#751d23",
+          "#a53339",
+          "#cc5759",
+          "#e88582",
+          "#ffb1ad",
+          "#ffddda"
+        ]
+      },
+      "warning-amber": {
+        "role": "status",
+        "displayName": "Warning Amber",
+        "canonical": "oklch(81.9% 0.150 80.8)",
+        "tonalRamp": [
+          "#100a02",
+          "#332200",
+          "#573d00",
+          "#7f5a00",
+          "#a97900",
+          "#d19a26",
+          "#eec274",
+          "#ffeccc"
+        ]
+      },
+      "fret-green": {
+        "role": "tertiary",
+        "displayName": "Fret Green",
+        "canonical": "oklch(66.9% 0.178 147.3)",
+        "tonalRamp": [
+          "#001200",
+          "#003100",
+          "#00530b",
+          "#00781e",
+          "#259b43",
+          "#66bc73",
+          "#9bdca2",
+          "#cefdd2"
+        ]
+      },
+      "fret-red": {
+        "role": "tertiary",
+        "displayName": "Fret Red",
+        "canonical": "oklch(57.0% 0.200 24.8)",
+        "tonalRamp": [
+          "#250000",
+          "#500003",
+          "#7f0413",
+          "#b21b25",
+          "#db4847",
+          "#f57b74",
+          "#ffaba3",
+          "#ffd9d3"
+        ]
+      },
+      "fret-yellow": {
+        "role": "tertiary",
+        "displayName": "Fret Yellow",
+        "canonical": "oklch(83.4% 0.158 89.0)",
+        "tonalRamp": [
+          "#160800",
+          "#372000",
+          "#5b3c00",
+          "#825a00",
+          "#a57c00",
+          "#c3a142",
+          "#e1c782",
+          "#ffedbc"
+        ]
+      },
+      "fret-blue": {
+        "role": "tertiary",
+        "displayName": "Fret Blue",
+        "canonical": "oklch(60.7% 0.198 259.6)",
+        "tonalRamp": [
+          "#00062d",
+          "#001f5c",
+          "#023b8f",
+          "#125ac6",
+          "#397eed",
+          "#6ba4ff",
+          "#9ccaff",
+          "#cef0ff"
+        ]
+      },
+      "fret-orange": {
+        "role": "tertiary",
+        "displayName": "Fret Orange",
+        "canonical": "oklch(66.1% 0.163 50.7)",
+        "tonalRamp": [
+          "#1f0000",
+          "#461000",
+          "#722700",
+          "#a04000",
+          "#c66318",
+          "#e28d5b",
+          "#fcb891",
+          "#ffe2c6"
+        ]
+      },
+      "open-violet": {
+        "role": "tertiary",
+        "displayName": "Open Violet",
+        "canonical": "oklch(64.4% 0.173 304.9)",
+        "tonalRamp": [
+          "#0e0814",
+          "#2e1942",
+          "#532978",
+          "#7742aa",
+          "#9b62d4",
+          "#bc88f5",
+          "#d8b9ff",
+          "#f3eaff"
+        ]
+      },
+      "paper-ground": {
+        "role": "neutral",
+        "displayName": "Paper Ground (light theme)",
+        "canonical": "oklch(96.8% 0.002 165.1)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242525",
+          "#414242",
+          "#606261",
+          "#818382",
+          "#a4a5a5",
+          "#c8c9c9",
+          "#eeefee"
+        ]
+      },
+      "paper-panel": {
+        "role": "neutral",
+        "displayName": "Paper Panel (light theme)",
+        "canonical": "oklch(94.5% 0.005 183.0)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242525",
+          "#404342",
+          "#5e6261",
+          "#7f8382",
+          "#a2a6a5",
+          "#c6cac9",
+          "#edefee"
+        ]
+      },
+      "paper-rule": {
+        "role": "neutral",
+        "displayName": "Paper Rule (light theme)",
+        "canonical": "oklch(83.1% 0.012 196.9)",
+        "tonalRamp": [
+          "#0a0b0b",
+          "#222626",
+          "#3d4444",
+          "#5a6363",
+          "#7a8585",
+          "#9da7a7",
+          "#c3cbcb",
+          "#ebefef"
+        ]
+      },
+      "paper-ink": {
+        "role": "neutral",
+        "displayName": "Paper Ink (light theme)",
+        "canonical": "oklch(20.8% 0.012 225.8)",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#222627",
+          "#3d4346",
+          "#5b6366",
+          "#7b8488",
+          "#9ea7aa",
+          "#c3cacd",
+          "#ebeff1"
+        ]
+      },
+      "paper-ink-muted": {
+        "role": "neutral",
+        "displayName": "Paper Ink Muted (light theme)",
+        "canonical": "oklch(41.1% 0.021 229.6)",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#212629",
+          "#394449",
+          "#56646b",
+          "#76858d",
+          "#99a8af",
+          "#bfcbd1",
+          "#e9f0f3"
+        ]
+      },
+      "paper-star-power": {
+        "role": "secondary",
+        "displayName": "Star Power Cyan (light theme)",
+        "canonical": "oklch(60.4% 0.096 218.3)",
+        "tonalRamp": [
+          "#050d0f",
+          "#062a33",
+          "#004a5a",
+          "#006d83",
+          "#2b90a9",
+          "#5db3cb",
+          "#95d5e8",
+          "#d5f5ff"
+        ]
+      },
+      "paper-error": {
+        "role": "status",
+        "displayName": "Error Coral (light theme)",
+        "canonical": "oklch(52.7% 0.189 24.7)",
+        "tonalRamp": [
+          "#150606",
+          "#450e0f",
+          "#7d0d16",
+          "#b02128",
+          "#dd4545",
+          "#ff726c",
+          "#ffb2ac",
+          "#ffe9e6"
+        ]
+      },
+      "paper-fret-green": {
+        "role": "tertiary",
+        "displayName": "Fret Green (light theme)",
+        "canonical": "oklch(66.7% 0.158 148.6)",
+        "tonalRamp": [
+          "#050e06",
+          "#042e10",
+          "#00511e",
+          "#00762f",
+          "#249b48",
+          "#5abe6f",
+          "#93de9f",
+          "#d3fbd8"
+        ]
+      },
+      "paper-fret-red": {
+        "role": "tertiary",
+        "displayName": "Fret Red (light theme)",
+        "canonical": "oklch(52.9% 0.189 25.0)",
+        "tonalRamp": [
+          "#150606",
+          "#450e0e",
+          "#7d0d15",
+          "#b02027",
+          "#dd4544",
+          "#ff726c",
+          "#ffb2ab",
+          "#ffe9e6"
+        ]
+      },
+      "paper-fret-yellow": {
+        "role": "tertiary",
+        "displayName": "Fret Yellow (light theme)",
+        "canonical": "oklch(74.8% 0.151 84.8)",
+        "tonalRamp": [
+          "#100a02",
+          "#312200",
+          "#553e00",
+          "#7c5c00",
+          "#a47b00",
+          "#cd9d20",
+          "#eac472",
+          "#ffedc7"
+        ]
+      },
+      "paper-fret-blue": {
+        "role": "tertiary",
+        "displayName": "Fret Blue (light theme)",
+        "canonical": "oklch(53.6% 0.190 260.1)",
+        "tonalRamp": [
+          "#050b17",
+          "#09234d",
+          "#083c8c",
+          "#175ac4",
+          "#367df2",
+          "#6ea4ff",
+          "#aacbff",
+          "#e5efff"
+        ]
+      },
+      "paper-fret-orange": {
+        "role": "tertiary",
+        "displayName": "Fret Orange (light theme)",
+        "canonical": "oklch(64.8% 0.165 50.2)",
+        "tonalRamp": [
+          "#130803",
+          "#3f1800",
+          "#6a2e00",
+          "#994600",
+          "#cb5f00",
+          "#ef8541",
+          "#ffb68d",
+          "#ffeade"
+        ]
+      },
+      "paper-open-violet": {
+        "role": "tertiary",
+        "displayName": "Open Violet (light theme)",
+        "canonical": "oklch(51.3% 0.197 300.2)",
+        "tonalRamp": [
+          "#0d0816",
+          "#2c1848",
+          "#502583",
+          "#743db8",
+          "#975ee4",
+          "#b788ff",
+          "#d3bbff",
+          "#f1ebff"
+        ]
+      },
+      "wave-grey": {
+        "role": "neutral",
+        "displayName": "Wave Grey",
+        "canonical": "oklch(52.0% 0.022 226.1)",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#202629",
+          "#394449",
+          "#55646a",
+          "#75858d",
+          "#98a8af",
+          "#bfccd1",
+          "#e9f0f3"
+        ]
+      },
+      "paper-wave-grey": {
+        "role": "neutral",
+        "displayName": "Wave Grey (light theme)",
+        "canonical": "oklch(78.2% 0.014 196.9)",
+        "tonalRamp": [
+          "#0a0b0b",
+          "#222626",
+          "#3c4444",
+          "#596464",
+          "#798585",
+          "#9ca8a8",
+          "#c2cbcb",
+          "#eaf0f0"
+        ]
+      }
     },
     "typographyMeta": {
-      "headline": { "displayName": "Headline", "purpose": "The song list's title." },
-      "title": { "displayName": "Title", "purpose": "Side panel headings and the song name in the header." },
-      "body": { "displayName": "Body", "purpose": "Controls, problems and the song list." },
-      "label": { "displayName": "Label", "purpose": "Uppercase lane group labels and table headings." },
-      "section-mark": { "displayName": "Section Mark", "purpose": "Section names written on the ruler, underlined 2px." },
-      "data": { "displayName": "Data", "purpose": "Ticks, times, bar.beat, BPM and track numbers." },
-      "clock": { "displayName": "Clock", "purpose": "The transport clock." }
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "The song list's title."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Side panel headings and the song name in the header."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Controls, problems and the song list."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase lane group labels and table headings."
+      },
+      "section-mark": {
+        "displayName": "Section Mark",
+        "purpose": "Section names written on the ruler, underlined 2px."
+      },
+      "data": {
+        "displayName": "Data",
+        "purpose": "Ticks, times, bar.beat, BPM and track numbers."
+      },
+      "clock": {
+        "displayName": "Clock",
+        "purpose": "The transport clock."
+      }
     },
     "shadows": [],
     "motion": [
-      { "name": "state-change", "value": "150ms ease-out", "purpose": "Background and colour changes of controls; none under prefers-reduced-motion. Keyboard actions never animate." }
+      {
+        "name": "state-change",
+        "value": "150ms ease-out",
+        "purpose": "Background and colour changes of controls; none under prefers-reduced-motion. Keyboard actions never animate."
+      },
+      {
+        "name": "notification-enter",
+        "value": "150ms cubic-bezier(0.23, 1, 0.32, 1)",
+        "purpose": "A notification enters: fade in and rise 8px. None under prefers-reduced-motion."
+      },
+      {
+        "name": "notification-exit",
+        "value": "150ms ease-out",
+        "purpose": "A notification leaves: fade out, then it is removed. Removed at once under prefers-reduced-motion."
+      }
     ],
     "breakpoints": [
-      { "name": "too-narrow", "value": "1099px", "purpose": "At or below this width the editor shows a notice instead of the three-column layout." }
+      {
+        "name": "too-narrow",
+        "value": "1099px",
+        "purpose": "At or below this width the editor shows a notice instead of the three-column layout."
+      },
+      {
+        "name": "compact-tool-row",
+        "value": "1499px",
+        "purpose": "At or below this width the tool row drops its key caps and the bars-in-view count."
+      }
     ]
   },
   "components": [
@@ -83,8 +685,38 @@
       "html": "<div class=\"ds-transport\"><button class=\"ds-play\" aria-label=\"Play\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\"><path d=\"M7 4.5v15l13-7.5z\" fill=\"currentColor\"/></svg></button><div><b class=\"ds-clock\">0:30.795</b><span class=\"ds-pos\">Bar 24.2 · tick 17856</span></div></div>",
       "css": ".ds-transport { display: flex; align-items: center; gap: 26px; padding: 20px; background: #12343c; color: #e6f0f1; } .ds-play { width: 48px; height: 48px; border-radius: 999px; border: 0; background: #e6f0f1; color: #12343c; display: grid; place-items: center; cursor: pointer; } .ds-play:focus-visible { outline: 2px solid #86d3e3; outline-offset: 2px; } .ds-clock { display: block; font: 600 26px 'Cascadia Mono', Consolas, monospace; font-variant-numeric: tabular-nums lining-nums; } .ds-pos { font: 13px 'Cascadia Mono', Consolas, monospace; color: #a8c3c8; }"
     },
-    {"name": "Stem Cell", "kind": "custom", "refersTo": "track-cell", "description": "One audio file in the transport: number, name, mute and solo, volume. Mute strikes the name through, solo circles the number.", "html": "<div class=\"ds-stem\"><span class=\"ds-no ds-solo\">02</span><span class=\"ds-nm\">Guitar</span><span class=\"ds-ms\"><button aria-pressed=\"false\" aria-label=\"Mute Guitar\">M</button><button aria-pressed=\"true\" aria-label=\"Solo Guitar\">S</button></span><input type=\"range\" min=\"0\" max=\"100\" value=\"100\" aria-label=\"Guitar volume\"></div>", "css": ".ds-stem { width: 172px; padding: 8px 10px 9px; display: grid; grid-template-columns: auto 1fr auto; gap: 7px 8px; align-items: center; background: #12343c; color: #e6f0f1; border: 1px solid #2c5c68; font: 15px 'Barlow Semi Condensed', sans-serif; } .ds-no { font: 12px 'Cascadia Mono', monospace; width: 26px; height: 22px; display: grid; place-items: center; border: 1px solid #2c5c68; color: #a8c3c8; } .ds-no.ds-solo { border: 2px solid #e6f0f1; border-radius: 50%; height: 26px; color: #e6f0f1; } .ds-ms { display: flex; gap: 4px; } .ds-ms button { width: 24px; height: 24px; border: 1px solid #2c5c68; border-radius: 3px; background: none; color: #a8c3c8; font: 600 12px 'Barlow Semi Condensed', sans-serif; } .ds-ms button[aria-pressed=true] { background: #e6f0f1; color: #12343c; border-color: #e6f0f1; } .ds-stem input { grid-column: 1 / -1; width: 100%; accent-color: #e6f0f1; }"},
-    {"name": "Tool Toggle", "kind": "button", "refersTo": "button-ghost", "description": "A tool or toggle in the tool row: pressed sits on the raised panel with a rule; a toggle says its state in words.", "html": "<div class=\"ds-tools\"><button aria-pressed=\"true\">Select <kbd>V</kbd></button><button aria-pressed=\"false\">Draw <kbd>D</kbd></button><button aria-pressed=\"true\">Other levels <b>On</b></button></div>", "css": ".ds-tools { display: flex; gap: 2px; padding: 8px 20px; background: #152126; } .ds-tools button { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border: 1px solid transparent; border-radius: 3px; background: none; color: #aab5ba; font: 15px 'Barlow Semi Condensed', Bahnschrift, sans-serif; cursor: pointer; } .ds-tools button[aria-pressed=true] { background: #1a272d; border-color: #2b3b41; color: #eceff1; } .ds-tools kbd { font: 12px 'Cascadia Mono', Consolas, monospace; color: #85939a; border: 1px solid #2b3b41; border-radius: 2px; padding: 0 4px; } .ds-tools b { font-weight: 600; color: #eceff1; } .ds-tools button:focus-visible { outline: 2px solid #86d3e3; outline-offset: 2px; }"}
+    {
+      "name": "Stem Cell",
+      "kind": "custom",
+      "refersTo": "track-cell",
+      "description": "One audio file in the transport: number, name, mute and solo, volume. Mute strikes the name through, solo circles the number.",
+      "html": "<div class=\"ds-stem\"><span class=\"ds-no ds-solo\">02</span><span class=\"ds-nm\">Guitar</span><span class=\"ds-ms\"><button aria-pressed=\"false\" aria-label=\"Mute Guitar\">M</button><button aria-pressed=\"true\" aria-label=\"Solo Guitar\">S</button></span><input type=\"range\" min=\"0\" max=\"100\" value=\"100\" aria-label=\"Guitar volume\"></div>",
+      "css": ".ds-stem { width: 172px; padding: 8px 10px 9px; display: grid; grid-template-columns: auto 1fr auto; gap: 7px 8px; align-items: center; background: #12343c; color: #e6f0f1; border: 1px solid #2c5c68; font: 15px 'Barlow Semi Condensed', sans-serif; } .ds-no { font: 12px 'Cascadia Mono', monospace; width: 26px; height: 22px; display: grid; place-items: center; border: 1px solid #2c5c68; color: #a8c3c8; } .ds-no.ds-solo { border: 2px solid #e6f0f1; border-radius: 50%; height: 26px; color: #e6f0f1; } .ds-ms { display: flex; gap: 4px; } .ds-ms button { width: 24px; height: 24px; border: 1px solid #2c5c68; border-radius: 3px; background: none; color: #a8c3c8; font: 600 12px 'Barlow Semi Condensed', sans-serif; } .ds-ms button[aria-pressed=true] { background: #e6f0f1; color: #12343c; border-color: #e6f0f1; } .ds-stem input { grid-column: 1 / -1; width: 100%; accent-color: #e6f0f1; }"
+    },
+    {
+      "name": "Tool Toggle",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "A tool or toggle in the tool row: pressed sits on the raised panel with a rule; a toggle says its state in words.",
+      "html": "<div class=\"ds-tools\"><button aria-pressed=\"true\">Select <kbd>V</kbd></button><button aria-pressed=\"false\">Draw <kbd>D</kbd></button><button aria-pressed=\"true\">Other levels <b>On</b></button></div>",
+      "css": ".ds-tools { display: flex; gap: 2px; padding: 8px 20px; background: #152126; } .ds-tools button { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border: 1px solid transparent; border-radius: 3px; background: none; color: #aab5ba; font: 15px 'Barlow Semi Condensed', Bahnschrift, sans-serif; cursor: pointer; } .ds-tools button[aria-pressed=true] { background: #1a272d; border-color: #2b3b41; color: #eceff1; } .ds-tools kbd { font: 12px 'Cascadia Mono', Consolas, monospace; color: #85939a; border: 1px solid #2b3b41; border-radius: 2px; padding: 0 4px; } .ds-tools b { font-weight: 600; color: #eceff1; } .ds-tools button:focus-visible { outline: 2px solid #86d3e3; outline-offset: 2px; }"
+    },
+    {
+      "name": "Notification: success",
+      "kind": "custom",
+      "refersTo": "petrol-shell",
+      "description": "Saved or copied to the game: the shell speaking (petrol in both themes); goes by itself after 5 s, 8 s with a path to copy.",
+      "html": "<div class=\"ds-toast ds-success\" role=\"status\"><span class=\"ds-mark\"><svg class=\"ds-m\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\" class=\"ds-fill\"/><path d=\"M7.8 12.3l2.9 2.9 5.5-5.9\" class=\"ds-cut\"/></svg></span><div><p class=\"ds-title\">Copied to game</p><p class=\"ds-text\">Only notes.chart and song.ini were replaced; the audio in the game is the same.</p><p class=\"ds-plabel\">The game's previous files are backed up in</p><div class=\"ds-path\"><code>outputs\\_songs_backup\\<wbr>2026-11-26_180030_editor\\<wbr>Artist - Title</code><button class=\"ds-btn\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"8.5\" y=\"8.5\" width=\"11\" height=\"11\" rx=\"1.5\"/><path d=\"M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5\"/></svg>Copy path</button></div></div><button class=\"ds-close\" aria-label=\"Dismiss\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6.5 6.5l11 11M17.5 6.5l-11 11\"/></svg></button></div>",
+      "css": ".ds-toast { display: grid; grid-template-columns: 22px 1fr 30px; gap: 12px; align-items: start; width: 440px; padding: 14px 8px 14px 16px; border: 1px solid; border-radius: 3px; font: 15px/1.4 'Barlow Semi Condensed', Bahnschrift, sans-serif; } .ds-toast + .ds-toast { margin-top: 8px; } .ds-mark svg { width: 22px; height: 22px; } .ds-fill { stroke: none; } .ds-cut { fill: none; stroke-width: 2.4; stroke-linecap: round; } .ds-i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; } .ds-title { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.35; } .ds-text { margin: 3px 0 0; } .ds-plabel { margin: 10px 0 0; } .ds-path { display: flex; gap: 8px; margin-top: 4px; align-items: flex-start; } .ds-path code { flex: 1; padding: 4px 7px; font: 13px/1.45 'Cascadia Mono', Consolas, monospace; overflow-wrap: break-word; border: 1px solid; } .ds-btn { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; font: inherit; background: none; border: 1px solid; border-radius: 3px; cursor: pointer; white-space: nowrap; transition: background-color 150ms ease-out, color 150ms ease-out; } .ds-close { width: 30px; height: 30px; margin-top: -5px; display: grid; place-items: center; background: none; border: 0; border-radius: 3px; cursor: pointer; } .ds-btn:focus-visible, .ds-close:focus-visible { outline: 2px solid #86d3e3; outline-offset: 2px; } .ds-toast.ds-success { background: #12343c; border-color: #2c5c68; color: #e6f0f1; } .ds-success .ds-fill { fill: #86d3e3; } .ds-success .ds-cut { stroke: #12343c; } .ds-success .ds-plabel, .ds-success .ds-close { color: #a8c3c8; } .ds-success .ds-path code { background: #0d2a31; border-color: #2c5c68; color: #e6f0f1; } .ds-success .ds-btn { border-color: #2c5c68; color: #e6f0f1; } .ds-success .ds-btn:hover, .ds-success .ds-close:hover { background: #174450; color: #e6f0f1; }"
+    },
+    {
+      "name": "Notification: warning and error",
+      "kind": "custom",
+      "refersTo": "error-coral",
+      "description": "A refusal: amber triangle or coral disc on the panel tinted 8% and framed in its colour; stays until closed and offers the next step.",
+      "html": "<div class=\"ds-toast ds-warning\" role=\"alert\"><span class=\"ds-mark\"><svg class=\"ds-m\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 3.2L22 20.5H2z\" class=\"ds-fill\"/><path d=\"M12 9.5v5\" class=\"ds-cut\"/><circle cx=\"12\" cy=\"17.6\" r=\"1.1\" class=\"ds-dot\"/></svg></span><div><p class=\"ds-title\">Save first</p><p class=\"ds-text\">The game gets the song as it is saved, and 1 edit is not saved yet.</p><div class=\"ds-acts\"><button class=\"ds-btn ds-primary\">Save</button></div></div><button class=\"ds-close\" aria-label=\"Dismiss\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6.5 6.5l11 11M17.5 6.5l-11 11\"/></svg></button></div><div class=\"ds-toast ds-error\" role=\"alert\"><span class=\"ds-mark\"><svg class=\"ds-m\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\" class=\"ds-fill\"/><path d=\"M12 7.5v5.5\" class=\"ds-cut\"/><circle cx=\"12\" cy=\"16.3\" r=\"1.1\" class=\"ds-dot\"/></svg></span><div><p class=\"ds-title\">Not saved: 1 error</p><p class=\"ds-text\">Fix it first (see Problems). Nothing was written.</p><div class=\"ds-acts\"><button class=\"ds-btn ds-primary\">Go to Problems</button></div></div><button class=\"ds-close\" aria-label=\"Dismiss\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6.5 6.5l11 11M17.5 6.5l-11 11\"/></svg></button></div>",
+      "css": ".ds-toast { display: grid; grid-template-columns: 22px 1fr 30px; gap: 12px; align-items: start; width: 440px; padding: 14px 8px 14px 16px; border: 1px solid; border-radius: 3px; font: 15px/1.4 'Barlow Semi Condensed', Bahnschrift, sans-serif; } .ds-toast + .ds-toast { margin-top: 8px; } .ds-mark svg { width: 22px; height: 22px; } .ds-fill { stroke: none; } .ds-cut { fill: none; stroke-width: 2.4; stroke-linecap: round; } .ds-i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; } .ds-title { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.35; } .ds-text { margin: 3px 0 0; } .ds-plabel { margin: 10px 0 0; } .ds-path { display: flex; gap: 8px; margin-top: 4px; align-items: flex-start; } .ds-path code { flex: 1; padding: 4px 7px; font: 13px/1.45 'Cascadia Mono', Consolas, monospace; overflow-wrap: break-word; border: 1px solid; } .ds-btn { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; font: inherit; background: none; border: 1px solid; border-radius: 3px; cursor: pointer; white-space: nowrap; transition: background-color 150ms ease-out, color 150ms ease-out; } .ds-close { width: 30px; height: 30px; margin-top: -5px; display: grid; place-items: center; background: none; border: 0; border-radius: 3px; cursor: pointer; } .ds-btn:focus-visible, .ds-close:focus-visible { outline: 2px solid #86d3e3; outline-offset: 2px; } .ds-toast.ds-warning { background: color-mix(in srgb, #f5b83d 8%, #1a272d); border-color: #f5b83d; color: #eceff1; } .ds-toast.ds-error { background: color-mix(in srgb, #ff7a7a 8%, #1a272d); border-color: #ff7a7a; color: #eceff1; } .ds-warning .ds-fill { fill: #f5b83d; } .ds-error .ds-fill { fill: #ff7a7a; } .ds-warning .ds-cut, .ds-error .ds-cut { stroke: #111a1d; } .ds-warning .ds-dot, .ds-error .ds-dot { fill: #111a1d; } .ds-warning .ds-text, .ds-error .ds-text, .ds-warning .ds-close, .ds-error .ds-close { color: #aab5ba; } .ds-acts { display: flex; gap: 6px; margin-top: 12px; } .ds-btn.ds-primary { background: #eceff1; border-color: #eceff1; color: #111a1d; font-weight: 600; } .ds-btn.ds-primary:hover { background: #ffffff; } .ds-warning .ds-close:hover, .ds-error .ds-close:hover { background: #152126; color: #eceff1; }"
+    }
   ],
   "narrative": {
     "northStar": "The Track Sheet",
@@ -97,10 +729,26 @@
       "Flat, ruled, no shadows; depth only as plies (the level below is translucent)."
     ],
     "rules": [
-      { "name": "The Frets Belong to the Game Rule", "body": "Green, red, yellow, blue and orange appear only on notes and their lane swatches, never on buttons, links, states or decoration.", "section": "colors" },
-      { "name": "The Petrol Frame Rule", "body": "The shell colour stays the same in both themes; only the field between header and transport changes from graphite to paper.", "section": "colors" },
-      { "name": "The Tabular Numbers Rule", "body": "Every number is set in the mono with tabular lining figures; a clock that moves never changes width. Words stay in the sans, even next to a number.", "section": "typography" },
-      { "name": "The Ply Rule", "body": "Only the level being edited is opaque; any other level is a translucent ply below it and never competes for attention.", "section": "elevation" }
+      {
+        "name": "The Frets Belong to the Game Rule",
+        "body": "Green, red, yellow, blue and orange appear only on notes and their lane swatches, never on buttons, links, states or decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Petrol Frame Rule",
+        "body": "The shell colour stays the same in both themes; only the field between header and transport changes from graphite to paper.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Numbers Rule",
+        "body": "Every number is set in the mono with tabular lining figures; a clock that moves never changes width. Words stay in the sans, even next to a number.",
+        "section": "typography"
+      },
+      {
+        "name": "The Ply Rule",
+        "body": "Only the level being edited is opaque; any other level is a translucent ply below it and never competes for attention.",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do draw notes as Clone Hero draws them: round gems, cymbal plates, a kick bar, sustain tails, fret colours.",

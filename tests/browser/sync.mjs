@@ -34,6 +34,14 @@ async function renderOffline({ song, files, cases, threshold, refractory }) {
       const ctx = new OfflineAudioContext({ numberOfChannels: 2, length, sampleRate: plan.sampleRate });
       const player = new Player(ctx);
       for (const file of files) player.addStem(file, await ctx.decodeAudioData(bytes[file].slice(0)));
+      if (plan.keepPitch) {
+        // E.4.1 a: the stems stretched to this speed on the server, played at full rate
+        for (const [index, file] of files.entries()) {
+          const slow = await (await fetch(`${base}/audio/${encodeURIComponent(file)}?keep_pitch=${plan.rate}`)).arrayBuffer();
+          player.setSlow(index, plan.rate, await ctx.decodeAudioData(slow));
+        }
+        player.keepPitch = true;
+      }
       player.stems.forEach((stem, i) => { stem.mute = stem.file !== source; });
       player.applyGains(true);
       player.setBeats(metronomeBeats(tempo, player.duration + 30));

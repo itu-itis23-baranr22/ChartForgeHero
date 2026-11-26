@@ -17,6 +17,7 @@
   --ui: "Barlow SC", "Bahnschrift", "Segoe UI", system-ui, sans-serif;
   --mono: "Cascadia Mono CG", "Cascadia Mono", Consolas, monospace;
   --shell: #12343c; --shell-2: #174450; --shell-line: #2c5c68; --shell-ink: #e6f0f1; --shell-ink-2: #a8c3c8;
+  --shell-well: #0d2a31; --shell-sp: #86d3e3;
   color-scheme: dark;
   --bg: #111a1d; --panel: #152126; --panel-2: #1a272d; --rule: #2b3b41; --rule-2: #1f2c31;
   --ink: #eceff1; --ink-2: #aab5ba; --ink-3: #85939a; --mark: #eceff1;
@@ -67,6 +68,9 @@ button:focus-visible, select:focus-visible, input:focus-visible, .tl:focus-visib
 .seg button[aria-pressed="true"] { background: var(--shell-ink); color: var(--shell); }
 .end { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--shell-ink-2); white-space: nowrap; }
 .theme { padding: 7px; color: var(--shell-ink-2); border-color: var(--shell-line); }
+.top .copy { padding: 7px 13px; color: var(--shell-ink-2); border-color: var(--shell-line); }
+.top .copy:hover:not(:disabled):not(.missing) { color: var(--shell-ink); background: var(--shell-2); }
+.top .copy.missing { opacity: 0.45; cursor: default; }
 .top .save { padding: 7px 18px; background: var(--shell-ink); color: var(--shell); font-weight: 600; border-color: var(--shell-ink); }
 .top .save:hover:not(:disabled) { background: var(--shell-ink-2); border-color: var(--shell-ink-2); }
 .top .save:disabled { background: none; color: var(--shell-ink-2); border-color: var(--shell-line); }
@@ -79,7 +83,6 @@ button:focus-visible, select:focus-visible, input:focus-visible, .tl:focus-visib
 .tool label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .tool input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--mark); }
 .tool .note { margin-left: auto; padding-left: 12px; font-size: 14px; color: var(--ink-2); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tool .note.bad { color: var(--err); }
 .tools { display: flex; gap: 2px; }
 .tool button[aria-pressed="true"] { color: var(--ink); background: var(--panel-2); border-color: var(--rule); }
 .tool select { font: inherit; color: var(--ink); background: var(--panel-2); border: 1px solid var(--rule); border-radius: 3px; padding: 3px 6px; margin-left: 2px; cursor: pointer; }
@@ -113,6 +116,15 @@ kbd { font-size: 12px; color: var(--ink-3); border: 1px solid var(--rule); borde
 .item p { grid-column: 2; overflow-wrap: anywhere; }
 .item .where { grid-column: 2; color: var(--ink); font-weight: 600; font-size: 14px; }
 .problems { display: flex; flex-direction: column; gap: 12px; }
+.right .acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.right .acts button { padding: 5px 10px; border-color: var(--rule); color: var(--ink); font-size: 14px; }
+.right .acts button:hover { background: var(--panel-2); }
+.right .hint { font-size: 14px; }
+.right .field { display: grid; gap: 4px; font-size: 13px; color: var(--ink-3); }
+.right .field input { font: 15px var(--ui); color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 6px 8px; }
+.right .check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-2); cursor: pointer; }
+.right .check input { width: 16px; height: 16px; accent-color: var(--mark); }
+.inspector { display: grid; gap: 10px; }
 dl.keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 14px; color: var(--ink-2); margin-top: 14px; align-items: baseline; }
 dl.keys dt { white-space: nowrap; }
 dl.keys dd { font-family: var(--ui); }
@@ -137,11 +149,11 @@ dl.kv { display: grid; grid-template-columns: 104px 1fr; gap: 7px 12px; font-siz
 .clock span { font: 13px var(--mono); color: var(--shell-ink-2); white-space: nowrap; }
 .ctl { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--shell-ink-2); flex: none; }
 .ctl b { font: 600 16px var(--mono); color: var(--shell-ink); }
-.ctl select, .ctl .metro, .lat { font: 600 16px var(--mono); font-variant-numeric: tabular-nums; color: var(--shell-ink); background: var(--shell-2); border: 1px solid var(--shell-line); border-radius: 3px; height: 30px; }
+.ctl select, .ctl .metro, .ctl .pitch, .lat { font: 600 16px var(--mono); font-variant-numeric: tabular-nums; color: var(--shell-ink); background: var(--shell-2); border: 1px solid var(--shell-line); border-radius: 3px; height: 30px; }
 .ctl select { padding: 0 6px; cursor: pointer; }
 .ctl select option { background: var(--shell); color: var(--shell-ink); }
-.ctl .metro { padding: 0 12px; min-width: 56px; justify-content: center; }
-.ctl .metro[aria-pressed="true"] { background: var(--shell-ink); color: var(--shell); border-color: var(--shell-ink); }
+.ctl .metro, .ctl .pitch { padding: 0 12px; min-width: 56px; justify-content: center; }
+.ctl .metro[aria-pressed="true"], .ctl .pitch[aria-pressed="true"] { background: var(--shell-ink); color: var(--shell); border-color: var(--shell-ink); }
 .lat { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 0; }
 .lat input { width: 64px; height: 28px; font: inherit; color: inherit; background: none; border: 0; padding: 0 0 0 8px; text-align: right; }
 .lat span { font-size: 13px; color: var(--shell-ink-2); font-weight: 400; }
@@ -206,6 +218,48 @@ td.act { text-align: right; }
 .boot-failed h1 { font-size: 16px; font-weight: 600; }
 .boot-failed p { color: var(--ink-2); }
 
+/* Notifications (toast.js): over the lower right of the timeline, above the transport, never over Problems or
+   Save. A success is the shell speaking (petrol, the same in both themes); a warning or an error is a box of the
+   field framed in amber or coral. Each carries its drawn icon and a title in words, so colour is never alone. */
+.toasts { position: fixed; right: 364px; bottom: 116px; z-index: 8; width: min(440px, calc(100vw - 568px)); max-height: calc(100vh - 250px);
+  display: flex; flex-direction: column; justify-content: flex-end; gap: 8px; pointer-events: none; }
+.toast { pointer-events: auto; display: grid; grid-template-columns: 22px 1fr 30px; gap: 12px; align-items: start; padding: 14px 8px 14px 16px;
+  background: var(--panel-2); border: 1px solid var(--rule); border-radius: 3px; color: var(--ink); }
+.toast .mark svg.i { width: 22px; height: 22px; stroke: none; margin-top: 1px; }
+.toast .mark .cut { stroke: var(--bg); stroke-width: 2.4; fill: none; }
+.toast .mark .dot { fill: var(--bg); }
+.toast .body { min-width: 0; }
+.toast .title { font-size: 16px; font-weight: 600; line-height: 1.35; }
+.toast .text { margin-top: 3px; color: var(--ink-2); overflow-wrap: anywhere; }
+.toast .plabel { margin-top: 10px; color: var(--ink-2); }
+.toast .path { display: flex; align-items: flex-start; gap: 8px; margin-top: 4px; }
+.toast code { flex: 1; min-width: 0; padding: 4px 7px; font-size: 13px; line-height: 1.45; overflow-wrap: break-word; user-select: all; cursor: text;
+  background: var(--panel); border: 1px solid var(--rule); color: var(--ink); }
+.toast .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.toast .acts button, .toast .copy-path { padding: 5px 11px; border-color: var(--rule); color: var(--ink); white-space: nowrap; }
+.toast .acts button:hover, .toast .copy-path:hover { background: var(--panel); }
+.toast .acts .primary { background: var(--mark); border-color: var(--mark); color: var(--bg); font-weight: 600; }
+.toast .acts .primary:hover { background: var(--ink); }
+.toast .close { width: 30px; height: 30px; justify-content: center; margin-top: -5px; color: var(--ink-2); }
+.toast .close:hover { background: var(--panel); color: var(--ink); }
+.toast.warning { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--panel-2)); }
+.toast.warning .mark .fill { fill: var(--warn); }
+.toast.error { border-color: var(--err); background: color-mix(in srgb, var(--err) 8%, var(--panel-2)); }
+.toast.error .mark .fill { fill: var(--err); }
+.toast.success { background: var(--shell); border-color: var(--shell-line); color: var(--shell-ink); }
+.toast.success .mark .fill { fill: var(--shell-sp); }
+.toast.success .mark .cut { stroke: var(--shell); }
+.toast.success .text, .toast.success .plabel, .toast.success .close { color: var(--shell-ink-2); }
+.toast.success code { background: var(--shell-well); border-color: var(--shell-line); color: var(--shell-ink); }
+.toast.success .copy-path, .toast.success .acts button { border-color: var(--shell-line); color: var(--shell-ink); }
+.toast.success .copy-path:hover, .toast.success .acts button:hover, .toast.success .close:hover { background: var(--shell-2); color: var(--shell-ink); }
+.toast.success .acts button.primary { background: var(--shell-ink); border-color: var(--shell-ink); color: var(--shell); }
+.toast.success :focus-visible { outline-color: var(--shell-sp); }
+.toast.success code::selection { background: var(--shell-sp); color: var(--shell); }
+.toast.in { animation: toast-in 150ms cubic-bezier(0.23, 1, 0.32, 1); }
+.toast.out { opacity: 0; transition: opacity 150ms ease-out; pointer-events: none; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+
 @media (max-width: 1499px) {
   .tool kbd, .tool .zoom-label { display: none; }
   .tool { padding: 0 12px; gap: 4px; }
@@ -220,4 +274,4 @@ td.act { text-align: right; }
   .too-narrow p { color: var(--ink-2); }
 }
 
-@media (prefers-reduced-motion: reduce) { button { transition: none; } }
+@media (prefers-reduced-motion: reduce) { button, .toast.out { transition: none; } .toast.in { animation: none; } }

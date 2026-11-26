@@ -157,6 +157,11 @@ def _build_parser() -> argparse.ArgumentParser:
     edit.add_argument("--outputs", type=Path, default=Path("outputs"), help="folder holding the songs (default: outputs)")
     edit.add_argument("--port", type=int, default=8765, help="port on 127.0.0.1 (default: 8765)")
     edit.add_argument("--no-browser", action="store_true", help="do not open the page in a browser")
+    edit.add_argument(
+        "--songs",
+        type=Path,
+        help="Clone Hero's Songs folder for Copy to game (default: Documents/Clone Hero/Songs)",
+    )
     return parser
 
 
@@ -279,7 +284,11 @@ def _run_edit(args: argparse.Namespace) -> int:
     from chartgen.editor.songs import SongLibrary
 
     url = f"http://127.0.0.1:{args.port}/"
-    app = create_app(SongLibrary(args.outputs), freeze_gc=True)
+    from chartgen.editor.export import default_songs_dir
+
+    songs = args.songs or default_songs_dir()
+    app = create_app(SongLibrary(args.outputs), freeze_gc=True, songs=songs)
+    log.info("Copy to game writes into %s%s", songs, "" if songs.is_dir() else " (not there: Copy to game is off)")
     log.info("chartgen editor on %s, songs from %s (Ctrl+C stops it)", url, args.outputs.resolve())
     if not args.no_browser:
         # The address names this version of the page, so a browser that kept an older copy of it cannot

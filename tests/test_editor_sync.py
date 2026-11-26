@@ -270,6 +270,40 @@ def test_metronome_and_click_stems_land_on_the_chart_beats_offline(served, node,
 # ---------------------------------------------------------------- live
 
 
+KEEP_PITCH_CASES = [
+    {"name": "48 kHz, 0.5x, keep pitch", "sampleRate": 48000, "rate": 0.5, "from": 0.0, "seconds": 18, "keepPitch": True,
+     "actions": [{"at": 9.0, "seek": 15.517}]},
+    {"name": "44.1 kHz, 0.75x, keep pitch", "sampleRate": 44100, "rate": 0.75, "from": 1.111, "seconds": 18, "keepPitch": True,
+     "actions": [{"at": 9.0, "seek": 28.871}]},
+]
+KEEP_PITCH_TOLERANCE = 0.010
+"""Stretched stems (E.4.1 a): the phase vocoder spreads a hit over about half its 512-sample window, so a click's
+start moves by up to 8 ms (measured 7.7 ms on these stems); the metronome is scheduled on the audio clock and
+keeps its 1 ms."""
+
+
+def test_keep_pitch_stays_on_the_chart_beats_offline(served, node, tmp_path):
+    plan = {
+        "mode": "offline", "url": served["url"], "song": FOLDER, "files": ["drums.ogg", "guitar.ogg", "song.ogg"],
+        "cases": [{**case, "sources": ["metronome", "drums.ogg"]} for case in KEEP_PITCH_CASES],
+        "threshold": THRESHOLD, "refractory": REFRACTORY,
+    }
+    out = run_browser(node, plan, tmp_path)
+    assert not out["problems"], out["problems"]
+    lines = []
+    for result in out["results"]:
+        expected, bounds = expected_clicks(result, served["beats"])
+        found = match(expected, result["onsets"], bounds)
+        worst = max((abs(e) for e in found["errors"]), default=float("nan"))
+        mean = float(np.mean(found["errors"])) if found["errors"] else float("nan")
+        lines.append(f"{result['name']:<28} {result['source']:<10} {len(found['errors']):>3} clicks, worst {worst * 1000:.2f} ms, "
+                     f"mean {mean * 1000:+.2f} ms, missing {len(found['missing'])}, extra {len(found['extra'])}")
+        assert not found["missing"] and not found["extra"], (result["name"], result["source"], found)
+        limit = TOLERANCE if result["source"] == "metronome" else KEEP_PITCH_TOLERANCE
+        assert worst <= limit, lines[-1]
+    print("\n" + "\n".join(lines))
+
+
 def song_at(segments: list[dict], ctx_time: float) -> float:
     segment = segments[0]
     for s in segments:

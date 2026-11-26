@@ -13,6 +13,7 @@ colors:
   petrol-shell: "#12343c"
   petrol-shell-raised: "#174450"
   petrol-line: "#2c5c68"
+  petrol-well: "#0d2a31"
   shell-ink: "#e6f0f1"
   shell-ink-muted: "#a8c3c8"
   star-power-cyan: "#86d3e3"
@@ -238,13 +239,43 @@ bar in its own row: the shapes the game uses, so that a cymbal never needs its c
 - **Focus:** a 2px star-power-cyan ring, 2px offset, on every control.
 
 ### Tool Row (editing, E.2)
-- In order: the tools Select (V) and Draw (D), Grid (a native select, 1/4, 1/8, 1/16), zoom, Undo and Redo (their
+- In order: the tools Select (V) and Draw (D), Grid (a native select, 1/4, 1/8, 1/12, 1/16, 1/24: the twelfths
+  and twenty-fourths are triplets, E.4), zoom, Undo and Redo (their
   titles name the step), Other levels with its state in words, Level below, then a status line that says what an
-  edit also changed ("Also changed: Hard 2 notes"), why one was refused (coral), or how far the audio has loaded.
+  edit also changed ("Also changed: Hard 2 notes") or how far the audio has loaded. Why something was refused is a
+  notification (below), not this line.
   Below 1500px the key caps and the "bars in view" count are left out; the keys stay in the titles and the legend.
 - The header's end shows the count of unsaved edits and Save (E.3): the one filled button in the shell, shell
   ink on petrol like the active level, outlined and quiet when there is nothing to save; "Saving…" while it
   writes. With errors under Problems it stays pressable: it says how many and takes the user there.
+- Copy to game (E.4) sits before Save as a shell ghost (shell-muted text, shell rule; hover lifts to the raised
+  petrol), "Copying…" while it works; its title names the Songs folder. With unsaved edits it answers with the
+  "Save first" warning (with Save) and copies nothing. Without a Songs folder it looks disabled like a missing level
+  and a click says how to set one (`--songs`). The result (copied, backed up where, or refused because the game is
+  running) is a notification.
+
+### Notifications (E.4, toast.js)
+- What a save or a copy to the game did, and why something was refused, as a stack of boxes over the lower right
+  of the timeline (20px from the side panel and from the transport, 440px wide), so they never cover Problems,
+  Save or the transport. Each box: a drawn 22px icon, a title in words (16px semibold: "Saved", "Copied to game",
+  "Save first", "Not saved: 1 error", "Clone Hero is running"), at most one line of explanation (15px), and a close
+  button. Colour is never alone: the icon's shape and the title say the same.
+- **Success** is the shell speaking: petrol shell (#12343c) with the petrol line and shell ink, the same in both
+  themes, a star-power-cyan disc with a check. It goes by itself after 5 seconds (8 with a path to copy), and
+  waits while the pointer or the focus is on it.
+- **Warning** (amber triangle) and **error** (coral disc) are boxes of the raised panel tinted 8% towards their
+  colour, framed 1px in it. They stay until closed or answered, and offer the next step as plain buttons, the
+  first one filled marker white: "Save" (Save first), "Copy again" (the game was running), "Go to Problems" (a save
+  or copy refused for errors), "Reload the page" (out of date). Using an action closes the box.
+- A path (the backup of a save or of the game's files) is written in the mono, 13px, on a well (Petrol Well in a success, the panel otherwise), from the outputs
+  folder, breaking after folder separators; its title is the full path, and "Copy path" copies the full path
+  ("Copied" with a check for two seconds; where the clipboard is refused it writes the full path and selects it
+  for Ctrl+C).
+- One box per subject (save, copy, edit, audio): a new message takes the old one's place, so they never pile up.
+  Edits that are refused ("Not changed", "Not pasted") are warnings too; the small facts of every edit stay in the
+  status line, because a box for each click would be noise. Opening another song or the list closes them all.
+- Successes are `role="status"`, warnings and errors `role="alert"`, in a region called Notifications. A box
+  enters in 150ms (fade and 8px rise, ease-out) and leaves in 150ms (fade); with reduced motion neither moves.
 
 ### Draft Box (E.3)
 - Under the tool row, above the ruler, until answered: raised panel with a 1px form rule (not coral: nothing is
@@ -267,9 +298,12 @@ bar in its own row: the shapes the game uses, so that a cymbal never needs its c
 
 ### Transport
 - The play pill (Space anywhere but in a text field), the clock of the playhead with bar.beat and tick, then
-  Speed (a native select, 0.50× to 1.00×), Metronome (a shell button that inverts when on) and Latency (a number in
-  ms), each a label over its control, then the stem cells. Until the audio is decoded every control is at 45% and
-  the tool row says how many files are loaded; a file that cannot be decoded is named there in coral.
+  Speed (a native select, 0.50× to 1.00×), Keep pitch (E.4), Metronome (shell buttons that invert when on, "On" /
+  "Off" in the mono) and Latency (a number in ms), each a label over its control, then the stem cells. Until the
+  audio is decoded every control is at 45% and the tool row says how many files are loaded; a file that cannot be
+  decoded is named in an error notification. Keep pitch below 1.00× has the editor stretch each stem once; the tool row
+  counts them ("Slowing the audio down without lowering it: 1 of 2 files") and then says "Keep pitch is on at 0.75×."; until then
+  the song plays at the lower pitch.
 
 ### Problem Item
 - A ruled box with a drawn icon (coral disc for an error, amber triangle for a warning), the place in semibold
@@ -286,6 +320,11 @@ bar in its own row: the shapes the game uses, so that a cymbal never needs its c
 ### Inspector and Key Legend
 - "Selected" with the count; one chord shows its place, tick, time, lanes, sustain and flags; several notes show
   where they start and end. Under it a two-column legend of key caps and what they do, always visible.
+- Song facts (E.4) end with plain ruled buttons, wrapping: Add a section, Add star power, Set the preview, and one
+  line that says they go on the bar the playhead is in. A section, star power phrase or the preview selected on the
+  ruler takes the place of the note facts: its facts, then its actions as the same plain buttons in words ("One bar
+  earlier", "One bar longer", "Move it to the playhead's bar", Delete). A section has a Name field (focused right
+  after Add a section; Enter renames); star power has the checkbox "Change every level the same way", on by default.
 
 ### Timeline
 - Gems are circles in the fret colour with a 2px ring of the field colour and a light rim; sustain tails are 9px
@@ -297,6 +336,11 @@ bar in its own row: the shapes the game uses, so that a cymbal never needs its c
   the ply for 1.5 seconds; it appears and goes without motion.
 - Pointer: the ruler and the waveform move the playhead; a note under the pointer shows a grab cursor, the Draw tool
   a crosshair.
+- The ruler (E.4) carries, under the bar cells: tempo and time signature marks, section names (17px bold with an
+  underline), this track's star power as a 7px star-power-cyan band, and the preview's start as a 2px pencil line
+  with "Preview" in 13px semibold beside it (a tempo label it would cover moves just after it). Clicking a section,
+  a band or the preview selects it: a 2px marker-white frame around it, no fill. Delete removes a section or a band
+(the preview only moves), Escape lets go.
 - The playhead is a 2px marker-white line from a small triangle in the ruler to the bottom, at the time being heard
   (less the latency setting). While playing, the view turns a page when the playhead passes 85% of it, without
   scrolling smoothly; a view the user scrolled away is left alone. Clicking the ruler or the waveform moves it.

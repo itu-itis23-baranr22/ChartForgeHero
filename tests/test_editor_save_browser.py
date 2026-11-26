@@ -39,9 +39,25 @@ def test_save_and_restore_a_draft_in_the_browser(node, tmp_path):  # noqa: F811
     assert not saved["problems"], saved["problems"]
     assert saved["saveDisabledAtFirst"] is True and saved["saveDisabledAfter"] is True
     assert saved["beforeSave"] == "1 unsaved edit" and saved["afterSave"] == "No unsaved edits"
-    assert saved["savedNotice"].startswith("Saved. The files before this save are in outputs")
-    assert saved["refusedNotice"] == "The chart has 1 error: fix it before saving (see Problems)."
+    # Notifications (toast.js): a success that goes by itself, an error that stays and offers Problems.
+    done = saved["saved"]
+    assert done["tone"] == "success" and done["role"] == "status" and done["icon"] == "Done" and done["title"] == "Saved"
+    assert done["pathLabel"] == "The files before this save are backed up in"
+    assert done["path"] == str(outputs / BACKUP_DIR / FOLDER) and done["pathShown"] == str(Path("outputs") / BACKUP_DIR / FOLDER)
+    assert done["actions"] == [] and done["closable"] is True
+    assert 1300 <= saved["savedGoneAfterMs"] < 4000  # shortened to 1.5 s by the test (+ 150 ms fade)
+    refused = saved["refused"]
+    assert refused["tone"] == "error" and refused["role"] == "alert" and refused["icon"] == "Error"
+    assert refused["title"] == "Not saved: 1 error"
+    assert refused["text"] == "Fix it first (see Problems). Nothing was written."
+    assert refused["actions"] == ["Go to Problems"]
+    for toast in (done, refused):  # readable, and over the timeline only
+        assert toast["titlePx"] >= 16 and (toast["textPx"] or 15) >= 15 and toast["width"] >= 400
+        assert toast["inView"] and not toast["overProblems"] and not toast["overTransport"] and not toast["overHeader"]
     assert saved["focused"] and saved["focused"].startswith("Problems")
+    assert saved["refusedStays"] is True
+    assert saved["afterGoTo"]["focused"].startswith("Problems") and saved["afterGoTo"]["toast"] is None
+    assert saved["again"] is True and saved["closed"] is True
     assert saved["leftUnsaved"] == "1 unsaved edit"
     # On disk: the first note saved, two backups, the edit mark; the last note only in the draft.
     assert f"  {ticks[0]} = N 2 0" in (folder / "notes.chart").read_text(encoding="utf-8-sig")

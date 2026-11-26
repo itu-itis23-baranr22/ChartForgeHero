@@ -98,6 +98,30 @@ _RULES: list[tuple[re.Pattern[str], Callable[[re.Match[str]], str]]] = [
         lambda m: f"A note in the opening, which is not part of the song (it ends at {m['end']} s).",
     ),
     (
+        re.compile(r"^\[Events\] tick \d+: section name (?P<name>.+) is not plain ASCII$"),
+        lambda m: f"The section name {m['name']} is not plain ASCII (no accents or other scripts).",
+    ),
+    (
+        re.compile(r"^\[Events\] tick \d+: section (?P<name>.+) is not on a bar line$"),
+        lambda m: f"The section {m['name']} starts off the bar line.",
+    ),
+    (
+        re.compile(r"^\[Events\] tick \d+: section (?P<name>.+) lasts less than (?P<bars>\d+) bars$"),
+        lambda m: f"The section {m['name']} lasts less than {m['bars']} bars: a section is at least {m['bars']} bars long.",
+    ),
+    (
+        re.compile(r"^song\.ini preview_start_time \d+ ms is in the opening: the song starts at \d+ ms$"),
+        lambda m: "The preview starts in the opening, before the song does.",
+    ),
+    (
+        re.compile(r"^song\.ini preview_start_time \d+ ms is past the song's end \(\d+ ms\)$"),
+        lambda m: "The preview starts after the song has ended.",
+    ),
+    (
+        re.compile(r"^song\.ini preview_start_time \d+ ms: its (?P<s>\d+) s do not fit in the \d+ ms song$"),
+        lambda m: f"The preview's {m['s']} seconds run past the song's end: start it earlier.",
+    ),
+    (
         re.compile(r"^\[(?P<section>\w+)\] has no notes$"),
         lambda m: f"{_level(m['section'])} {_INSTRUMENT.get(_instrument(m['section']), m['section'])} has no notes.",
     ),

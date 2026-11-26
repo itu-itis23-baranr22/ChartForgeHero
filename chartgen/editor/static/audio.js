@@ -1,5 +1,7 @@
 // Playback (SPEC 53): one Web Audio source per stem, all started at the same audio-clock time, a gain per
 // stem, speed through the playback rate, and a metronome scheduled on the audio clock from the tempo map.
+// Keep pitch (E.4.1 a): a stem with a copy stretched to the current speed plays that copy at full rate from
+// song time / speed, so the pitch stays and the clock, and with it the sync, is the same.
 // Works on any BaseAudioContext, so tests/browser/sync.mjs renders the same code offline and measures it.
 
 import { SongClock, firstBeatFrom, stemGains } from "./transport.js";
@@ -51,13 +53,43 @@ export class Player {
     this.clicks = new Set();
     this.clickBuffers = { beat: clickBuffer(ctx, BEAT), downbeat: clickBuffer(ctx, DOWNBEAT) };
     this.duration = 0;
+    this.keepPitch = false;
+  }
+
+  /** A stem's copy stretched to `speed` without lowering its pitch (it replaces one for another speed). */
+  setSlow(index, speed, buffer) {
+    this.stems[index].slow = { speed, buffer };
+  }
+
+  /** Lets go of every stretched copy (they take memory). */
+  clearSlow() {
+    for (const stem of this.stems) stem.slow = null;
+  }
+
+  /** Whether every stem has its stretched copy for `speed`. */
+  slowReady(speed) {
+    return this.stems.length > 0 && this.stems.every((s) => s.slow && s.slow.speed === speed);
+  }
+
+  /** Keep pitch on or off; playing on from where the audio is, with the other copies. */
+  setKeepPitch(on) {
+    if (on === this.keepPitch) return null;
+    this.keepPitch = on;
+    return this.refresh();
+  }
+
+  /** Starts the sources again where the audio is: after the stems to play have changed. */
+  refresh() {
+    if (!this.playing) return null;
+    const when = this.ctx.currentTime + LEAD;
+    return this.restart(this.clock.songAt(when), when);
   }
 
   /** Adds a decoded stem; it plays from the next start on. */
   addStem(file, buffer) {
     const gain = new GainNode(this.ctx);
     gain.connect(this.master);
-    this.stems.push({ file, buffer, gain, volume: 1, mute: false, solo: false });
+    this.stems.push({ file, buffer, gain, volume: 1, mute: false, solo: false, slow: null });
     this.duration = Math.max(this.duration, buffer.duration);
     this.applyGains(true);
   }
@@ -180,9 +212,12 @@ export class Player {
     this.sources = [];
     for (const stem of this.stems) {
       if (songTime >= stem.buffer.duration) continue;
-      const source = new AudioBufferSourceNode(this.ctx, { buffer: stem.buffer, playbackRate: this.rate });
+      const slow = this.keepPitch && this.rate < 1 && stem.slow && stem.slow.speed === this.rate ? stem.slow.buffer : null;
+      const source = slow
+        ? new AudioBufferSourceNode(this.ctx, { buffer: slow, playbackRate: 1 })
+        : new AudioBufferSourceNode(this.ctx, { buffer: stem.buffer, playbackRate: this.rate });
       source.connect(stem.gain);
-      source.start(when, songTime);
+      source.start(when, slow ? Math.min(songTime / this.rate, slow.duration) : songTime);
       this.sources.push(source);
     }
     this.clock.start(when, songTime, this.rate);

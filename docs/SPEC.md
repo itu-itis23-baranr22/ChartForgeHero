@@ -330,8 +330,14 @@ Decisions made since it was written are listed first and take precedence.
    faintly. A vertical highway like the game's is at most a read-only preview later; the game stays the
    final check.
 53. **Audio and sync.** One Web Audio source per stem, all started at the same audio-clock time, a gain per
-   stem (muting does not restart playback), speed 0.5x to 1x through the playback rate, so the pitch drops
-   (a pitch-keeping slow-down is an E.4 option). The metronome is scheduled on the audio clock from the tempo
+   stem (muting does not restart playback), speed 0.5x to 1x through the playback rate, so the pitch drops.
+   Keep pitch (E.4, owner's choice a): the server stretches each stem once per speed with librosa's phase
+   vocoder (mono, `n_fft` 512, hop 128; cached in `outputs\_editor_cache\stretch\`) in a child process, so
+   that the editor's own heap never holds librosa (its full garbage collections stalled edits by 100+ ms
+   when it did), and the page plays the
+   stretched copy at rate 1 from song time / speed; measured offline, a click stem stays within 8 ms of the
+   chart's beats at 0.5x (48 kHz) and 0.75x (44.1 kHz), across a seek (the tolerance is 10 ms; `n_fft` 2048
+   was 26 ms early). The metronome is scheduled on the audio clock from the tempo
    map, on the beats `click_overlay.click_schedule` lists; a latency offset in ms works like the game's
    calibration. Measured: in an offline render the
    metronome and a synthetic click stem land within 1 ms of the chart's beats at 1x and 0.5x, also with a
@@ -341,7 +347,8 @@ Decisions made since it was written are listed first and take precedence.
    hard-rule error writes nothing and is shown. Otherwise the old `notes.chart` and `song.ini` are copied to
    `outputs\_editor_backups\<song>\<date_time>_<file>` (all kept) and the new ones replace them atomically.
    A file changed on disk since it was opened is not overwritten. `song.ini` gets new `diff_*` values from
-   `difficulty_tier` over the input's length; no other byte changes. Unsaved edits are written a second after
+   `difficulty_tier` over the input's length, and `preview_start_time` when the preview was moved (E.4); no
+   other byte changes. Unsaved edits are written a second after
    each change to `outputs\_editor_drafts\<song>.json` with the hash of the chart they are based on; the page
    offers to restore a draft on that chart, and a draft on a chart that changed since is renamed
    `.stale.json` and named, never restored (owner, 2026-11-25).
@@ -354,18 +361,28 @@ Decisions made since it was written are listed first and take precedence.
    --record` rebuilds each such folder from its input into a scratch folder and records the hash only when
    the fresh `notes.chart` is the folder's byte for byte (owner, 2026-11-25); others stay unprotected and are
    listed.
-56. **Copying to the game.** Refused while `Clone Hero.exe` runs. The folder is validated, the copy in `Songs`
-   is backed up to `outputs\_songs_backup\<date>_editor\`, then only `notes.chart` and `song.ini` are copied
-   when the set of audio files is the same (the folder's own layout in `Songs` stays), or the whole folder
-   is replaced when it is not; the result is validated in `Songs`.
+56. **Copying to the game.** Refused while `Clone Hero.exe` runs, and while the song has unsaved edits ("Save
+   first": the game gets the song as it is saved; owner, 2026-11-25). The folder is validated. The audio is the
+   same when the two folders have the same `.ogg` names and each pair is equal byte for byte or decodes to the
+   same samples; then only `notes.chart` and `song.ini` are copied and only those two are backed up first.
+   Otherwise the whole folder is replaced (copied beside it, then swapped) and the old one is backed up whole
+   (owner, 2026-11-25). Backups go to `outputs\_songs_backup\<date_time>_editor\<song>\`. The result is
+   validated in `Songs`. `Songs` is `Documents\Clone Hero\Songs` or `chartgen edit --songs`; tests never get it.
+   The page reports saves, copies and refusals as notifications (owner, 2026-11-26): a titled box with a drawn
+   icon over the lower right of the timeline; a success (petrol) goes by itself after a few seconds, a warning
+   (amber) or an error (coral) stays until closed and offers the next step ("Save", "Copy again", "Go to
+   Problems", "Reload the page"); the backup's path can be copied. A refused copy carries a `reason`
+   (`no_songs`, `running`, `unknown_game`, `invalid`, `unsaved`, `disk_changed`) so the page can title it.
 57. **Testing the editor.** pytest in the usual tiers (reader round trip, operations, undo and redo, the API
    through `TestClient`, saving, backups, the build's refusal); the round trip of every folder in `outputs\`
    is `real`. JavaScript modules are tested with Node's built-in runner (`node --test`, no packages):
    `check.ps1` runs them in the quick tier when Node is there and requires Node in `-Full`. Playwright
    1.65.1 measures sync offline and opens the page as a smoke test; it is an npm dev package in
    `tests/browser` (`npm ci`, pinned by its lock file) that the page never loads, and its tests are `heavy`. Out of scope: editing the tempo map.
-   Optional in E.4: editing sections, star power and the preview, the pitch-keeping slow-down, a highway
-   preview.
+   E.4 added (owner's choices a-d): Keep pitch, the keyboard alone (`,` `.` select, Ctrl+arrows move the
+   playhead, 1-5 add), the triplet grids 1/12 and 1/24, and editing sections, star power and the preview on
+   bar lines (server operations with undo, like notes). A highway preview and narrow-window stem cells are not
+   in E.4 (owner: not for now).
 
 ## Phase B1 targets (one reference song so far)
 

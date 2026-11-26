@@ -26,6 +26,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from chartgen.clonehero.validate import validate_song_folder
 from chartgen.editor.assets import PageAssets
+from chartgen.editor.export import ExportRefusedError, game_running
+from chartgen.editor.stretch import CACHE_DIR, StretchError, stretched
 from chartgen.editor.ops import OpError
 from chartgen.editor.saving import DiskChangedError, SaveRefusedError
 from chartgen.editor.session import NothingToDoError, Sessions, StaleError
@@ -69,13 +71,16 @@ def writable(request: Request) -> None:
         raise WriteRefusedError("changes are taken from the editor's own page only")
 
 
-def create_app(library: SongLibrary, freeze_gc: bool = False, static: Path = STATIC, draft_delay_s: float = 1.0) -> FastAPI:
+def create_app(library: SongLibrary, freeze_gc: bool = False, static: Path = STATIC, draft_delay_s: float = 1.0,
+               songs: Path | None = None, running=game_running) -> FastAPI:
     """The editor's app. ``freeze_gc`` is for the ``chartgen edit`` process only (see ``Sessions``); ``static``
     is the page's folder (tests give a changed copy); ``draft_delay_s`` is how long after an edit its draft is
-    written."""
+    written. ``songs`` is the game's Songs folder for Copy to game: None (the default) copies nowhere, so only
+    ``chartgen edit`` names the real one; ``running`` tells whether the game runs (tests give their own)."""
     app = FastAPI(title="chartgen editor", docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
     sessions = Sessions(library, freeze_gc, draft_delay_s)
+    songs_dir = songs  # the name `songs` is taken by the song list's endpoint below
     assets = PageAssets(static)
     app.state.sessions = sessions
     app.state.assets = assets
@@ -123,6 +128,17 @@ def create_app(library: SongLibrary, freeze_gc: bool = False, static: Path = STA
     async def disk_changed(_: Request, error: DiskChangedError) -> JSONResponse:
         return JSONResponse({"error": str(error), "disk_changed": True}, status_code=409)
 
+    @app.exception_handler(StretchError)
+    async def stretch_refused(_: Request, error: StretchError) -> JSONResponse:
+        return JSONResponse({"error": str(error)}, status_code=422)
+
+    @app.exception_handler(ExportRefusedError)
+    async def export_refused(_: Request, error: ExportRefusedError) -> JSONResponse:
+        body: dict[str, object] = {"error": str(error), "export_refused": True, "reason": error.reason}
+        if error.errors:
+            body["errors"] = error.errors
+        return JSONResponse(body, status_code=409)
+
     @app.exception_handler(WriteRefusedError)
     async def forbidden(_: Request, error: WriteRefusedError) -> JSONResponse:
         return JSONResponse({"error": f"Refused: {error}."}, status_code=403)
@@ -147,14 +163,20 @@ def create_app(library: SongLibrary, freeze_gc: bool = False, static: Path = STA
     def info(name: str) -> dict[str, object]:
         folder = library.folder(name)
         session = sessions.current(name)
+        game = {"songs": str(songs_dir) if songs_dir else None, "ready": bool(songs_dir and songs_dir.is_dir())}
         if session is not None and session.has_history:
             _, text, ini = session.check_texts()
-            return song_info(folder, text, ini)
-        return song_info(folder)
+            preview = None if session.preview_ms is None else session.preview_ms / 1000
+            return {**song_info(folder, text, ini), "game": game, "preview_s": preview}
+        return {**song_info(folder), "game": game}
 
     @app.get("/api/songs/{name}/audio/{file_name}")
-    def audio(name: str, file_name: str) -> FileResponse:
-        return FileResponse(library.audio_file(name, file_name), media_type="audio/ogg")
+    def audio(name: str, file_name: str, keep_pitch: float | None = None) -> FileResponse:
+        """A stem; with ``keep_pitch`` its copy stretched to that speed without lowering it (E.4.1 a)."""
+        path = library.audio_file(name, file_name)
+        if keep_pitch is not None:
+            path = stretched(path, keep_pitch, library.root / CACHE_DIR / "stretch")
+        return FileResponse(path, media_type="audio/ogg")
 
     @app.post("/api/songs/{name}/ops", dependencies=[Depends(writable)])
     def operation(name: str, body: dict[str, Any] = Body(...)) -> dict[str, object]:
@@ -178,6 +200,11 @@ def create_app(library: SongLibrary, freeze_gc: bool = False, static: Path = STA
     @app.post("/api/songs/{name}/save", dependencies=[Depends(writable)])
     def save(name: str, body: dict[str, Any] = Body(...)) -> dict[str, object]:
         return session_of(name).save(body.get("version"))
+
+    @app.post("/api/songs/{name}/export", dependencies=[Depends(writable)])
+    def export(name: str, body: dict[str, Any] = Body(...)) -> dict[str, object]:
+        """Copy to game (SPEC 56)."""
+        return session_of(name).copy_to_game(body.get("version"), songs_dir, running)
 
     @app.post("/api/songs/{name}/draft/restore", dependencies=[Depends(writable)])
     def restore_draft(name: str, body: dict[str, Any] = Body(...)) -> dict[str, object]:

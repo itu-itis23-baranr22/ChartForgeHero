@@ -10,6 +10,7 @@ Needs Node.js and ``npm ci`` in ``tests/browser``, like the sync tests; under ``
 
 from __future__ import annotations
 
+import gc
 import shutil
 import statistics
 from pathlib import Path
@@ -28,6 +29,8 @@ from chartgen.clonehero.package import encode_ogg  # noqa: E402
 from chartgen.clonehero.song_ini import SongIni, render_song_ini  # noqa: E402
 from chartgen.core.model import Chart, ChartNote, Difficulty, Instrument, Section, SongMetadata, Track  # noqa: E402
 from chartgen.core.timing import TempoEvent, TempoMap, TimeSignatureEvent  # noqa: E402
+from chartgen.editor.server import create_app  # noqa: E402
+from chartgen.editor.songs import SongLibrary  # noqa: E402
 
 pytestmark = pytest.mark.heavy
 
@@ -135,8 +138,15 @@ def test_an_edit_on_a_real_song_takes_less_than_30_ms_in_the_browser(node, tmp_p
     folder.mkdir(parents=True)
     for name in ("notes.chart", "song.ini", "analysis.json", "song.ogg"):
         shutil.copy2(source / name, folder / name)
-    with serve(folder.parent) as url:
-        out = run_browser(node, {"mode": "timing", "url": url, "title": "LastResort", "moves": 20}, tmp_path, "edit.mjs")
+    # As the `chartgen edit` server does (Sessions, freeze_gc): after reading the song, one collection and
+    # gc.freeze(). Without it this server, a thread of the test process, stalled edits by 60-180 ms whenever a
+    # full collection walked the objects earlier tests had left (two such stalls in the 20 edits, the same with
+    # and without the notifications' changes; measured 2026-11-26). The test process is unfrozen afterwards.
+    try:
+        with serve(None, app=create_app(SongLibrary(folder.parent), freeze_gc=True)) as url:
+            out = run_browser(node, {"mode": "timing", "url": url, "title": "LastResort", "moves": 20}, tmp_path, "edit.mjs")
+    finally:
+        gc.unfreeze()
     assert not out["problems"], out["problems"]
     timings = sorted(out["timings"])
     assert len(timings) == 20, timings

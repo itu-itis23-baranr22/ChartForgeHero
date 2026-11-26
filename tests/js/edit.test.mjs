@@ -86,3 +86,29 @@ test("the tool row's words", () => {
     "Also changed: Hard 2 notes, Medium 1 note",
   );
 });
+
+test("triplet grids: 1/12 and 1/24 count from each bar, also in 6/8 and 7/8", async () => {
+  const { GRIDS: grids } = await import("../../chartgen/editor/static/edit.js");
+  assert.deepEqual(grids, [4, 8, 12, 16, 24]);
+  assert.equal(gridTicks(192, 12), 64);
+  assert.equal(gridTicks(192, 24), 32);
+  // 4/4 from 0 (768), 6/8 from 768 (576), 7/8 from 1344 (672), then 4/4 from 2016.
+  const bars = [0, 768, 1344, 2016];
+  assert.equal(snapTick(bars, 100, 64), 128);
+  assert.equal(snapTick(bars, 768 + 70, 64), 768 + 64);
+  assert.equal(snapTick(bars, 1344 + 650, 64), 1344 + 640); // 7/8 is 672 ticks: 10 x 64 = 640, then the bar line
+  assert.equal(snapTick(bars, 1344 + 660, 64), 2016); // nearer the bar line than 640
+  assert.equal(snapTick(bars, 1344 + 600, 64), 1344 + 576);
+  assert.equal(snapTick(bars, 2016 + 40, 32), 2016 + 32);
+  assert.equal(stepTick(bars, 768, 64, 1), 832);
+});
+
+test("the next and previous note by tick, a chord being one stop", async () => {
+  const { neighbourTick } = await import("../../chartgen/editor/static/edit.js");
+  const notes = [[96, 0, 0, 0], [96, 2, 0, 0], [192, 1, 0, 0], [480, 3, 0, 0]];
+  assert.equal(neighbourTick(notes, 96, 1), 192);
+  assert.equal(neighbourTick(notes, 95.5, 1), 96);
+  assert.equal(neighbourTick(notes, 192, -1), 96);
+  assert.equal(neighbourTick(notes, 480, 1), null);
+  assert.equal(neighbourTick(notes, 96, -1), null);
+});

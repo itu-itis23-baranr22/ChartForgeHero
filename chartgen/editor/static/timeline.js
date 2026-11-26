@@ -35,6 +35,9 @@ export class Timeline {
     this.hover = null; // {tick, lane, length}: the note the Draw tool would add
     this.box = null; // {x0, y0, x1, y1}: a selection box being drawn
     this.flashes = []; // {tick, lane}: notes an edit changed on the level below, ringed for a moment
+    this.previewS = null; // where the preview starts (seconds), drawn on the ruler
+    this.structureSel = null; // {kind, tick}: the selected section, star power phrase or preview
+    this.structureBoxes = []; // where sections, phrases and the preview are on the ruler, for clicks
     this.markers = [];
     this.showBelow = true;
     this.playhead = 0; // seconds: where playback is, or starts
@@ -287,6 +290,7 @@ export class Timeline {
   drawRuler(L) {
     const ctx = this.ctx;
     const c = this.colours;
+    this.structureBoxes = [];
     const every = this.labelStep();
     ctx.textBaseline = "alphabetic";
     for (let i = 0; i < this.bars.length; i += every) {
@@ -312,15 +316,26 @@ export class Timeline {
     const marks = new Map();
     for (const t of this.tempo.tempos) marks.set(t.tick, `${t.bpm.toFixed(1)} BPM`);
     for (const [tick, s] of signatures) marks.set(tick, `${marks.get(tick) ? `${marks.get(tick)} · ` : ""}${s.numerator}/${s.denominator}`);
+    // The preview's name sits on the same line; a tempo label it would cover moves to just after it.
+    let previewName = null;
+    if (this.previewS !== null) {
+      ctx.font = `600 13px ${c.ui}`;
+      const px = this.x(this.previewS);
+      previewName = { x0: px + 5, x1: px + 5 + ctx.measureText("Preview").width + 10 };
+      ctx.font = `12px ${c.mono}`;
+    }
     // Each change gets a short mark; its label is left out where it would run into the one before.
     let freeFrom = -Infinity;
     for (const [tick, text] of [...marks].sort((a, b) => a[0] - b[0])) {
       const x = this.x(this.tempo.secondsAt(tick));
       if (x < -200 || x > this.width) continue;
       ctx.fillRect(x, 36, 1, 8);
-      if (x + 4 >= freeFrom) {
-        ctx.fillText(text, x + 4, 46);
-        freeFrom = x + 4 + ctx.measureText(text).width + 12;
+      const w = ctx.measureText(text).width;
+      let lx = x + 4;
+      if (previewName && lx < previewName.x1 && lx + w > previewName.x0) lx = previewName.x1;
+      if (lx >= freeFrom) {
+        ctx.fillText(text, lx, 46);
+        freeFrom = lx + w + 12;
       }
     }
     // sections, written in
@@ -332,6 +347,7 @@ export class Timeline {
       ctx.fillText(name, x + 6, 70);
       const w = ctx.measureText(name).width;
       ctx.fillRect(x + 5, 74, Math.ceil(w) + 2, 2);
+      this.structureBoxes.push({ kind: "section", tick, x0: x + 1, x1: x + 10 + w, y0: 53, y1: 78 });
     }
     // star power phrases of this track
     ctx.fillStyle = c.sp;
@@ -340,7 +356,37 @@ export class Timeline {
       const x1 = this.x(this.tempo.secondsAt(tick + length));
       if (x1 < 0 || x0 > this.width) continue;
       ctx.fillRect(x0, 80, Math.max(2, x1 - x0), 7);
+      this.structureBoxes.push({ kind: "sp", tick, x0, x1: x0 + Math.max(2, x1 - x0), y0: 78, y1: 90 });
     }
+    // the preview's start: a line through the ruler and its name beside it
+    if (this.previewS !== null) {
+      const x = this.x(this.previewS);
+      if (x > -80 && x < this.width) {
+        ctx.fillStyle = c.ink2;
+        ctx.fillRect(x, 34, 2, 56);
+        ctx.font = `600 13px ${c.ui}`;
+        ctx.textAlign = "left";
+        ctx.fillText("Preview", x + 5, 46);
+        const w = ctx.measureText("Preview").width;
+        this.structureBoxes.push({ kind: "preview", tick: null, x0: x - 4, x1: x + 8 + w, y0: 32, y1: 50 });
+      }
+    }
+    const sel = this.structureSel;
+    const box = sel && this.structureBoxes.find((b) => b.kind === sel.kind && (sel.kind === "preview" || b.tick === sel.tick));
+    if (box) {
+      ctx.strokeStyle = c.mark;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(box.x0 - 2, box.y0 - 1, box.x1 - box.x0 + 4, box.y1 - box.y0 + 2);
+    }
+  }
+
+  /** The section, star power phrase or preview under a point of the ruler, or null. */
+  structureAt(px, py) {
+    for (let i = this.structureBoxes.length - 1; i >= 0; i--) {
+      const b = this.structureBoxes[i];
+      if (px >= b.x0 && px <= b.x1 && py >= b.y0 && py <= b.y1) return { kind: b.kind, tick: b.tick };
+    }
+    return null;
   }
 
   labelStep() {

@@ -4,12 +4,13 @@
 import { api } from "./api.js";
 import { PUMP_MS, Player } from "./audio.js";
 import {
-  CYMBAL, FORCED, GRIDS, TAP, cascadeSummary, clipboardOf, flagTarget, gridTicks, keyOf, laneOfRow, noteKey, notesInBox,
+  CYMBAL, FORCED, GRIDS, TAP, cascadeSummary, clipboardOf, flagTarget, gridTicks, keyOf, laneOfRow, neighbourTick, noteKey, notesInBox,
   pasteAt, plural, rowOf, selectedNotes, snapTick, stepTick, unsavedLabel,
 } from "./edit.js";
 import { icon } from "./icons.js";
 import { TempoMap } from "./tempo.js";
 import { PAD, Timeline } from "./timeline.js";
+import { Toasts, mountToasts } from "./toast.js";
 import { SPEEDS, clampLatency, followScroll, metronomeBeats, peaks, silencedBySolo } from "./transport.js";
 import { barBeat, clampZoom, clock, zoomAround } from "./view.js";
 
@@ -67,11 +68,14 @@ applyTheme(storedTheme());
 // ---------------------------------------------------------------- shell
 
 const state = {};
+const toasts = new Toasts();
+mountToasts(toasts, document.body, icon);
 
 /** Read by the measurement scripts in tests/browser: the open song's state and its player. */
 window.chartgenDebug = {
   get state() { return state; },
   get player() { return state.player || null; },
+  toasts, // the notifications (toast.js); the browser tests shorten how long a success stays
   frames: null, // an array to record every drawn playhead into, or null
 };
 
@@ -114,6 +118,7 @@ function outdated(error) {
 
 function route() {
   closeAudio();
+  toasts.clear();
   const drafts = document.getElementById("drafts");
   if (drafts) drafts.remove();
   const match = location.hash.match(/^#\/song\/(.+)$/);
@@ -187,12 +192,13 @@ async function openSong(id) {
   Object.assign(state, {
     id, chart, info, tempo, lengthS, bars: tempo.barLines(lengthS), instruments,
     instrument: instruments[0], difficulty: null, showBelow: true,
-    playhead: 0, rate: 1, metronome: stored("chartgen-metronome") === "on",
+    playhead: 0, rate: 1, metronome: stored("chartgen-metronome") === "on", keepPitch: stored("chartgen-keep-pitch") === "on",
     latency: clampLatency(stored("chartgen-latency-ms") ?? 0), audio: { status: "loading", loaded: 0, total: info.audio.length },
     // editing (E.2): the server holds the chart; the page keeps its version and what is selected
     edit: chart.edit, validation: info.validation, selection: new Set(), tool: stored("chartgen-tool") === "draw" ? "draw" : "select",
     grid: GRIDS.includes(grid) ? grid : 8, linked: true, clipboard: state.clipboard || null, queue: Promise.resolve(),
-    stale: false, notice: null, gesture: null, saving: false, dismissed: new Set(),
+    stale: false, notice: null, gesture: null, saving: false, copying: false, dismissed: new Set(),
+    structure: null, spAll: true, focusName: false,
   });
   state.difficulty = levelsOf(state.instrument)[0];
   document.title = `${chart.name} – chartgen editor`;
@@ -233,7 +239,7 @@ function renderSong() {
   root.innerHTML = header(`<div class="brand"><a class="back" href="#/" title="All songs" aria-label="All songs">${icon("back")}</a>chartgen</div>
       <div class="song-title"><b>${esc(chart.name)}</b><span>${esc(chart.artist)}</span></div>
       <nav class="tabs" role="tablist" aria-label="Instrument">${tabs}</nav><div class="seg" role="group" aria-label="Level"></div>`,
-    '<button class="save" disabled>Save</button>') +
+    '<button class="copy" disabled>Copy to game</button><button class="save" disabled>Save</button>') +
     `<div class="tool">
       <span class="tools" role="group" aria-label="Tool">
         <button data-tool="select" title="Select (V): click a note, Shift or Ctrl to add, drag a box; drag notes to move them">${icon("select")}Select <kbd>V</kbd></button>
@@ -254,12 +260,13 @@ function renderSong() {
     <footer class="bot"><button class="play" disabled title="Loading the audio" aria-label="Play">${icon("play")}</button>
       <div class="clock"><b class="t">0:00.000</b><span class="pos"></span></div>
       <label class="ctl" title="Playback speed; slower playback also lowers the pitch">Speed<select class="speed" disabled>${speeds}</select></label>
+      <div class="ctl" title="Below 1.00×: play the audio slower without lowering it (each file is stretched once, which takes a while the first time)"><span id="pitch-label">Keep pitch</span><button class="pitch" aria-labelledby="pitch-label" aria-pressed="${state.keepPitch}" disabled>${state.keepPitch ? "On" : "Off"}</button></div>
       <div class="ctl" title="A click on every beat of the chart's tempo map, the downbeat higher"><span id="metro-label">Metronome</span><button class="metro" aria-labelledby="metro-label" aria-pressed="${state.metronome}" disabled>${state.metronome ? "On" : "Off"}</button></div>
       <label class="ctl" title="Draws the playhead this much later than the audio clock. Raise it when the line runs ahead of what you hear (Bluetooth headphones: 150 to 250 ms)">Latency<span class="lat"><input class="latency" type="number" min="-300" max="500" step="5" value="${state.latency}"><span>ms</span></span></label>
       <div class="stems" role="group" aria-label="Stems">${stems}</div></footer>`;
   wireHeader();
   root.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => {
-    if (b.classList.contains("missing")) setNotice(noChart(b.dataset.instrument), "info");
+    if (b.classList.contains("missing")) setNotice(noChart(b.dataset.instrument));
     else setInstrument(b.dataset.instrument);
   }));
   root.querySelectorAll("[data-zoom]").forEach((b) => b.addEventListener("click", () => zoomBy(b.dataset.zoom)));
@@ -269,6 +276,7 @@ function renderSong() {
     store("chartgen-grid", state.grid);
   });
   root.querySelector(".top .save").addEventListener("click", saveChart);
+  root.querySelector(".top .copy").addEventListener("click", copyToGame);
   root.querySelector(".undo").addEventListener("click", () => history("undo"));
   root.querySelector(".redo").addEventListener("click", () => history("redo"));
   root.querySelector(".linked").addEventListener("click", () => {
@@ -287,6 +295,7 @@ function renderSong() {
   const timeline = new Timeline(canvas, scroller);
   state.timeline = timeline;
   timeline.setSong(state.tempo, state.bars, state.lengthS, state.chart.sections);
+  timeline.previewS = info.preview_s;
   timeline.zoom = startZoom();
   timeline.playhead = state.playhead;
   wireTimeline(scroller, canvas, timeline);
@@ -346,7 +355,7 @@ function showTrack() {
   const seg = root.querySelector(".seg");
   seg.innerHTML = LEVELS.map((l) => `<button data-level="${l}" aria-pressed="${l === state.difficulty}"${levels.includes(l) ? "" : missing(noChart(state.instrument, l))}>${TITLE[l]}</button>`).join("");
   seg.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
-    if (b.classList.contains("missing")) setNotice(noChart(state.instrument, b.dataset.level), "info");
+    if (b.classList.contains("missing")) setNotice(noChart(state.instrument, b.dataset.level));
     else setLevel(b.dataset.level);
   }));
   const below = belowLevel();
@@ -403,9 +412,12 @@ function problemItem(entry, kind, index) {
   let place = "";
   if (where) {
     const at = barBeat(state.tempo, state.bars, where.tick);
-    place = `<span class="where">Bar <span class="num">${at.bar}.${at.beat}</span> · ${TITLE[where.difficulty]} ${TITLE[where.instrument].toLowerCase()}</span>`;
+    const what = where.instrument ? `${TITLE[where.difficulty]} ${TITLE[where.instrument].toLowerCase()}` : "Sections";
+    place = `<span class="where">Bar <span class="num">${at.bar}.${at.beat}</span> · ${what}</span>`;
   }
-  const go = where ? `<button class="go" data-${kind}="${index}">Go to ${TITLE[where.instrument]} ${TITLE[where.difficulty]}</button>` : "";
+  const go = !where ? "" : where.instrument
+    ? `<button class="go" data-${kind}="${index}">Go to ${TITLE[where.instrument]} ${TITLE[where.difficulty]}</button>`
+    : `<button class="go" data-${kind}="${index}">Go to the section</button>`;
   const raw = entry.raw && entry.raw !== entry.message ? ` title="Validator: ${esc(entry.raw)}"` : "";
   return `<div class="item"><span class="${kind === "error" ? "ic-err" : "ic-warn"}">${kind === "error" ? icon("alert", "Error") : ""}</span>
     ${place}<p${raw}>${esc(entry.message)}</p>${go}</div>`;
@@ -419,13 +431,17 @@ function renderSide() {
       info.build_warnings.map((w) => `<p class="quiet">${esc(w)}</p>`).join("")}</div>`;
   }
   const signatures = tempo.signatures.map((s) => `${s.numerator}/${s.denominator}`).filter((v, i, a) => a.indexOf(v) === i).join(", ");
-  html += `<h2>Song</h2><dl class="kv">
-    <dt>Tempo</dt><dd>${(info.bpm || tempo.tempos.at(-1).bpm).toFixed(1)} BPM</dd>
-    <dt>Tempo events</dt><dd>${tempo.tempos.length}</dd><dt>Time</dt><dd>${signatures}</dd>
-    <dt>Sections</dt><dd>${chart.sections.length}</dd><dt>Preview</dt><dd>${clock(info.preview_s)}</dd></dl>`;
+  html += `<h2>Song</h2><dl class="kv facts"></dl>
+    <div class="acts struct"><button class="add-section">Add a section</button><button class="add-sp">Add star power</button><button class="set-preview">Set the preview</button></div>
+    <p class="quiet hint">They go on the bar the playhead is in. Click a section, a star power band or the preview on the ruler to change it.</p>`;
+  state.signatures = signatures;
   html += '<h2 class="sel-title">Selected</h2><div class="inspector"></div>';
   const side = root.querySelector(".right");
   side.innerHTML = html;
+  side.querySelector(".add-section").addEventListener("click", () => edit(() => ({ kind: "section_add", tick: playheadBar(), name: "New section" })));
+  side.querySelector(".add-sp").addEventListener("click", () => edit(() => ({ kind: "sp_add", tick: playheadBar(), bars: 1, all_levels: state.spAll })));
+  side.querySelector(".set-preview").addEventListener("click", () => edit(() => ({ kind: "preview_set", tick: playheadBar() })));
+  renderFacts();
   const more = side.querySelector(".more");
   if (more) more.addEventListener("click", () => {
     const notes = side.querySelector(".build-notes");
@@ -433,6 +449,33 @@ function renderSide() {
     more.setAttribute("aria-expanded", String(!notes.hidden));
   });
   renderProblems();
+  renderInspector();
+}
+
+function renderFacts() {
+  const box = root.querySelector(".facts");
+  if (!box) return;
+  const { info, chart, tempo } = state;
+  const preview = info.preview_s === null || info.preview_s === undefined ? "not set" : clock(info.preview_s);
+  box.innerHTML = `<dt>Tempo</dt><dd>${(info.bpm || tempo.tempos.at(-1).bpm).toFixed(1)} BPM</dd>
+    <dt>Tempo events</dt><dd>${tempo.tempos.length}</dd><dt>Time</dt><dd>${state.signatures}</dd>
+    <dt>Sections</dt><dd>${chart.sections.length}</dd><dt>Preview</dt><dd>${preview}</dd>`;
+}
+
+/** The bar line at or before the playhead: where structure is added (E.4.1 d). */
+function playheadBar() {
+  const tick = state.tempo.ticksAt(state.playhead) + 1e-6;
+  let bar = state.bars[0] || 0;
+  for (const b of state.bars) if (b <= tick) bar = b;
+  return bar;
+}
+
+function selectStructure(item) {
+  state.structure = item;
+  state.selection = new Set();
+  state.timeline.selection = state.selection;
+  state.timeline.structureSel = item;
+  state.timeline.draw();
   renderInspector();
 }
 
@@ -462,11 +505,18 @@ const KEYS_HINT = `<dl class="keys">
   <dt><kbd>Shift</kbd> <kbd>←</kbd> <kbd>→</kbd></dt><dd>Shorten or lengthen the sustain</dd>
   <dt><kbd>F</kbd> <kbd>T</kbd> <kbd>C</kbd></dt><dd>Forced, tap, cymbal</dd>
   <dt><kbd>Ctrl</kbd> <kbd>C</kbd> <kbd>V</kbd></dt><dd>Copy, paste at the playhead</dd>
-  <dt><kbd>Ctrl</kbd> <kbd>Z</kbd> <kbd>Y</kbd></dt><dd>Undo, redo</dd></dl>`;
+  <dt><kbd>Ctrl</kbd> <kbd>Z</kbd> <kbd>Y</kbd></dt><dd>Undo, redo</dd>
+  <dt><kbd>,</kbd> <kbd>.</kbd></dt><dd>Select the previous, next note (Shift adds)</dd>
+  <dt><kbd>Ctrl</kbd> <kbd>←</kbd> <kbd>→</kbd></dt><dd>Move the playhead one grid step</dd>
+  <dt><kbd>1</kbd>–<kbd>5</kbd></dt><dd>Add a note on that lane at the playhead</dd></dl>`;
 
 function renderInspector() {
   const box = root.querySelector(".inspector");
   if (!box) return;
+  if (state.structure) {
+    renderStructure(box);
+    return;
+  }
   const title = root.querySelector(".sel-title");
   const notes = selectedNotes(trackOf(state.instrument, state.difficulty), state.selection);
   if (title) title.innerHTML = `Selected <span>${notes.length ? plural(notes.length, "note") : ""}</span>`;
@@ -497,6 +547,11 @@ function renderInspector() {
 
 function goTo(where) {
   if (!where) return;
+  if (!where.instrument) {
+    scrollToTick(where.tick);
+    selectStructure({ kind: "section", tick: where.tick });
+    return;
+  }
   if (where.instrument !== state.instrument && state.instruments.includes(where.instrument)) setInstrument(where.instrument);
   if (where.difficulty !== state.difficulty && levelsOf(state.instrument).includes(where.difficulty)) setLevel(where.difficulty);
   scrollToTick(where.tick);
@@ -563,7 +618,9 @@ function pointerDown(e, scroller, canvas, timeline) {
   if (e.button !== 0 || state.gesture) return;
   scroller.focus({ preventScroll: true });
   if (timeline.zoneAt(e.offsetY) !== "lanes") {
-    seekTo(timeline.secondsAtX(e.offsetX));
+    const item = timeline.zoneAt(e.offsetY) === "ruler" ? timeline.structureAt(e.offsetX, e.offsetY) : null;
+    if (item) selectStructure(item);
+    else seekTo(timeline.secondsAtX(e.offsetX));
     return;
   }
   const note = timeline.noteAt(e.offsetX, e.offsetY);
@@ -682,6 +739,10 @@ const selectedPlaces = () => selectedNotes(currentTrack(), state.selection).map(
 
 function setSelection(keys) {
   state.selection = new Set(keys);
+  if (state.selection.size && state.structure) {
+    state.structure = null;
+    if (state.timeline) state.timeline.structureSel = null;
+  }
   if (state.timeline) {
     state.timeline.selection = state.selection;
     state.timeline.draw();
@@ -712,6 +773,16 @@ function renderEditState() {
     save.disabled = !edit.unsaved || state.stale || state.saving;
     save.textContent = state.saving ? "Saving…" : "Save";
     save.title = edit.unsaved ? "Save to the song folder (Ctrl+S); the files before are backed up" : "Nothing to save";
+  }
+  const copy = root.querySelector(".top .copy");
+  if (copy && edit) {
+    // Without a Songs folder it looks passive like a missing level, and a click says why (copyToGame).
+    copy.disabled = state.stale || state.copying;
+    copy.classList.toggle("missing", !gameReady());
+    if (gameReady()) copy.removeAttribute("aria-disabled");
+    else copy.setAttribute("aria-disabled", "true");
+    copy.textContent = state.copying ? "Copying…" : "Copy to game";
+    copy.title = gameReady() ? `Copy the saved song into ${state.info.game.songs} (the game must be closed)` : noSongsFolder();
   }
   root.querySelectorAll("[data-tool]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tool === state.tool)));
   const undo = root.querySelector(".tool .undo");
@@ -763,6 +834,22 @@ function history(which) {
 /** Puts an answer's tracks in place, then redraws, flashes what changed elsewhere and checks again. */
 function applyAnswer(out, select, said) {
   state.edit = out.edit;
+  if (out.sections) {
+    state.chart.sections = out.sections;
+    state.timeline.sections = out.sections;
+  }
+  if ("preview_s" in out) {
+    state.info.preview_s = out.preview_s;
+    state.timeline.previewS = out.preview_s;
+  }
+  if ("structure" in out) {
+    state.structure = out.structure;
+    state.timeline.structureSel = out.structure;
+    state.focusName = Boolean(out.structure && out.structure.kind === "section" && /^Add section/.test(out.label));
+  } else if (out.sections || "preview_s" in out || (state.structure && state.structure.kind === "sp")) {
+    state.structure = stillThere(state.structure);
+    state.timeline.structureSel = state.structure;
+  }
   for (const track of out.tracks) {
     const index = state.chart.tracks.findIndex((t) => t.instrument === track.instrument && t.difficulty === track.difficulty);
     if (index >= 0) state.chart.tracks[index] = track;
@@ -774,7 +861,7 @@ function applyAnswer(out, select, said) {
     state.selection = new Set([...state.selection].filter((k) => present.has(k)));
   }
   const words = [said, cascadeSummary(out.cascaded), ...(out.notices || [])].filter(Boolean);
-  setNotice(words.join(" · "), "info");
+  setNotice(words.join(" · "));
   const timeline = state.timeline;
   const below = belowLevel();
   timeline.setTrack(state.instrument, currentTrack(), below ? trackOf(state.instrument, below) : null);
@@ -791,15 +878,167 @@ function applyAnswer(out, select, said) {
   timeline.draw();
   renderEditState();
   renderInspector();
+  renderFacts();
   scheduleValidation();
   renderDraftBox();
 }
 
-function failed(error) {
+/** A selected structure item if it is still there after an undo or redo, else null. */
+function stillThere(item) {
+  if (!item) return null;
+  if (item.kind === "section") return state.chart.sections.some((s) => s[0] === item.tick) ? item : null;
+  if (item.kind === "sp") return currentTrack().star_power.some((p) => p[0] === item.tick) ? item : null;
+  return state.info.preview_s === null ? null : item;
+}
+
+/** The selected section, star power phrase or preview, with what can be done to it (E.4.1 d). */
+function renderStructure(box) {
+  const item = state.structure;
+  const title = root.querySelector(".sel-title");
+  const { tempo, bars } = state;
+  const barOf = (tick) => barBeat(tempo, bars, tick).bar;
+  if (item.kind === "section") {
+    const section = state.chart.sections.find((s) => s[0] === item.tick);
+    if (!section) { state.structure = null; renderInspector(); return; }
+    if (title) title.innerHTML = "Selected <span>section</span>";
+    box.innerHTML = `<dl class="kv"><dt>Section</dt><dd>${esc(section[1])}</dd><dt>Starts</dt><dd>Bar ${barOf(section[0])}</dd>
+      <dt>Time</dt><dd>${clock(tempo.secondsAt(section[0]))}</dd></dl>
+      <label class="field">Name<input class="sec-name" maxlength="60" value="${esc(section[1])}"></label>
+      <div class="acts"><button class="rename">Rename</button><button data-bars="-1">One bar earlier</button><button data-bars="1">One bar later</button><button class="del">Delete</button></div>`;
+    const input = box.querySelector(".sec-name");
+    const rename = () => edit(() => ({ kind: "section_rename", tick: item.tick, name: input.value }));
+    box.querySelector(".rename").addEventListener("click", rename);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); rename(); } });
+    box.querySelectorAll("[data-bars]").forEach((b) => b.addEventListener("click", () => edit(() => ({ kind: "section_move", tick: item.tick, bars: Number(b.dataset.bars) }))));
+    box.querySelector(".del").addEventListener("click", () => edit(() => ({ kind: "section_delete", tick: item.tick })));
+    if (state.focusName) {
+      state.focusName = false;
+      input.focus();
+      input.select();
+    }
+    return;
+  }
+  if (item.kind === "sp") {
+    const phrase = currentTrack().star_power.find((p) => p[0] === item.tick);
+    if (!phrase) { state.structure = null; renderInspector(); return; }
+    const first = barOf(phrase[0]);
+    const length = barOf(phrase[0] + phrase[1] - 1) - first + 1;
+    if (title) title.innerHTML = "Selected <span>star power</span>";
+    box.innerHTML = `<dl class="kv"><dt>Star power</dt><dd>${TITLE[state.difficulty]} ${TITLE[state.instrument].toLowerCase()}</dd>
+      <dt>Starts</dt><dd>Bar ${first}</dd><dt>Length</dt><dd>${plural(length, "bar")}</dd></dl>
+      <label class="check"><input type="checkbox" class="sp-all" ${state.spAll ? "checked" : ""}>Change every level the same way</label>
+      <div class="acts"><button data-move="-1">Start a bar earlier</button><button data-move="1">Start a bar later</button>
+      <button data-resize="-1">One bar shorter</button><button data-resize="1">One bar longer</button><button class="del">Delete</button></div>`;
+    box.querySelector(".sp-all").addEventListener("change", (e) => { state.spAll = e.target.checked; });
+    box.querySelectorAll("[data-move]").forEach((b) => b.addEventListener("click", () => edit(() => ({ kind: "sp_move", tick: item.tick, bars: Number(b.dataset.move), all_levels: state.spAll }))));
+    box.querySelectorAll("[data-resize]").forEach((b) => b.addEventListener("click", () => edit(() => ({ kind: "sp_resize", tick: item.tick, bars: Number(b.dataset.resize), all_levels: state.spAll }))));
+    box.querySelector(".del").addEventListener("click", () => edit(() => ({ kind: "sp_delete", tick: item.tick, all_levels: state.spAll })));
+    return;
+  }
+  if (title) title.innerHTML = "Selected <span>preview</span>";
+  const start = state.info.preview_s;
+  box.innerHTML = `<dl class="kv"><dt>Preview</dt><dd>${start === null ? "not set" : clock(start)}</dd>
+    <dt>Starts</dt><dd>${start === null ? "–" : `Bar ${barOf(Math.round(tempo.ticksAt(start)))}`}</dd></dl>
+    <p class="quiet">The song list plays 30 seconds from here.</p>
+    <div class="acts"><button class="here">Move it to the playhead's bar</button></div>`;
+  box.querySelector(".here").addEventListener("click", () => edit(() => ({ kind: "preview_set", tick: playheadBar() })));
+}
+
+/** A request that did not go through, as a notification titled for what was tried ("Not changed", "Not saved"). */
+function failed(error, channel = "edit", title = "Not changed") {
   if (outdated(error)) return;
   if (error.stale) state.stale = true;
-  setNotice(error.message, "bad");
+  notify(problemToast(error, channel, title));
   renderEditState();
+}
+
+// ---------------------------------------------------------------- notifications (toast.js)
+// Saves, copies to the game and refusals: titled boxes over the timeline (owner, 2026-11-26). A success goes by
+// itself; a warning or an error stays until it is closed and offers what to do next.
+
+function notify(spec) {
+  toasts.show(spec);
+}
+
+const GO_TO_PROBLEMS = { label: "Go to Problems", primary: true, run: () => showProblems() };
+const RELOAD = { label: "Reload the page", primary: true, run: () => location.reload() };
+
+/** Out of date and unreachable are errors of the page; a refused edit is a warning in the words of the server. */
+function problemToast(error, channel, title) {
+  if (error.stale) return { channel: "page", tone: "error", title: "This page is out of date", text: error.message, actions: [RELOAD] };
+  if (error.status === 0) return { channel: "server", tone: "error", title: "The editor server is not answering", text: error.message };
+  return { channel, tone: error.status >= 500 ? "error" : "warning", title, text: error.message };
+}
+
+function notSavedToast(errors) {
+  return {
+    channel: "save", tone: "error", title: `Not saved: ${plural(errors, "error")}`,
+    text: `Fix ${errors === 1 ? "it" : "them"} first (see Problems). Nothing was written.`, actions: [GO_TO_PROBLEMS],
+  };
+}
+
+function savedToast(out) {
+  if (!out.backup_folder) return { channel: "save", tone: "success", title: "Saved", text: out.message === "Saved." ? "" : out.message };
+  return {
+    channel: "save", tone: "success", title: "Saved", pathLabel: "The files before this save are backed up in",
+    path: out.backup_folder, pathShown: out.backup_shown || out.backup_folder,
+  };
+}
+
+function saveFirstToast() {
+  const n = state.edit.unsaved;
+  return {
+    channel: "copy", tone: "warning", title: "Save first",
+    text: `The game gets the song as it is saved, and ${plural(n, "edit")} ${n === 1 ? "is" : "are"} not saved yet.`,
+    actions: [{ label: "Save", primary: true, run: () => saveChart() }],
+  };
+}
+
+function noSongsToast() {
+  return { channel: "copy", tone: "warning", title: "No Songs folder", text: noSongsFolder() };
+}
+
+/** Why the server did not copy the song (export.py ExportRefusedError reason). */
+function copyRefusedToast(error) {
+  const n = error.errors || 0;
+  switch (error.reason) {
+    case "unsaved": return saveFirstToast();
+    case "no_songs": return { ...noSongsToast(), text: error.message };
+    case "running": return {
+      channel: "copy", tone: "warning", title: "Clone Hero is running",
+      text: "Close the game, then copy again: it keeps its song files open while it runs.",
+      actions: [{ label: "Copy again", primary: true, run: () => copyToGame() }],
+    };
+    case "invalid": return {
+      channel: "copy", tone: "error", title: n ? `Not copied: ${plural(n, "error")}` : "Not copied",
+      text: `The song folder does not pass the validator: fix ${n === 1 ? "it" : "them"} first (see Problems).`, actions: [GO_TO_PROBLEMS],
+    };
+    case "disk_changed": return {
+      channel: "copy", tone: "error", title: "Not copied: notes.chart changed on disk",
+      text: "A rebuild or another tool wrote it after this song was opened. Reload the page to see it, then copy.", actions: [RELOAD],
+    };
+    default: return { channel: "copy", tone: "warning", title: "Not copied", text: error.message };
+  }
+}
+
+/** What was copied, and where the game's previous files went; a copy that does not validate in Songs is an error. */
+function copiedToast(out) {
+  const errors = out.errors || [];
+  const said = errors.length
+    ? { tone: "error", title: `Copied, but the game's copy has ${plural(errors.length, "error")}`, text: errors[0] }
+    : {
+      tone: "success", title: "Copied to game",
+      text: out.new ? "A new song: rescan the songs in Clone Hero's settings to see it in the list."
+        : out.mode === "chart" ? "Only notes.chart and song.ini were replaced; the audio in the game is the same."
+          : "The whole folder was replaced: its audio differs from the game's copy.",
+    };
+  const where = out.backup
+    ? {
+      pathLabel: out.mode === "chart" ? "The game's previous files are backed up in" : "The game's previous folder is backed up in",
+      path: out.backup, pathShown: out.backup_shown || out.backup,
+    }
+    : { pathLabel: "In the game", path: out.target };
+  return { channel: "copy", ...said, ...where };
 }
 
 function scheduleValidation() {
@@ -826,9 +1065,9 @@ async function runValidation() {
   renderProblems();
 }
 
-/** A line in the tool row: what an edit also did, or why it was refused. It stays until the next one. */
-function setNotice(text, tone) {
-  state.notice = text ? { text, tone } : null;
+/** A line in the tool row: what an edit also did, or where something stands. It stays until the next one. */
+function setNotice(text) {
+  state.notice = text ? { text } : null;
   renderNote();
 }
 
@@ -837,39 +1076,33 @@ function renderNote() {
   if (!note) return;
   const audio = state.audio || {};
   let text = "";
-  let bad = false;
-  if (state.notice) {
-    text = state.notice.text;
-    bad = state.notice.tone === "bad";
-  } else if (audio.status === "loading") {
-    text = `Loading the audio: ${audio.loaded} of ${audio.total} files`;
-  } else if (audio.status === "error") {
-    text = `The audio could not be loaded: ${audio.message}`;
-    bad = true;
-  }
+  if (state.notice) text = state.notice.text;
+  else if (audio.status === "loading") text = `Loading the audio: ${audio.loaded} of ${audio.total} files`;
   note.textContent = text;
   note.title = text;
-  note.classList.toggle("bad", bad);
 }
 
 function copySelection() {
   const notes = selectedNotes(currentTrack(), state.selection);
   if (!notes.length) {
-    setNotice("Select the notes to copy first.", "info");
+    setNotice("Select the notes to copy first.");
     return;
   }
   state.clipboard = clipboardOf(state.instrument, notes);
-  setNotice(`Copied ${plural(notes.length, "note")}: Ctrl+V pastes them at the playhead.`, "info");
+  setNotice(`Copied ${plural(notes.length, "note")}: Ctrl+V pastes them at the playhead.`);
 }
 
 function paste() {
   const clip = state.clipboard;
   if (!clip) {
-    setNotice("Nothing is copied yet.", "info");
+    setNotice("Nothing is copied yet.");
     return;
   }
   if ((clip.instrument === "drums") !== drums()) {
-    setNotice(`Notes copied from ${TITLE[clip.instrument].toLowerCase()} can be pasted on ${clip.instrument === "drums" ? "drums" : "guitar, bass and keys"} only.`, "bad");
+    notify({
+      channel: "edit", tone: "warning", title: "Not pasted",
+      text: `Notes copied from ${TITLE[clip.instrument].toLowerCase()} can be pasted on ${clip.instrument === "drums" ? "drums" : "guitar, bass and keys"} only.`,
+    });
     return;
   }
   const tick = snap(state.tempo.ticksAt(state.playhead));
@@ -905,10 +1138,20 @@ document.addEventListener("keydown", (e) => {
     else if (key === "c") action = copySelection;
     else if (key === "v") action = paste;
     else if (key === "a") action = () => setSelection(currentTrack().notes.map(noteKey));
+    else if ((key === "arrowleft" || key === "arrowright") && !e.shiftKey) action = () => stepPlayhead(key === "arrowright" ? 1 : -1);
   } else if (!e.altKey && !ctrl) {
     if (key === "v" && !e.shiftKey) action = () => setTool("select");
     else if (key === "d" && !e.shiftKey) action = () => setTool("draw");
     else if (key === "escape" && any) action = () => setSelection([]);
+    else if (key === "escape" && state.structure) action = () => selectStructure(null);
+    else if ((key === "delete" || key === "backspace") && !any && state.structure && state.structure.kind !== "preview") {
+      const item = state.structure;
+      action = () => edit(() => (item.kind === "section" ? { kind: "section_delete", tick: item.tick } : { kind: "sp_delete", tick: item.tick, all_levels: state.spAll }));
+    }
+    // , and . (with Shift the key reads < > on a US keyboard and ; : on a Turkish Q one)
+    else if (",<;".includes(e.key) && e.key.length === 1) action = () => selectNeighbour(-1, e.shiftKey);
+    else if (".>:".includes(e.key) && e.key.length === 1) action = () => selectNeighbour(1, e.shiftKey);
+    else if (/^[1-5]$/.test(e.key) && !e.shiftKey) action = () => addAtPlayhead(Number(e.key) - 1);
     else if ((key === "delete" || key === "backspace") && any) action = () => edit(() => ({ kind: "delete", notes: selectedPlaces() }));
     else if (key === "f" && any) action = () => toggleFlag("forced", FORCED);
     else if (key === "t" && any) action = () => toggleFlag("tap", TAP);
@@ -933,6 +1176,49 @@ document.addEventListener("keydown", (e) => {
   action();
 });
 
+// ---------------------------------------------------------------- the keyboard alone (E.4.1 b)
+
+/** The playhead's tick on the grid. */
+const playheadTick = () => snap(state.tempo.ticksAt(state.playhead));
+
+/** Brings a tick into view when it is outside it (no smooth scrolling). */
+function reveal(tick) {
+  const timeline = state.timeline;
+  const x = timeline.x(state.tempo.secondsAt(tick));
+  if (x < 40 || x > timeline.width - 40) scrollToTick(tick);
+}
+
+/** `,` and `.`: the previous or next note (a chord is one stop) from the selection, or from the playhead. */
+function selectNeighbour(direction, add) {
+  const notes = currentTrack().notes;
+  const selected = selectedNotes(currentTrack(), state.selection);
+  const from = selected.length ? selected[direction > 0 ? selected.length - 1 : 0][0] : state.tempo.ticksAt(state.playhead) - (direction > 0 ? 0.5 : -0.5);
+  const tick = neighbourTick(notes, from, direction);
+  if (tick === null) {
+    setNotice(direction > 0 ? "There is no note after this one." : "There is no note before this one.");
+    return;
+  }
+  const keys = notes.filter((n) => n[0] === tick).map(noteKey);
+  setSelection(add ? [...state.selection, ...keys] : keys);
+  reveal(tick);
+}
+
+/** Ctrl+← and Ctrl+→: the playhead one grid step (it stops on the grid). */
+function stepPlayhead(direction) {
+  const tick = stepTick(state.bars, state.tempo.ticksAt(state.playhead), gridStep(), direction);
+  seekTo(state.tempo.secondsAt(tick));
+  reveal(tick);
+}
+
+/** 1-5: a note on that row (the numbered track cells; on drums 5 is the kick) where the playhead is. */
+function addAtPlayhead(row) {
+  const lane = laneOfRow(drums(), row);
+  if (lane === null) return;
+  const tick = playheadTick();
+  edit(() => ({ kind: "add", notes: [[tick, lane, 0, 0]] }));
+  reveal(tick);
+}
+
 // ---------------------------------------------------------------- saving and drafts (E.3)
 // Unsaved edits survive closing the page: the server keeps them, and writes a draft beside the songs a second
 // after each edit, so the page no longer asks before it is closed.
@@ -951,7 +1237,7 @@ function saveChart() {
   if (!state.edit || !state.edit.unsaved || state.stale || state.saving) return;
   const errors = state.validation.errors.length;
   if (errors) {
-    setNotice(`The chart has ${plural(errors, "error")}: fix ${errors === 1 ? "it" : "them"} before saving (see Problems).`, "bad");
+    notify(notSavedToast(errors));
     showProblems();
     return;
   }
@@ -963,23 +1249,65 @@ function saveChart() {
       const out = await api.save(id, state.edit.version);
       if (state.id !== id) return;
       state.edit = out.edit;
-      setNotice(out.message, "info");
+      notify(savedToast(out));
     } catch (error) {
       if (state.id !== id) return;
       if (error.errors) {
-        setNotice(error.message, "bad");
+        notify(notSavedToast(error.errors));
         scheduleValidation();
         showProblems();
       } else if (error.diskChanged) {
-        setNotice(error.message, "bad");
+        notify({ channel: "save", tone: "error", title: "Not saved: notes.chart changed on disk", text: error.message });
       } else {
-        failed(error);
+        failed(error, "save", "Not saved");
       }
     } finally {
       if (state.id === id) {
         state.saving = false;
         renderEditState();
         renderDraftBox();
+      }
+    }
+  });
+}
+
+/** Copy to game (SPEC 56): the saved song, so unsaved edits are saved first (owner's decision 1). */
+function gameReady() {
+  return Boolean(state.info && state.info.game && state.info.game.ready);
+}
+
+function noSongsFolder() {
+  const songs = state.info && state.info.game && state.info.game.songs;
+  return songs ? `There is no Clone Hero Songs folder at ${songs}: start chartgen edit with --songs <folder>.`
+    : "No Clone Hero Songs folder is set: start chartgen edit with --songs <folder>.";
+}
+
+function copyToGame() {
+  if (!state.edit || state.stale || state.copying || state.saving) return;
+  if (!gameReady()) {
+    notify(noSongsToast());
+    return;
+  }
+  if (state.edit.unsaved) {
+    notify(saveFirstToast());
+    return;
+  }
+  const id = state.id;
+  state.copying = true;
+  renderEditState();
+  state.queue = state.queue.then(async () => {
+    try {
+      const out = await api.copyToGame(id, state.edit.version);
+      if (state.id !== id) return;
+      notify(copiedToast(out));
+    } catch (error) {
+      if (state.id !== id) return;
+      if (error.reason || (error.status === 409 && !error.stale && !error.outdated)) notify(copyRefusedToast(error));
+      else failed(error, "copy", "Not copied");
+    } finally {
+      if (state.id === id) {
+        state.copying = false;
+        renderEditState();
       }
     }
   });
@@ -1039,11 +1367,11 @@ function draftAction(which) {
       if (which === "restoreDraft") applyAnswer(out, false, `Restored: ${plural(out.edit.unsaved, "unsaved edit")}`);
       else {
         state.edit = out.edit;
-        setNotice("The draft was discarded.", "info");
+        setNotice("The draft was discarded.");
         renderEditState();
       }
     } catch (error) {
-      if (state.id === id) failed(error);
+      if (state.id === id) failed(error, "draft", which === "restoreDraft" ? "The draft was not restored" : "The draft was not discarded");
     }
     if (state.id === id) renderDraftBox();
   });
@@ -1106,6 +1434,61 @@ function waveFile() {
   return files.find((f) => f === `${state.instrument}.ogg`) || files.find((f) => f === "song.ogg") || files[0] || null;
 }
 
+/**
+ * Keep pitch (E.4.1 a): below 1x, the stems stretched to the speed (made on the server, once per file and speed)
+ * replace the pitched-down ones as soon as all of them are here; until then the audio plays on pitched down.
+ * Only one speed's copies are kept, and none when Keep pitch is off.
+ */
+async function ensureSlow() {
+  const player = state.player;
+  if (!player || state.audio.status !== "ready") return;
+  const speed = state.rate;
+  if (!state.keepPitch || speed >= 1) {
+    player.setKeepPitch(false);
+    if (!state.keepPitch) player.clearSlow();
+    return;
+  }
+  if (player.slowReady(speed)) {
+    player.setKeepPitch(true);
+    player.refresh();
+    return;
+  }
+  player.setKeepPitch(false);
+  const id = state.id;
+  const files = player.stems.map((s) => s.file);
+  // Two files at a time: the server stretches them in parallel (about twice as fast as one by one) without
+  // holding five songs' worth of spectra at once.
+  const queue = files.map((file, index) => ({ file, index }));
+  let done = 0;
+  const progress = () => setNotice(`Slowing the audio down without lowering it: ${done} of ${files.length} files (the first time takes a while)`);
+  const worker = async () => {
+    while (queue.length) {
+      const { file, index } = queue.shift();
+      const response = await fetch(`${api.audioUrl(id, file)}?keep_pitch=${speed}`);
+      if (!response.ok) throw new Error(`${file}: ${response.status} ${response.statusText}`);
+      const buffer = await state.audioCtx.decodeAudioData(await response.arrayBuffer());
+      if (state.player !== player || state.rate !== speed || !state.keepPitch) return; // changed meanwhile
+      player.setSlow(index, speed, buffer);
+      done++;
+      progress();
+    }
+  };
+  try {
+    progress();
+    await Promise.all([worker(), worker()]);
+    if (!player.slowReady(speed) || state.player !== player || state.rate !== speed || !state.keepPitch) return;
+  } catch (error) {
+    if (state.player === player) {
+      setNotice("");
+      notify({ channel: "audio", tone: "warning", title: "Keep pitch is not available", text: `${error.message}. The song plays at the lower pitch.` });
+    }
+    return;
+  }
+  player.setKeepPitch(true);
+  player.refresh();
+  setNotice(`Keep pitch is on at ${speed.toFixed(2)}×.`);
+}
+
 /** Fetches and decodes every audio file of the song, one after the other, showing how far it is. */
 async function loadAudio(id) {
   const ctx = new AudioContext({ latencyHint: "interactive" });
@@ -1142,11 +1525,13 @@ async function loadAudio(id) {
     if (state.player !== player) return;
     state.audio.status = "error";
     state.audio.message = error.message;
+    notify({ channel: "audio", tone: "error", title: "The audio could not be loaded", text: error.message });
     renderAudioStatus();
     return;
   }
   player.cursor = Math.min(state.playhead, player.duration);
   state.audio.status = "ready";
+  ensureSlow();
   renderAudioStatus();
   updateWave();
   layoutLanes();
@@ -1193,7 +1578,7 @@ function renderAudioStatus() {
   if (!root.querySelector(".tool .note")) return;
   const ready = audio.status === "ready";
   renderNote();
-  root.querySelectorAll(".bot .play, .bot select, .bot .metro, .stem button, .stem .vol").forEach((el) => { el.disabled = !ready; });
+  root.querySelectorAll(".bot .play, .bot select, .bot .metro, .bot .pitch, .stem button, .stem .vol").forEach((el) => { el.disabled = !ready; });
   if (audio.status === "error" && state.timeline) {
     state.timeline.waveNote = "No audio";
     state.timeline.draw();
@@ -1232,6 +1617,15 @@ function wireTransport() {
   bot.querySelector(".speed").addEventListener("change", (e) => {
     state.rate = Number(e.target.value);
     if (state.player) state.player.setRate(state.rate);
+    ensureSlow();
+  });
+  const pitch = bot.querySelector(".pitch");
+  pitch.addEventListener("click", () => {
+    state.keepPitch = !state.keepPitch;
+    store("chartgen-keep-pitch", state.keepPitch ? "on" : "off");
+    pitch.setAttribute("aria-pressed", String(state.keepPitch));
+    pitch.textContent = state.keepPitch ? "On" : "Off";
+    ensureSlow();
   });
   const metro = bot.querySelector(".metro");
   metro.addEventListener("click", () => {

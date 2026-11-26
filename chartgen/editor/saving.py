@@ -5,7 +5,8 @@ error writes nothing. A ``notes.chart`` that changed on disk since the song was 
 Before anything is written, the folder's ``notes.chart`` and ``song.ini`` are copied to
 ``<outputs>/_editor_backups/<song>/<date_time>_<file>`` (all kept); the new files are written next to the old
 ones and moved into place, so a failed save leaves the old files. ``song.ini`` changes in its ``diff_*`` lines
-only, by the build's own rule (note density over the song's length). Every save appends what it saved to
+only, by the build's own rule (note density over the song's length), and in ``preview_start_time`` when the
+preview was moved in the editor (E.4.1 d). Every save appends what it saved to
 ``chartgen_edits.json``, which also marks the folder as edited for ``build --force`` (SPEC 55).
 """
 
@@ -28,7 +29,7 @@ from chartgen.errors import ChartgenError
 
 BACKUP_DIR = "_editor_backups"
 SONG_INI = "song.ini"
-_DIFF_LINE = re.compile(r"^(?P<key>diff_\w+)(?P<sep>\s*=\s*)(?P<value>[^\r\n]*)(?P<end>\r?\n?)$")
+_DIFF_LINE = re.compile(r"^(?P<key>diff_\w+|preview_start_time)(?P<sep>\s*=\s*)(?P<value>[^\r\n]*)(?P<end>\r?\n?)$")
 
 
 class SaveRefusedError(ChartgenError):
@@ -49,6 +50,8 @@ def song_duration_s(folder: Path) -> float | None:
     source = analysis.get("input")
     if isinstance(source, Mapping) and isinstance(source.get("duration_s"), (int, float)) and source["duration_s"] > 0:
         return float(source["duration_s"])
+    if not (folder / SONG_INI).is_file():
+        return None
     try:
         length = float(read_song_ini(folder / SONG_INI)[0].get("song_length", ""))
     except ValueError:
@@ -66,26 +69,49 @@ def difficulties(chart: Chart, duration_s: float) -> dict[Instrument, int]:
     return tiers
 
 
-def song_ini_with(text: str, tiers: Mapping[Instrument, int]) -> str:
-    """``song.ini`` with new ``diff_*`` values and every other byte as it was. An instrument without notes
-    gets ``-1``."""
-    values = {key: tiers.get(instrument, NOT_CHARTED) for instrument, key in DIFFICULTY_KEYS.items()}
+def song_ini_preview_ms(folder: Path) -> int | None:
+    """``song.ini``'s preview_start_time in ms, or None when it has none (or not a whole number)."""
+    path = folder / SONG_INI
+    if not path.is_file():
+        return None
+    try:
+        return int(read_song_ini(path)[0].get("preview_start_time", "").strip())
+    except ValueError:
+        return None
+
+
+def song_ini_with(text: str, tiers: Mapping[Instrument, int], preview_ms: int | None = None) -> str:
+    """``song.ini`` with new ``diff_*`` values (and ``preview_start_time`` when given) and every other byte as it
+    was. An instrument without notes gets ``-1``."""
+    values: dict[str, object] = {key: tiers.get(instrument, NOT_CHARTED) for instrument, key in DIFFICULTY_KEYS.items()}
+    if preview_ms is not None:
+        values["preview_start_time"] = preview_ms
     lines = []
+    seen = set()
     for line in text.splitlines(keepends=True):
         match = _DIFF_LINE.match(line)
         if match and match["key"] in values:
             line = f"{match['key']}{match['sep']}{values[match['key']]}{match['end']}"
+            seen.add(match["key"])
         lines.append(line)
+    if preview_ms is not None and "preview_start_time" not in seen:  # a song.ini without one gets it at the end
+        newline = "\r\n" if "\r\n" in text else "\n"
+        if lines and not lines[-1].endswith(("\n", "\r")):
+            lines[-1] += newline
+        lines.append(f"preview_start_time = {preview_ms}{newline}")
     return "".join(lines)
 
 
-def prospective_song_ini(folder: Path, chart: Chart) -> str | None:
-    """The ``song.ini`` a save would write for ``chart``, or None when there is no song.ini or no length."""
+def prospective_song_ini(folder: Path, chart: Chart, preview_ms: int | None = None) -> str | None:
+    """The ``song.ini`` a save would write for ``chart`` (and the preview's start, when given), or None when
+    there is no song.ini or no length."""
     path = folder / SONG_INI
     duration = song_duration_s(folder)
     if not path.is_file() or duration is None:
         return None
-    return song_ini_with(path.read_bytes().decode("utf-8"), difficulties(chart, duration))
+    if preview_ms is not None and preview_ms == song_ini_preview_ms(folder):
+        preview_ms = None  # not moved: its line keeps its bytes (E.4 plan: written only when it changed)
+    return song_ini_with(path.read_bytes().decode("utf-8"), difficulties(chart, duration), preview_ms)
 
 
 def _write_atomically(path: Path, data: bytes) -> None:

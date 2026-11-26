@@ -36,7 +36,8 @@ from chartgen.clonehero.chart_reader import read_chart
 from chartgen.clonehero.protection import CHART_FILE
 from chartgen.clonehero.validate import validate_song_folder
 from chartgen.core.model import Chart, ChartNote, Difficulty, Instrument
-from chartgen.editor import ops, saving
+from chartgen.editor import ops, saving, structure
+from chartgen.editor.export import SONGS_BACKUP_DIR, ExportRefusedError, copy_to_game, game_running
 from chartgen.editor.songs import SongLibrary, track_json
 from chartgen.errors import ChartgenError, ChartReadError
 
@@ -101,6 +102,16 @@ class EditSession:
         self.lock = threading.Lock()
         self._timer: threading.Timer | None = None
         self._tracks = {(t.instrument, t.difficulty): t for t in chart.tracks}
+        self.preview_ms = saving.song_ini_preview_ms(folder)
+        """The preview's start in song.ini, as the session has it (E.4.1 d); None when song.ini has none."""
+        self.bars = self._bar_lines()
+        """The bar-line ticks to the song's end and a few bars on: where structure lands."""
+
+    def _bar_lines(self) -> list[int]:
+        tempo = self.chart.tempo_map
+        last = max((n.tick + n.length for t in self.chart.tracks for n in t.notes), default=0)
+        end_s = max(saving.song_duration_s(self.folder) or 0.0, float(tempo.seconds_at(last)))
+        return [int(round(tick)) for tick in tempo.bar_lines(end_s + 8.0)]
 
     # ---------------------------------------------------------------- state
 
@@ -138,12 +149,33 @@ class EditSession:
         if version != self.version:
             raise StaleError("This chart was changed in another tab or window, or the editor was restarted: reload the page.")
 
-    def _put(self, notes: Mapping[Key, list[ChartNote]]) -> None:
-        for key, value in notes.items():
-            self._tracks[key].notes = list(value)
+    def _put(self, parts: Mapping[Any, Any]) -> None:
+        """Put a step's side in place. Keys: a track key (its notes), ("sp", instrument, level) (its star
+        power), "sections", "preview" (the preview's start in ms)."""
+        for key, value in parts.items():
+            if key == "sections":
+                self.chart.sections = list(value)
+            elif key == "preview":
+                self.preview_ms = value
+            elif len(key) == 3:
+                self._tracks[(key[1], key[2])].star_power = list(value)
+            else:
+                self._tracks[key].notes = list(value)
 
-    def _tracks_json(self, keys: list[Key]) -> list[dict[str, Any]]:
-        return [track_json(self._tracks[key]) for key in keys]
+    def _answer(self, keys) -> dict[str, Any]:
+        """What the page needs after a change of these parts: the tracks, and the sections or the preview."""
+        tracks: list[Key] = []
+        for key in keys:
+            if isinstance(key, tuple):
+                track = key if len(key) == 2 else (key[1], key[2])
+                if track not in tracks:
+                    tracks.append(track)
+        answer: dict[str, Any] = {"tracks": [track_json(self._tracks[key]) for key in tracks]}
+        if "sections" in keys:
+            answer["sections"] = [[s.tick, s.name] for s in self.chart.sections]
+        if "preview" in keys:
+            answer["preview_s"] = None if self.preview_ms is None else self.preview_ms / 1000
+        return answer
 
     def _push(self, step: Step) -> None:
         self.undo_stack.append(step)
@@ -159,6 +191,9 @@ class EditSession:
 
     def apply(self, request: Mapping[str, Any]) -> dict[str, Any]:
         """One operation (``ops.apply``) as one undo step; an operation that changes nothing is no step."""
+        op = request.get("op")
+        if isinstance(op, Mapping) and op.get("kind") in structure.KINDS:
+            return self._apply_structure(request)
         with self.lock:
             self._check(request.get("version"))
             result = ops.apply(self.chart, request)
@@ -174,10 +209,37 @@ class EditSession:
             return {
                 "edit": self.state(),
                 "label": result.label,
-                "tracks": self._tracks_json(list(result.changed)),
+                **self._answer(list(result.changed)),
                 "selection": [list(p) for p in result.selection],
                 "cascaded": result.cascaded,
                 "notices": notices,
+            }
+
+    def _apply_structure(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        """A section, star power or preview change (``structure.apply``) as one undo step."""
+        with self.lock:
+            self._check(request.get("version"))
+            change = structure.apply(self.chart, request, self.bars, self.chart.tempo_map.seconds_at)
+            before: dict[Any, Any] = {}
+            after: dict[Any, Any] = {}
+            if change.sections is not None and change.sections != self.chart.sections:
+                before["sections"], after["sections"] = list(self.chart.sections), change.sections
+            for key, phrases in change.star_power.items():
+                if phrases != self._tracks[key].star_power:
+                    before[("sp", *key)], after[("sp", *key)] = list(self._tracks[key].star_power), phrases
+            if change.preview_ms is not None and change.preview_ms != self.preview_ms:
+                before["preview"], after["preview"] = self.preview_ms, change.preview_ms
+            notices = []
+            if after:
+                if self.pending_draft is not None:
+                    notices.append(self._set_draft_aside("not restored before editing again"))
+                self._put(after)
+                self._push(Step(change.label, before, after, {k: v for k, v in request.items() if k != "version"}))
+                self.version = next(_VERSIONS)
+                self._schedule_draft()
+            return {
+                "edit": self.state(), "label": change.label, **self._answer(list(after)), "selection": [],
+                "cascaded": [], "notices": notices, "structure": change.selected,
             }
 
     def undo(self, version: Any) -> dict[str, Any]:
@@ -190,7 +252,7 @@ class EditSession:
             self.redo_stack.append(step)
             self.version = next(_VERSIONS)
             self._schedule_draft()
-            return {"edit": self.state(), "label": step.label, "tracks": self._tracks_json(list(step.before))}
+            return {"edit": self.state(), "label": step.label, **self._answer(list(step.before))}
 
     def redo(self, version: Any) -> dict[str, Any]:
         with self.lock:
@@ -202,7 +264,7 @@ class EditSession:
             self.undo_stack.append(step)
             self.version = next(_VERSIONS)
             self._schedule_draft()
-            return {"edit": self.state(), "label": step.label, "tracks": self._tracks_json(list(step.after))}
+            return {"edit": self.state(), "label": step.label, **self._answer(list(step.after))}
 
     def render(self) -> bytes:
         return DotChartExporter().render(self.chart)
@@ -215,7 +277,7 @@ class EditSession:
     def check_texts(self) -> tuple[int, str, str | None]:
         """What the live check validates: the chart and the ``song.ini`` a save would write."""
         with self.lock:
-            return self.version, self.render().decode("utf-8-sig"), saving.prospective_song_ini(self.folder, self.chart)
+            return self.version, self.render().decode("utf-8-sig"), saving.prospective_song_ini(self.folder, self.chart, self.preview_ms)
 
     # ---------------------------------------------------------------- saving (E.3.1)
 
@@ -237,7 +299,7 @@ class EditSession:
             started = time.perf_counter()
             data = self.render()
             text = data.decode("utf-8-sig")
-            ini = saving.prospective_song_ini(self.folder, self.chart)
+            ini = saving.prospective_song_ini(self.folder, self.chart, self.preview_ms)
             report = validate_song_folder(self.folder, text, ini)
             if report.errors:
                 count = len(report.errors)
@@ -281,8 +343,34 @@ class EditSession:
                 "edit": self.state(),
                 "saved_ms": round(took * 1000, 1),
                 "backups": [str(p) for p in backups],
+                # for the page's notification: the folder in full (to copy) and from the outputs folder (to read)
+                "backup_folder": str(backups[0].parent) if backups else None,
+                "backup_shown": str(shown) if shown else None,
                 "message": f"Saved. The files before this save are in {shown}" if shown else "Saved.",
             }
+
+    # ---------------------------------------------------------------- copying to the game (E.4.0)
+
+    def copy_to_game(self, version: Any, songs: Path | None, running=game_running) -> dict[str, Any]:
+        """Copy the saved folder to the game's Songs folder; unsaved edits must be saved first (owner)."""
+        with self.lock:
+            self._check(version)
+            if songs is None:
+                raise ExportRefusedError("No Clone Hero Songs folder is set: start chartgen edit with --songs <folder>.", "no_songs")
+            if self.unsaved:
+                count = self.unsaved
+                raise ExportRefusedError(
+                    f"Save first: the game gets the song as it is saved, and {count} edit{'s are' if count != 1 else ' is'} "
+                    f"not saved yet.",
+                    "unsaved",
+                )
+            chart = self.folder / CHART_FILE
+            if not chart.is_file() or _sha256(chart.read_bytes()) != self.disk_sha256:
+                raise ExportRefusedError(f"{CHART_FILE} changed on disk after this song was opened: reload the page first.", "disk_changed")
+            root = self.outputs or self.folder.parent
+            done = copy_to_game(self.folder, songs, root / SONGS_BACKUP_DIR, running)
+            done["backup_shown"] = str(Path(done["backup"]).relative_to(root.parent)) if done["backup"] else None
+            return done
 
     # ---------------------------------------------------------------- drafts (E.3.2)
 
@@ -328,6 +416,7 @@ class EditSession:
             "unsaved": self.unsaved,
             "edits": [s.label for s in steps],
             "chart": self.render().decode("utf-8-sig"),
+            "preview_ms": self.preview_ms,
         }
         saving._write_atomically(path, json.dumps(draft, ensure_ascii=False, indent=1).encode("utf-8"))
 
@@ -377,10 +466,22 @@ class EditSession:
             path = self._draft_path()
             if self.pending_draft is None or path is None or not path.is_file():
                 raise NothingToDoError("There is no draft to restore.")
-            draft = read_chart(json.loads(path.read_text(encoding="utf-8"))["chart"])
-            restored = {(t.instrument, t.difficulty): t.notes for t in draft.tracks}
-            after = {key: list(restored.get(key, [])) for key, track in self._tracks.items() if restored.get(key, []) != track.notes}
-            before = {key: list(self._tracks[key].notes) for key in after}
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            draft = read_chart(saved["chart"])
+            restored = {(t.instrument, t.difficulty): t for t in draft.tracks}
+            after: dict[Any, Any] = {}
+            before: dict[Any, Any] = {}
+            for key, track in self._tracks.items():
+                notes = restored[key].notes if key in restored else []
+                phrases = restored[key].star_power if key in restored else []
+                if notes != track.notes:
+                    before[key], after[key] = list(track.notes), list(notes)
+                if phrases != track.star_power:
+                    before[("sp", *key)], after[("sp", *key)] = list(track.star_power), list(phrases)
+            if draft.sections != self.chart.sections:
+                before["sections"], after["sections"] = list(self.chart.sections), list(draft.sections)
+            if "preview_ms" in saved and saved["preview_ms"] != self.preview_ms:
+                before["preview"], after["preview"] = self.preview_ms, saved["preview_ms"]
             label = f"Restore {self.pending_draft.get('unsaved', '')} unsaved edits".replace("  ", " ")
             self.pending_draft = None
             if after:
@@ -388,7 +489,7 @@ class EditSession:
                 self._push(Step(label, before, after, {"restore_draft": True}))
                 self.version = next(_VERSIONS)
             self._schedule_draft()
-            return {"edit": self.state(), "label": label, "tracks": self._tracks_json(list(after))}
+            return {"edit": self.state(), "label": label, **self._answer(list(after))}
 
     def discard_draft(self, version: Any) -> dict[str, Any]:
         with self.lock:

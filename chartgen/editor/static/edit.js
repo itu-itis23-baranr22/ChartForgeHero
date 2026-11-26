@@ -5,7 +5,7 @@ export const FORCED = 1;
 export const TAP = 2;
 export const CYMBAL = 4;
 export const OPEN_LANE = 5;
-export const GRIDS = [4, 8, 16];
+export const GRIDS = [4, 8, 12, 16, 24]; // 1/12 and 1/24: triplets of eighths and sixteenths (E.4.1 c)
 export const LEVELS = ["expert", "hard", "medium", "easy"];
 
 /** Drum lanes in the rows on screen, top to bottom: red, yellow, blue, green, then the kick (as ops.DRUM_ROWS). */
@@ -47,6 +47,16 @@ export function stepTick(bars, tick, step, direction) {
   const snapped = snapTick(bars, tick, step);
   if (direction > 0 ? snapped > tick : snapped < tick) return snapped;
   return snapTick(bars, Math.max(0, tick + direction * step), step);
+}
+
+/** The tick of the next note after `tick` (direction 1) or the last one before it (-1), or null. */
+export function neighbourTick(notes, tick, direction) {
+  if (direction > 0) {
+    for (const n of notes) if (n[0] > tick) return n[0];
+    return null;
+  }
+  for (let i = notes.length - 1; i >= 0; i--) if (notes[i][0] < tick) return notes[i][0];
+  return null;
 }
 
 /** The row a lane is drawn in (0 at the top), or null for an open note, which spans them all. */

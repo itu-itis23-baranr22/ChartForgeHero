@@ -112,6 +112,9 @@ def test_a_save_writes_the_chart_backs_up_the_old_files_and_marks_the_folder(cli
     assert data["message"].startswith("Saved. The files before this save are in outputs")
     assert (folder / "notes.chart").read_bytes() == session(client).render()
     backups = sorted((outputs / BACKUP_DIR / SONG).iterdir())
+    # the page's notification: the folder in full to copy, and from the outputs folder to read
+    assert data["backup_folder"] == str(outputs / BACKUP_DIR / SONG)
+    assert data["backup_shown"] == str(Path(outputs.name) / BACKUP_DIR / SONG)
     assert [p.name.split("_", 2)[-1] for p in backups] == ["notes.chart", "song.ini"]
     assert backups[0].read_bytes() == old_chart and backups[1].read_bytes() == old_ini
     assert (folder / "analysis.json").read_bytes() == old_analysis

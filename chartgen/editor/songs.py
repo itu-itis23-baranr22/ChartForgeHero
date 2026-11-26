@@ -129,6 +129,8 @@ def chart_json(chart: Chart) -> dict[str, object]:
 def locate(message: str) -> dict[str, object] | None:
     """Where a validator message points, when it names a track and a tick: for the page's markers."""
     match = _WHERE.search(message)
+    if match and match["section"] == "Events":  # a section of the song: a place, but no track
+        return {"instrument": None, "difficulty": None, "tick": int(match["tick"])}
     if not match or match["section"] not in _TRACK_OF_SECTION:
         return None
     instrument, difficulty = _TRACK_OF_SECTION[match["section"]]
